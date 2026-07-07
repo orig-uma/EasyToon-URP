@@ -1,0 +1,16 @@
+{
+    "name": "Origuma.EasyToon.URP.Installer",
+    "rootNamespace": "Origuma.EasyToon.URP.Installer",
+    "references": [],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

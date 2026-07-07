@@ -1,0 +1,35 @@
+{
+  "name": "com.origuma.easytoon-urp",
+  "version": "0.1.0",
+  "displayName": "EasyToon for URP",
+  "description": "High-quality Toon character shader for URP. BaseMap-first workflow with baked map enhancement (AO / Shade Normal / Hair Flow / Face SDF). Features double shadow with hue control, cel specular, angel-ring hair highlight, screen-space depth rim light, hair see-through (stencil), character-dedicated self shadow, and live-stage operation support.",
+  "unity": "6000.3",
+  "documentationUrl": "https://github.com/orig-uma/EasyToon-URP",
+  "changelogUrl": "https://github.com/orig-uma/EasyToon-URP/blob/main/CHANGELOG.md",
+  "licensesUrl": "https://github.com/orig-uma/EasyToon-URP/blob/main/LICENSE.md",
+  "keywords": [
+    "shader",
+    "urp",
+    "toon",
+    "npr",
+    "cel",
+    "character",
+    "anime",
+    "outline",
+    "rimlight",
+    "vrm"
+  ],
+  "author": {
+    "name": "Origuma",
+    "url": "https://github.com/orig-uma"
+  },
+  "dependencies": {
+    "com.unity.render-pipelines.universal": "17.3.0",
+    "com.origuma.easyshader-core": "0.2.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/orig-uma/EasyToon-URP.git"
+  },
+  "license": "MIT"
+}
