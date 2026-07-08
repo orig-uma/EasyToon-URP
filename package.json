@@ -24,8 +24,7 @@
     "url": "https://github.com/orig-uma"
   },
   "dependencies": {
-    "com.unity.render-pipelines.universal": "17.3.0",
-    "com.origuma.easyshader-core": "0.2.0"
+    "com.unity.render-pipelines.universal": "17.3.0"
   },
   "repository": {
     "type": "git",

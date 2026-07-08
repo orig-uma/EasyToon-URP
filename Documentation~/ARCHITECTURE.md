@@ -19,6 +19,11 @@ com.origuma.easyshader-core (共通基盤)
     ↑                      ↑
 com.origuma.easypbr-urp   com.origuma.easytoon-urp（本パッケージ）
 (>= 0.6.0)                 ・HLSL: Packages/com.origuma.easyshader-core/Runtime/Shaders/Common/** を絶対パス include
+                           ・依存宣言は package.json に置かず、PM 追加直後（および起動時）に
+                             Installer が自動導入（UPM は git 依存を解決できないため。→ Editor/Installer/）
+                           ・本体 Editor asmdef は versionDefines + defineConstraints（EASYSHADERCORE_PRESENT）で
+                             Core 不在時にコンパイル対象から除外。コンパイルエラーでドメインリロードが
+                             止まらず、PM 追加直後に Installer が走れる（＝再起動不要でゼロクリック導入）
                            ・C# Editor: asmdef 参照 Origuma.EasyShaderCore.Editor で
                              Baker 群 (EasyPbr*Baker, public) / ShaderGuiKit を再利用
 ```
@@ -38,7 +43,7 @@ com.origuma.easytoon-urp/
   package.json
   README.md / CHANGELOG.md / LICENSE.md
   Documentation~/
-    REQUIREMENTS.md  ARCHITECTURE.md
+    REQUIREMENTS.md  ARCHITECTURE.md  MIGRATION.md  VERIFICATION.md
   Runtime/
     Scripts/
       Origuma.EasyToon.URP.Runtime.asmdef
@@ -61,7 +66,8 @@ com.origuma.easytoon-urp/
           ForwardPass.hlsl / ShadowPass.hlsl / DepthOnlyPass.hlsl /
           DepthNormalsPass.hlsl / OutlinePass.hlsl / CharShadowPass.hlsl
   Editor/
-    Origuma.EasyToon.URP.Editor.asmdef   (references: EasyToon.Runtime, EasyShaderCore.Editor, URP)
+    Origuma.EasyToon.URP.Editor.asmdef   (references: EasyToon.Runtime, EasyShaderCore.Editor, URP /
+                                          defineConstraints: EASYSHADERCORE_PRESENT — Core 不在時は除外)
     IdolShaderGUI.cs               カスタムインスペクター。ShaderGuiKit(EasyShaderCore) を再利用し、
                                     Render Mode / Chara Part プリセット / キーワード同期を担う
                                     （状態変更ロジックは同ファイル内 IdolMaterialSetup に分離）
@@ -69,8 +75,8 @@ com.origuma.easytoon-urp/
                                     AO / Shade Normal / Hair Flow / Face SDF の 4 種）
     Installer/
       Origuma.EasyToon.URP.Installer.asmdef   参照ゼロの独立 asmdef（Core 不在でも必ずコンパイル）
-      EasyShaderCoreInstaller.cs    EasyShaderCore 不在を起動時検知し Client.Add で
-                                    ワンクリックインストールを案内する EditorWindow
+      EasyShaderCoreInstaller.cs    Core 不在を検知し Client.Add で自動インストール（ゼロクリック）。
+                                    失敗時のみ手動手順つきの案内ウィンドウを表示（参照ゼロの独立 asmdef）
     IdolSetupWindow.cs             RendererFeature 2 種のセットアップ Window
                                     （EasyShaderCore の FeatureSetupWindowBase ベース。
                                     エントリ宣言のみで描画/ロジックは Core 委譲）
