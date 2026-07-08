@@ -4,7 +4,7 @@
 
 Toon を本命とする URP 向け高品質キャラクターシェーダーです。BaseMap 一枚＋既定値で成立し、
 質感はマップベイクで積み増します。[EasyPBR](https://github.com/orig-uma/EasyPBR-URP) の姉妹パッケージで、
-共通基盤 [EasyShaderCore](https://github.com/orig-uma/EasyShaderCore-URP)（`com.origuma.easyshader-core`）の
+共通基盤 [EasyShaderCore](https://github.com/orig-uma/EasyShaderCore)（`com.origuma.easyshader-core`）の
 Common ライブラリとマップベイク資産を共有します。
 
 ## 特徴
@@ -24,23 +24,26 @@ Common ライブラリとマップベイク資産を共有します。
 * Unity 6 (6000.3) 以降
 * Universal RP 17.3 以降 / Forward+
 * Render Graph 有効（既定）。Compatibility Mode では RendererFeature（アウトライン・キャラ影）が動作しません
-* **[EasyShaderCore for URP](https://github.com/orig-uma/EasyShaderCore-URP) 0.2.0 以降（必須依存）**
+* **[EasyShaderCore for URP](https://github.com/orig-uma/EasyShaderCore) 0.2.0 以降（必須依存）**
 * [EasyPBR for URP](https://github.com/orig-uma/EasyPBR-URP) は**任意**（Doll からの移行変換にのみ必要。コード依存なし）
 
 ## インストール
 
-> ⚠ **先に EasyShaderCore をインストールしてください。** UPM は git URL の依存を自動解決できないため、
-> EasyShaderCore が無い状態で本パッケージを入れると依存エラーになります。
-> EasyToon を先に入れてしまった場合は、エディタ起動時に EasyShaderCore のインストール案内ウィンドウが表示され、ワンクリックで導入できます。
-
-`Window > Package Manager > + > Add package from git URL...` に**順番に**入力する（core → toon）:
+`Window > Package Manager > + > Add package from git URL...` に以下を入力する:
 
 ```
-https://github.com/orig-uma/EasyShaderCore-URP.git
 https://github.com/orig-uma/EasyToon-URP.git
 ```
 
-Embedded package として使う場合は `Packages/com.origuma.easytoon-urp` に配置する。
+依存する共通基盤パッケージ [EasyShaderCore](https://github.com/orig-uma/EasyShaderCore)（`com.origuma.easyshader-core`）は、
+インストール後の初回エディタ起動時に**自動でインストールされます**（git が必要）。自動導入に失敗した場合は
+手動手順つきの案内ウィンドウが表示されます。手動で先に入れる場合:
+
+```
+https://github.com/orig-uma/EasyShaderCore.git#v0.2.0
+```
+
+Embedded package として使う場合は `Packages/com.origuma.easytoon-urp` に配置する（EasyShaderCore も同様に配置する）。
 
 ## セットアップ
 

@@ -2,19 +2,25 @@
 //  EasyShaderCoreInstaller.cs
 // -----------------------------------------------------------------------------
 //  依存パッケージ EasyShaderCore（com.origuma.easyshader-core）の不在を起動時に
-//  検知し、ワンクリックインストールを案内する EditorWindow。
+//  検知し、**自動でインストール**する（ゼロクリック）。失敗時のみ手動手順つきの
+//  案内ウィンドウを表示する。
 //
-//  設計の核: Core 不在時は本体の Editor asmdef（Origuma.EasyShaderCore.Editor を
-//  参照）がコンパイルエラーで無効化されるため、このインストーラーは
-//  **参照ゼロの独立 asmdef**（Origuma.EasyToon.URP.Installer）に分離してあり、
-//  Core 不在でも必ずコンパイル・実行される。UnityEditor / UnityEngine のみで完結。
+//  設計の核:
+//   - package.json の dependencies に Core を宣言しない。宣言すると UPM が
+//     レジストリ解決に失敗して本パッケージの git URL インストール自体を拒否
+//     するため、「URL 1 つで入れて依存は自動導入」という体験が成立しなくなる
+//   - Core 不在時は本体の Editor asmdef（Origuma.EasyShaderCore.Editor を参照）
+//     がコンパイルエラーで無効化されるため、このインストーラーは**参照ゼロの
+//     独立 asmdef**（Origuma.EasyToon.URP.Installer）に分離してあり、Core 不在
+//     でも必ずコンパイル・実行される。UnityEditor / UnityEngine のみで完結
 //
 //  挙動:
 //   - 起動時（ドメインリロード毎）に Client.List(offline) で Core の有無を確認
-//   - 不在のときだけウィンドウを表示。存在すれば何もしない（ログも出さない）
-//   - [インストール] は Client.Add(git URL)。[後で] / ウィンドウを閉じると
-//     SessionState により同一セッション中は再表示しない（Unity 再起動で再案内）
-//   - バッチモードでは何もしない
+//   - 不在なら Client.Add(タグ固定の git URL) を自動実行（1 セッション 1 回）
+//     → 成功すれば UPM 解決→再コンパイルで全機能が有効になる
+//   - 自動インストール失敗時のみウィンドウ表示（手動手順・エラー内容つき）。
+//     [後で] / ウィンドウを閉じると同一セッション中は再表示しない
+//   - Core 存在時・バッチモードでは何もしない（ログも出さない）
 // =============================================================================
 using UnityEditor;
 using UnityEditor.PackageManager;
@@ -28,10 +34,14 @@ namespace Origuma.EasyToon.URP.Installer
         private const string PackageDisplayName = "EasyToon";
         private const string WindowTitle = "EasyToon Setup";
         private const string CorePackageName = "com.origuma.easyshader-core";
-        private const string CoreGitUrl = "https://github.com/orig-uma/EasyShaderCore-URP.git";
+        private const string CoreGitUrl = "https://github.com/orig-uma/EasyShaderCore.git";
+        // 動作検証済みバージョンにピン留めした自動インストール用 URL。
+        private const string CoreGitUrlPinned = CoreGitUrl + "#v0.2.0";
         private const string SessionDismissKey = "Origuma.EasyToon.URP.Installer.Dismissed";
+        private const string SessionAutoAddKey = "Origuma.EasyToon.URP.Installer.AutoAddAttempted";
 
         private static ListRequest s_ListRequest;
+        private static AddRequest s_AutoAddRequest;
 
         private AddRequest _addRequest;
         private string _errorMessage;
@@ -39,6 +49,12 @@ namespace Origuma.EasyToon.URP.Installer
 
         // ------------------------------------------------------------------
         //  起動時チェック（ドメインリロード毎。Core があれば完全に無音）
+        //
+        //  Core 不在時はまず Client.Add による自動インストールを試みる（ゼロクリック）。
+        //  ※ package.json の dependencies に Core を宣言しないのはこのため:
+        //    宣言すると UPM がレジストリ解決に失敗して本パッケージの追加自体を
+        //    拒否するため、この自動インストールが実行される機会がなくなる。
+        //  自動インストールに失敗した場合のみ案内ウィンドウ（手動手順）を開く。
         // ------------------------------------------------------------------
         [InitializeOnLoadMethod]
         private static void CheckOnLoad()
@@ -68,7 +84,37 @@ namespace Origuma.EasyToon.URP.Installer
                 if (package.name == CorePackageName)
                     return; // Core あり: 何もしない（ウィンドウもログも出さない）
 
+            // --- 自動インストール（1 セッション 1 回だけ試行。失敗時はウィンドウへ） ---
+            if (!SessionState.GetBool(SessionAutoAddKey, false))
+            {
+                SessionState.SetBool(SessionAutoAddKey, true);
+                Debug.Log($"[{PackageDisplayName}] 依存パッケージ EasyShaderCore が見つからないため、" +
+                          $"自動インストールします: {CoreGitUrlPinned}");
+                s_AutoAddRequest = Client.Add(CoreGitUrlPinned);
+                EditorApplication.update += PollAutoAddRequest;
+                return;
+            }
+
             Open();
+        }
+
+        private static void PollAutoAddRequest()
+        {
+            if (s_AutoAddRequest == null || !s_AutoAddRequest.IsCompleted) return;
+            EditorApplication.update -= PollAutoAddRequest;
+
+            if (s_AutoAddRequest.Status == StatusCode.Success)
+            {
+                // 成功: この後 UPM の解決→再コンパイルが走り、全機能が有効になる。
+                Debug.Log($"[{PackageDisplayName}] EasyShaderCore をインストールしました。再コンパイル後に有効になります。");
+            }
+            else
+            {
+                var msg = s_AutoAddRequest.Error != null ? s_AutoAddRequest.Error.message : "unknown error";
+                Debug.LogWarning($"[{PackageDisplayName}] EasyShaderCore の自動インストールに失敗しました: {msg}");
+                Open(); // フォールバック: 手動手順つきの案内ウィンドウ
+            }
+            s_AutoAddRequest = null;
         }
 
         private static void Open()
@@ -118,7 +164,7 @@ namespace Origuma.EasyToon.URP.Installer
                         GUILayout.Height(32)))
                 {
                     _errorMessage = null;
-                    _addRequest = Client.Add(CoreGitUrl);
+                    _addRequest = Client.Add(CoreGitUrlPinned);
                     EditorApplication.update += PollAddRequest;
                 }
 
@@ -135,7 +181,7 @@ namespace Origuma.EasyToon.URP.Installer
             EditorGUILayout.LabelField(
                 "Window > Package Manager > + > Add package from git URL... に以下を入力:",
                 EditorStyles.miniLabel);
-            EditorGUILayout.TextField(CoreGitUrl);
+            EditorGUILayout.TextField(CoreGitUrlPinned);
         }
 
         private void PollAddRequest()

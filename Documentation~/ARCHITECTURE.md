@@ -19,6 +19,8 @@ com.origuma.easyshader-core (共通基盤)
     ↑                      ↑
 com.origuma.easypbr-urp   com.origuma.easytoon-urp（本パッケージ）
 (>= 0.6.0)                 ・HLSL: Packages/com.origuma.easyshader-core/Runtime/Shaders/Common/** を絶対パス include
+                           ・依存宣言は package.json に置かず、初回起動時に Installer が自動導入
+                             （UPM は git 依存を解決できないため。→ Editor/Installer/）
                            ・C# Editor: asmdef 参照 Origuma.EasyShaderCore.Editor で
                              Baker 群 (EasyPbr*Baker, public) / ShaderGuiKit を再利用
 ```
