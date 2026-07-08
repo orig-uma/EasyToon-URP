@@ -1,26 +1,17 @@
 // =============================================================================
 //  EasyShaderCoreInstaller.cs
 // -----------------------------------------------------------------------------
-//  依存パッケージ EasyShaderCore（com.origuma.easyshader-core）の不在を起動時に
-//  検知し、**自動でインストール**する（ゼロクリック）。失敗時のみ手動手順つきの
-//  案内ウィンドウを表示する。
+//  依存パッケージ EasyShaderCore（com.origuma.easyshader-core）が無ければ自動で
+//  インストールする（ゼロクリック）。失敗時のみ手動手順つきのウィンドウを出す。
 //
-//  設計の核:
-//   - package.json の dependencies に Core を宣言しない。宣言すると UPM が
-//     レジストリ解決に失敗して本パッケージの git URL インストール自体を拒否
-//     するため、「URL 1 つで入れて依存は自動導入」という体験が成立しなくなる
-//   - Core 不在時は本体の Editor asmdef（Origuma.EasyShaderCore.Editor を参照）
-//     がコンパイルエラーで無効化されるため、このインストーラーは**参照ゼロの
-//     独立 asmdef**（Origuma.EasyToon.URP.Installer）に分離してあり、Core 不在
-//     でも必ずコンパイル・実行される。UnityEditor / UnityEngine のみで完結
-//
-//  挙動:
-//   - 起動時（ドメインリロード毎）に Client.List(offline) で Core の有無を確認
-//   - 不在なら Client.Add(タグ固定の git URL) を自動実行（1 セッション 1 回）
-//     → 成功すれば UPM 解決→再コンパイルで全機能が有効になる
-//   - 自動インストール失敗時のみウィンドウ表示（手動手順・エラー内容つき）。
-//     [後で] / ウィンドウを閉じると同一セッション中は再表示しない
-//   - Core 存在時・バッチモードでは何もしない（ログも出さない）
+//  ハマりやすい設計上の 2 点:
+//   - package.json の dependencies に Core を書かない。書くと UPM がレジストリ
+//     解決に失敗し、本パッケージの git URL インストール自体が拒否される。
+//   - 本体 Editor asmdef は Core 不在時にコンパイルエラーにしない（asmdef の
+//     versionDefines + defineConstraints で除外）。エラーがあると Unity はドメイン
+//     リロードを完了せず、PM 追加直後に InitializeOnLoad が走らない（＝再起動まで
+//     自動インストールされない）。このインストーラー自身は参照ゼロの独立 asmdef
+//     なので Core 不在でもコンパイル・実行できる。
 // =============================================================================
 using UnityEditor;
 using UnityEditor.PackageManager;
@@ -47,15 +38,8 @@ namespace Origuma.EasyToon.URP.Installer
         private string _errorMessage;
         private bool _installed;
 
-        // ------------------------------------------------------------------
-        //  起動時チェック（ドメインリロード毎。Core があれば完全に無音）
-        //
-        //  Core 不在時はまず Client.Add による自動インストールを試みる（ゼロクリック）。
-        //  ※ package.json の dependencies に Core を宣言しないのはこのため:
-        //    宣言すると UPM がレジストリ解決に失敗して本パッケージの追加自体を
-        //    拒否するため、この自動インストールが実行される機会がなくなる。
-        //  自動インストールに失敗した場合のみ案内ウィンドウ（手動手順）を開く。
-        // ------------------------------------------------------------------
+        // 起動時・PM 追加直後（ドメインリロード毎）に Core の有無を確認する入口。
+        // Core があれば完全に無音。無ければ PollListRequest で自動インストールへ進む。
         [InitializeOnLoadMethod]
         private static void CheckOnLoad()
         {

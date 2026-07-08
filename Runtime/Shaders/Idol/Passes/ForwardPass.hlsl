@@ -151,14 +151,21 @@ half4 frag(Varyings input) : SV_Target
         inputData.positionWS = input.positionWS;
         inputData.normalizedScreenSpaceUV = GetNormalizedScreenSpaceUV(input.positionCS);
 
+        // 追加ライトは専用アキュムレータに合成してから最終色へ加算する。
+        // Max モードは「追加ライト同士を重ねない（最大 1 灯ぶん）」の意味で、
+        // 多灯の重なりによる白飛びを防ぐ。※ finalColor と直接 max すると比較相手に
+        // メインライト＋間接光が含まれ、明るいアンビエントのシーンで追加ライトが
+        // 丸ごと食われて見えなくなるため、この形にしている。
+        half3 additionalAccum = half3(0, 0, 0);
+
         #define IDOL_ACCUMULATE_ADDITIONAL_LIGHT(index)                                  \
             {                                                                             \
                 Light addLight = GetAdditionalLight(index, input.positionWS, half4(1,1,1,1)); \
                 half addCast = lerp(1.0, addLight.shadowAttenuation, _ReceiveShadowStrength); \
                 half3 addContrib = CalculateSingleLight(addLight, s, viewDirectionWS, addCast, false, -1.0, 1.0); \
-                finalColor = (_AdditionalLightBlendMode > 0.5)                                      \
-                    ? max(finalColor, addContrib)                                         \
-                    : finalColor + addContrib;                                            \
+                additionalAccum = (_AdditionalLightBlendMode > 0.5)                       \
+                    ? max(additionalAccum, addContrib)                                    \
+                    : additionalAccum + addContrib;                                       \
             }
 
         #if defined(USE_FORWARD_PLUS) || defined(USE_CLUSTER_LIGHT_LOOP)
@@ -173,6 +180,8 @@ half4 frag(Varyings input) : SV_Target
         LIGHT_LOOP_BEGIN(pixelLightCount)
             IDOL_ACCUMULATE_ADDITIONAL_LIGHT(lightIndex)
         LIGHT_LOOP_END
+
+        finalColor += additionalAccum;
 
         #undef IDOL_ACCUMULATE_ADDITIONAL_LIGHT
     #endif

@@ -15,7 +15,15 @@
     "overrideReferences": false,
     "precompiledReferences": [],
     "autoReferenced": true,
-    "defineConstraints": [],
-    "versionDefines": [],
+    "defineConstraints": [
+        "EASYSHADERCORE_PRESENT"
+    ],
+    "versionDefines": [
+        {
+            "name": "com.origuma.easyshader-core",
+            "expression": "",
+            "define": "EASYSHADERCORE_PRESENT"
+        }
+    ],
     "noEngineReferences": false
 }
