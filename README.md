@@ -19,31 +19,41 @@ Common ライブラリとマップベイク資産を共有します。
 * **DCC 不要のマップベイク:** AO / Shade Normal / Hair Flow / Face SDF を Editor 上で焼いて自動アサイン（EasyShaderCore の Baker を共有）。
 * **SRP Batcher を意識した設計:** 全プロパティ単一 CBUFFER。静的キーワードは 3 つのみ（`_ALPHATEST_ON` / `_DISSOLVE_ON` / `_IDOL_CHARSHADOW`）で、それ以外は uniform 動的分岐。多人数同時描画でもバッチが分断されにくい構成です。
 
-## 動作環境
-
-* Unity 6 (6000.3) 以降
-* Universal RP 17.3 以降 / Forward+
-* Render Graph 有効（既定）。Compatibility Mode では RendererFeature（アウトライン・キャラ影）が動作しません
-* **[EasyShaderCore for URP](https://github.com/orig-uma/EasyShaderCore) 0.2.0 以降（必須依存）**
-* [EasyPBR for URP](https://github.com/orig-uma/EasyPBR-URP) は**任意**（Doll からの移行変換にのみ必要。コード依存なし）
-
 ## インストール
 
-`Window > Package Manager > + > Add package from git URL...` に以下を入力する:
+### Package Manager（Git URL）
+
+`Window > Package Manager > + > Add package from git URL...` に以下を入力する。
 
 ```
 https://github.com/orig-uma/EasyToon-URP.git
 ```
 
+特定バージョンを指定する場合:
+
+```
+https://github.com/orig-uma/EasyToon-URP.git#v0.1.0
+```
+
 依存する共通基盤パッケージ [EasyShaderCore](https://github.com/orig-uma/EasyShaderCore)（`com.origuma.easyshader-core`）は、
-インストール後の初回エディタ起動時に**自動でインストールされます**（git が必要）。自動導入に失敗した場合は
-手動手順つきの案内ウィンドウが表示されます。手動で先に入れる場合:
+インストール直後（同一エディタセッション内・再起動不要）に**自動でインストールされる**（git が必要）。自動導入に失敗した場合のみ
+手動手順つきの案内ウィンドウが表示される。手動で先に入れる場合:
 
 ```
 https://github.com/orig-uma/EasyShaderCore.git#v0.2.0
 ```
 
-Embedded package として使う場合は `Packages/com.origuma.easytoon-urp` に配置する（EasyShaderCore も同様に配置する）。
+### Embedded
+
+`Packages/com.origuma.easytoon-urp` に配置すると embedded package として認識される（EasyShaderCore も同様に配置する）。
+
+## 動作環境
+
+* Unity 6 (6000.3) 以降
+* Universal RP 17.3 以降 / Forward+
+* [EasyShaderCore](https://github.com/orig-uma/EasyShaderCore) 0.2.0 以降（自動インストールされる）
+* Render Graph 有効（既定）。Compatibility Mode では RendererFeature（アウトライン・キャラ影）が動作しません
+* [EasyPBR for URP](https://github.com/orig-uma/EasyPBR-URP) は**任意**（Doll からの移行変換にのみ必要。コード依存なし）
 
 ## セットアップ
 

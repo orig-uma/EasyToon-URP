@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+- **Package Manager からの追加直後にも EasyShaderCore の自動インストールが走るように修正**: 本体 Editor asmdef（`Origuma.EasyToon.URP.Editor`）を versionDefines + defineConstraints（シンボル `EASYSHADERCORE_PRESENT`）で Core 不在時にコンパイル対象から除外した。従来は Core 不在時のコンパイルエラーでドメインリロードが完了せず、PM 追加直後に `InitializeOnLoad`（Installer）が走らないため、エディタを再起動するまで Core が自動導入されなかった。除外により PM 追加直後（同一エディタセッション内・再起動不要）に Installer が走り、ゼロクリックで Core が導入される。
+
 ## [0.1.0] - 2026-07-08
 
 初期実装。
