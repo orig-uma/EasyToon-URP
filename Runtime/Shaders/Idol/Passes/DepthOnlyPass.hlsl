@@ -1,55 +1,63 @@
-// =============================================================================
-//  DepthOnlyPass.hlsl
-//  深度バッファのみへ書き込む（DepthOnly）。Depth Prepass / Forward+ の深度生成用。
-// =============================================================================
-#ifndef IDOL_DEPTH_ONLY_PASS_INCLUDED
-#define IDOL_DEPTH_ONLY_PASS_INCLUDED
+// DepthOnly。
+// リムライトとコンタクトシャドウが読む `_CameraDepthTexture` を埋める。**消すと両方が黙って死ぬ。**
+//
+// **`#pragma` はここに置かないこと。** 素の `#include` の中の pragma は
+// Unity が読まず、**キーワードが黙って立たなくなる。**
+// pragma は `.shader` 側に残してある。
+//
+// 切り出しは 1 行も変えていない（include を展開し直してバイト一致を確認・T-211）。
 
-#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
-#include "../IdolInput.hlsl"
-#include "../IdolDissolve.hlsl"
+            struct Attributes
+            {
+                float4 positionOS : POSITION;
+                float2 uv         : TEXCOORD0;
+                UNITY_VERTEX_INPUT_INSTANCE_ID
+            };
 
-struct Attributes
-{
-    float4 positionOS : POSITION;
-    float3 normalOS   : NORMAL;
-    float2 uv         : TEXCOORD0;
-};
+            struct Varyings
+            {
+                float4 positionCS : SV_POSITION;
+                float2 uv         : TEXCOORD0;
+                // ディゾルブの進み具合（頂点で求めて 1 float で運ぶ）。
+                // **本体と同じ場所で切らないと、消えた部分が影／深度に残る。**
+                float  dissolveGrad : TEXCOORD1;
+                UNITY_VERTEX_INPUT_INSTANCE_ID
+                // **シングルパスインスタンス ステレオに必須**（DepthNormals と同じ理由）。
+                // このパスが埋めるのは _CameraDepthTexture で、
+                // リムライトとコンタクトシャドウがそれを読む。
+                // 無いと VR で片目だけリムが出ない／接地影がずれる。
+                UNITY_VERTEX_OUTPUT_STEREO
+            };
 
-struct Varyings
-{
-    float4 positionCS : SV_POSITION;
-    float2 uv         : TEXCOORD0;
-    float3 positionWS : TEXCOORD1;
-    float3 positionOS : TEXCOORD2;
-    float3 normalWS   : TEXCOORD3;
-};
+            Varyings DepthVert(Attributes input)
+            {
+                Varyings output = (Varyings)0;
+                UNITY_SETUP_INSTANCE_ID(input);
+                UNITY_TRANSFER_INSTANCE_ID(input, output);
+                UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(output);
+                output.positionCS = TransformObjectToHClip(input.positionOS.xyz);
+                output.uv         = TRANSFORM_TEX(input.uv, _BaseMap);
+                output.dissolveGrad = ToonDissolveGradient(
+                    input.positionOS.xyz, TransformObjectToWorld(input.positionOS.xyz));
+                return output;
+            }
 
-Varyings vert_depth(Attributes input)
-{
-    Varyings output = (Varyings)0;
-    output.positionCS = TransformObjectToHClip(input.positionOS.xyz);
-    output.uv         = input.uv;
-    output.positionWS = TransformObjectToWorld(input.positionOS.xyz);
-    output.positionOS = input.positionOS.xyz;
-    output.normalWS   = TransformObjectToWorldNormal(input.normalOS);
+            half4 DepthFrag(Varyings input) : SV_Target
+            {
+                #ifdef LOD_FADE_CROSSFADE
+                    LODFadeCrossFade(input.positionCS);
+                #endif
 
-    return output;
-}
+                #if defined(_ALPHATEST_ON)
+                    half a = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, input.uv).a * _BaseColor.a;
+                    clip(a - _Cutoff);
+                #endif
 
-half4 frag_depth(Varyings input) : SV_Target
-{
-    #if defined(_ALPHATEST_ON)
-        float2 uv = input.uv * _MainTex_ST.xy + _MainTex_ST.zw;
-        half alpha = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, uv).a * _BaseColor.a;
-        clip(alpha - _Cutoff);
-    #endif
-
-    #if defined(_DISSOLVE_ON)
-        ApplyIdolDissolveClip(input.uv * _MainTex_ST.xy + _MainTex_ST.zw,
-                               input.positionWS, input.positionOS, input.normalWS);
-    #endif
-    return 0;
-}
-
-#endif // IDOL_DEPTH_ONLY_PASS_INCLUDED
+                // ディゾルブ。ForwardLit と**同じ式で同じ場所を切る**。
+                UNITY_BRANCH
+                if (_DissolveAmount > 0.0)
+                {
+                    ToonDissolveClip(input.uv, input.dissolveGrad);
+                }
+                return 0;
+            }

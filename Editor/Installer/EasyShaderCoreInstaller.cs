@@ -27,7 +27,14 @@ namespace Origuma.EasyToon.URP.Installer
         private const string CorePackageName = "com.origuma.easyshader-core";
         private const string CoreGitUrl = "https://github.com/orig-uma/EasyShaderCore.git";
         // 動作検証済みバージョンにピン留めした自動インストール用 URL。
-        private const string CoreGitUrlPinned = CoreGitUrl + "#v0.2.0";
+        private const string CoreGitUrlPinned = CoreGitUrl + "#v0.3.1";
+        // **必要最低バージョン。** これより古い Core が入っていると本体 Editor が
+        // Core の新 API を参照してコンパイルできない。本体 Editor asmdef の
+        // versionDefines は同じ下限（[0.3.0,)）で、古い Core では本体を除外して
+        // コンパイルエラーを出さず、このインストーラーが更新に進めるようにしてある。
+        // **両方を同時に上げること。** 片方だけ上げると「本体は除外されたのに
+        // インストーラーは何もしない」か、その逆になる。
+        private const string CoreMinVersion = "0.3.0";
         private const string SessionDismissKey = "Origuma.EasyToon.URP.Installer.Dismissed";
         private const string SessionAutoAddKey = "Origuma.EasyToon.URP.Installer.AutoAddAttempted";
 
@@ -64,16 +71,28 @@ namespace Origuma.EasyToon.URP.Installer
             if (s_ListRequest.Status != StatusCode.Success)
                 return; // 一覧取得に失敗した場合は何もしない（次回リロードで再試行）
 
+            string installedVersion = null;
             foreach (var package in s_ListRequest.Result)
                 if (package.name == CorePackageName)
-                    return; // Core あり: 何もしない（ウィンドウもログも出さない）
+                {
+                    // 十分新しい Core あり: 何もしない（ウィンドウもログも出さない）。
+                    // 古い Core は「無い」と同じ扱いで、ピン留め URL への差し替えに進む
+                    // （Client.Add は同名パッケージの更新として働く）。本パッケージを
+                    // 更新した利用者が旧 Core のまま取り残されるのを防ぐ。
+                    if (!IsOlderThan(package.version, CoreMinVersion)) return;
+                    installedVersion = package.version;
+                    break;
+                }
 
-            // --- 自動インストール（1 セッション 1 回だけ試行。失敗時はウィンドウへ） ---
+            // --- 自動インストール / 更新（1 セッション 1 回だけ試行。失敗時はウィンドウへ） ---
             if (!SessionState.GetBool(SessionAutoAddKey, false))
             {
                 SessionState.SetBool(SessionAutoAddKey, true);
-                Debug.Log($"[{PackageDisplayName}] 依存パッケージ EasyShaderCore が見つからないため、" +
-                          $"自動インストールします: {CoreGitUrlPinned}");
+                Debug.Log(installedVersion == null
+                    ? $"[{PackageDisplayName}] 依存パッケージ EasyShaderCore が見つからないため、" +
+                      $"自動インストールします: {CoreGitUrlPinned}"
+                    : $"[{PackageDisplayName}] EasyShaderCore {installedVersion} は古いため" +
+                      $"（必要 {CoreMinVersion} 以上）、更新します: {CoreGitUrlPinned}");
                 s_AutoAddRequest = Client.Add(CoreGitUrlPinned);
                 EditorApplication.update += PollAutoAddRequest;
                 return;
@@ -99,6 +118,29 @@ namespace Origuma.EasyToon.URP.Installer
                 Open(); // フォールバック: 手動手順つきの案内ウィンドウ
             }
             s_AutoAddRequest = null;
+        }
+
+        /// <summary>"x.y.z" 同士の比較。数字以外の接尾辞（-preview 等）は無視する。</summary>
+        private static bool IsOlderThan(string version, string minimum)
+        {
+            var a = ParseVersion(version);
+            var b = ParseVersion(minimum);
+            for (int i = 0; i < 3; i++)
+            {
+                if (a[i] < b[i]) return true;
+                if (a[i] > b[i]) return false;
+            }
+            return false;
+        }
+
+        private static int[] ParseVersion(string version)
+        {
+            var parts = new int[3];
+            if (string.IsNullOrEmpty(version)) return parts;
+            var core = version.Split('-', '+')[0].Split('.');
+            for (int i = 0; i < 3 && i < core.Length; i++)
+                int.TryParse(core[i], out parts[i]);
+            return parts;
         }
 
         private static void Open()
