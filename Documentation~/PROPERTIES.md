@@ -8,7 +8,7 @@
 python gen_properties.py --write
 ```
 
-シェーダー: `Idol.shader` / プロパティ 209 個
+シェーダー: `Idol.shader` / プロパティ 211 個
 
 ⚡ はシェーダーバリアントを生むもの（マテリアル間で値が違うとバッチが分断される）。
 
@@ -153,7 +153,7 @@ python gen_properties.py --write
 | プロパティ | 表示名 | 型 | 既定 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
 | `_TerminatorColor` | Terminator Color | `Color` | `(1.0, 0.82, 0.72, 1)` | 明暗の境目に出る暖色の帯 |
-| `_TerminatorStrength` | Strength | `Range(0,1)` | `0.35` | 肌だけでなく全部の質感に掛かります。境界の色を全身で揃えるのは意図的な様式化です |
+| `_TerminatorStrength` | Strength | `Range(0,1)` | `0` | 肌だけでなく全部の質感に掛かります。境界の色を全身で揃えるのは意図的な様式化です |
 | `_TerminatorSharpness` | Sharpness | `Range(0.1,8)` | `2.0` | 帯の芯からどれだけ速く落ちるか |
 | `_TerminatorFadeStart` | Fade Start (m) | `Range(0,200)` | `20` | 帯が消え始める距離（メートル） |
 | `_TerminatorFadeEnd` | Fade End (m) | `Range(0,200)` | `40` | — |
@@ -240,11 +240,18 @@ python gen_properties.py --write
 | プロパティ | 表示名 | 型 | 既定 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
 | `_Smoothness` | Smoothness Scale | `Range(0,1)` | `0.25` | **ツヤのダイヤル。**鏡面ローブの幅で、低いと広くうっすら・高いと締まった光沢になります。Base タブ > Mask Map > Smoothness Scale と同一プロパティです（A チャンネルの倍率） |
-| `_SpecularIntensity` | Specular Intensity | `Range(0,4)` | `0.2` | 強さだけを変えます ── ハイライトの締まり（ツヤ）は上の Smoothness 側です。髪と布はここを通りません（それぞれ自前の強度を持っています） |
+| `_SpecularIntensity` | Specular Intensity | `Range(0,4)` | `0` | 強さだけを変えます ── ハイライトの締まり（ツヤ）は上の Smoothness 側です。髪と布はここを通りません（それぞれ自前の強度を持っています） |
 | `_SpecEnergyConservation` | Energy Conservation | `Range(0,1)` | `0` | 鏡面が反射した割合（Fresnel × Specular Intensity、光の当たる面だけ）だけ拡散を縮めます。縁で拡散＋鏡面が入射光を超えないようにする保存則。0 で従来どおり鏡面を上乗せするだけ |
 | `_SpecularTint` | Specular Tint | `Color` | `(1,1,1,1)` | — |
 | `_SpecularTintStrength` | Tint Strength | `Range(0,1)` | `0` | — |
 | `_EnergyCompensation` | Energy Compensation | `Range(0,1)` | `1` | 粗い金属で単散乱 GGX が失うエネルギーを戻します。1 のとき完全反射体は入射をちょうど全部返します（白炉試験） |
+
+### Metal Override（金属部の上書き）
+
+| プロパティ | 表示名 | 型 | 既定 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `_MetalSpecularBoost` | Metal Specular Boost | `Range(0,4)` | `1` | 金属部（Mask Map R × Metallic）だけ Specular Intensity に掛かる倍率。1 で従来どおり。肌のハイライトを絞っても金具を殺さない（逆も）ための分離です |
+| `_MetalEnvBoost` | Metal Env Boost | `Range(0,4)` | `1` | 金属部だけ Env Specular Intensity に掛かる倍率。金属の見た目はほぼ映り込みで決まるので、暗いステージで金具が死ぬときに上げます。クリアコート層には掛かりません |
 
 ### スペキュラ（Specular） ／ Secondary Lobe（マット）
 
@@ -499,4 +506,4 @@ python gen_properties.py --write
 
 ---
 
-説明のあるもの 154 / 209。**残り 55 個は tooltip が書かれていない** ── `ToonPBRShaderGUI.cs` に足すとここにも出ます。
+説明のあるもの 156 / 211。**残り 55 個は tooltip が書かれていない** ── `ToonPBRShaderGUI.cs` に足すとここにも出ます。
