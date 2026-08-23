@@ -1,103 +1,129 @@
-// =============================================================================
-//  OutlinePass.hlsl
-//  背面法線拡張アウトライン（Cull Front）。LightMode = "IdolOutline"。
-//  頂点カラー R=太さ倍率 / G=Zオフセット。カメラ距離正規化 + FOV 補正 +
-//  スクリーン幅上限クランプで、近接で太らず遠方で消えない一定幅の線にする。
-// =============================================================================
-#ifndef IDOL_OUTLINE_PASS_INCLUDED
-#define IDOL_OUTLINE_PASS_INCLUDED
+// 輪郭（背面法線の押し出し）。
+// LightMode は独自タグ `ToonOutline`。`ToonOutlineFeature` が後段で一括描画する。
+//
+// **`#pragma` はここに置かないこと。** 素の `#include` の中の pragma は
+// Unity が読まず、**キーワードが黙って立たなくなる。**
+// pragma は `.shader` 側に残してある。
+//
+// 切り出しは 1 行も変えていない（include を展開し直してバイト一致を確認・T-211）。
 
-#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
-#include "../IdolInput.hlsl"
-#include "../IdolDissolve.hlsl"
+            struct Attributes
+            {
+                float4 positionOS : POSITION;
+                float3 normalOS   : NORMAL;
+                float4 tangentOS  : TANGENT;
+                float4 color      : COLOR;
+                float2 uv         : TEXCOORD0;
+                UNITY_VERTEX_INPUT_INSTANCE_ID
+            };
 
-struct Attributes
-{
-    float4 positionOS   : POSITION;
-    float3 normalOS     : NORMAL;
-    float4 color        : COLOR;   // R=太さ倍率, G=Zオフセット
-    float2 uv           : TEXCOORD0;
-};
+            struct Varyings
+            {
+                float4 positionCS   : SV_POSITION;
+                float2 uv           : TEXCOORD0;
+                float  fogFactor    : TEXCOORD1;
+                float  dissolveGrad : TEXCOORD2;
+                UNITY_VERTEX_OUTPUT_STEREO
+            };
 
-struct Varyings
-{
-    float4 positionCS   : SV_POSITION;
-    float2 uv           : TEXCOORD0;
-    half   fogFactor    : TEXCOORD1;
-    float3 positionWS   : TEXCOORD2;
-    float3 positionOS   : TEXCOORD3;
-    float3 normalWS     : TEXCOORD4;
-};
+            Varyings OutlineVert(Attributes input)
+            {
+                Varyings output = (Varyings)0;
+                UNITY_SETUP_INSTANCE_ID(input);
+                UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(output);
 
-Varyings vert_outline(Attributes input)
-{
-    Varyings output = (Varyings)0;
+                #if !defined(_OUTLINE_ON)
+                    output.positionCS = float4(0, 0, -1e10, 1);
+                    return output;
+                #endif
 
-    float3 positionWS = TransformObjectToWorld(input.positionOS.xyz);
-    float3 normalWS   = TransformObjectToWorldNormal(input.normalOS);
+                float3 normalOS = input.normalOS;
+                UNITY_BRANCH
+                if (_UseSmoothNormal > 0.5)
+                {
+                    float3 bitangentOS = cross(input.normalOS, input.tangentOS.xyz) * input.tangentOS.w;
+                    float3x3 tbn = float3x3(normalize(input.tangentOS.xyz),
+                                            normalize(bitangentOS),
+                                            normalize(input.normalOS));
+                    // **頂点カラー由来なので SafeNormalize。** 平滑法線を焼いていないメッシュの
+                    // 頂点カラーが中間色だとゼロベクトルになる。
+                    normalOS = SafeNormalize(mul(input.color.rgb * 2.0 - 1.0, tbn));
+                }
 
-    // カメラからの距離（ビュー空間 -Z）。
-    float viewDepth = abs(TransformWorldToView(positionWS).z);
+                float widthMask = (_UseVertexWidth > 0.5) ? input.color.a : 1.0;
 
-    // mm 単位の実太さ。頂点カラー R で部位ごとに倍率調整。
-    float widthMul = input.color.r;
-    float worldWidth = _OutlineWidth * 0.001 * max(widthMul, 0.0);
+                float3 positionWS = TransformObjectToWorld(input.positionOS.xyz);
+                float3 normalWS   = TransformObjectToWorldNormal(normalOS);
 
-    // FOV 補正 + 距離正規化: 距離に比例して押し出しつつ FOV を打ち消すことで、
-    //   ズーム（狭 FOV）でも画面上の幅がほぼ一定になる。
-    //   unity_CameraProjection._m11 = cot(fovY/2)。距離 / projScaleY で
-    //   「画面高さに対する縦方向のワールド長」に換算した基準太さを得る。
-    float projScaleY = max(unity_CameraProjection._m11, 1e-4); // = cot(fovY/2)
-    float worldPerScreenHeight = viewDepth / projScaleY;       // 深度での画面高さ相当ワールド長
-    float expand = worldWidth * worldPerScreenHeight;
+                float4 positionCS = TransformWorldToHClip(positionWS);
+                float3 normalCS   = TransformWorldToHClipDir(normalWS);
 
-    // スクリーン幅上限クランプ: 近接で太りすぎないよう、画面ピクセル換算した
-    //   太さの上限 _OutlineMaxScreenPx に収める。
-    //   画面高さ = _ScreenParams.y px ⇔ worldPerScreenHeight ワールド長。
-    float maxWorld = (_OutlineMaxScreenPx / max(_ScreenParams.y, 1.0)) * worldPerScreenHeight;
-    expand = min(expand, maxWorld);
+                float dist = distance(GetCameraPositionWS(), positionWS);
+                float fade = 1.0 - saturate(dist / max(_OutlineMaxDistance, 0.001));
 
-    float3 expandedPositionWS = positionWS + normalWS * expand;
-    output.positionCS = TransformWorldToHClip(expandedPositionWS);
+                float2 aspect = float2(_ScaledScreenParams.y / max(_ScaledScreenParams.x, 1.0), 1.0);
+                // **ゼロ除けはスカラー加算ではなく長さで判定する。**
+                // 素で `normalize(normalCS.xy + 1e-5)` としていたが、
+                // これは両成分に同じ値を足すので**常に 45 度方向へ寄る**。
+                // 寄り幅は xy が短いほど大きく、実測で:
+                //   |xy| = 1e-4 → 5.2 度 / 3e-5 → 14 度 / 1e-5 → 26.6 度
+                // **xy が 0 に近づく場所とはシルエットそのもの**で、
+                // 輪郭が一番要る所で押し出し方向が崩れていた。
+                // 長さで判定すれば、潰れた点だけを既定方向に倒せる。
+                float2 nxy = normalCS.xy;
+                float  nlen = length(nxy);
+                float2 ndir = (nlen > 1e-5) ? (nxy / nlen) : float2(0.0, 1.0);
 
-    // Z オフセット（頂点カラー G）: 線を奥に押して重なりを整える。
-    float zOffset = _OutlineZOffset * input.color.g;
-    #if UNITY_REVERSED_Z
-        output.positionCS.z -= zOffset * output.positionCS.w;
-    #else
-        output.positionCS.z += zOffset * output.positionCS.w;
-    #endif
+                float2 extend = ndir
+                              * _OutlineWidth * 0.002 * widthMask * fade * aspect;
 
-    output.uv = input.uv;
-    output.fogFactor = ComputeFogFactor(output.positionCS.z);
-    output.positionWS = positionWS;    // 押し出し前の元位置（Dissolve 判定用）
-    output.positionOS = input.positionOS.xyz;
-    output.normalWS   = normalWS;
-    return output;
-}
+                positionCS.xy += extend * positionCS.w;
+                // **Z の向きはプラットフォームで逆になる。**
+                // Reversed-Z（D3D / Vulkan / Metal）は近 = 1 / 遠 = 0 なので、
+                // 奥へ逃がすには **引く**。素で足していたので D3D では逆に手前へ出て、
+                // Z Offset を上げるほど輪郭が本体を突き抜けるようになっていた
+                // （既定 0 なので誰も踏んでいないが、上げた瞬間に壊れる）。
+                // Cull Front で背面を描くパスなので、奥へ逃がすのが本来の意図。
+                float zPush = _OutlineZOffset * 0.001 * positionCS.w;
+                #if UNITY_REVERSED_Z
+                    positionCS.z -= zPush;
+                #else
+                    positionCS.z += zPush;
+                #endif
 
-half4 frag_outline(Varyings input) : SV_Target
-{
-    float2 uv = input.uv * _MainTex_ST.xy + _MainTex_ST.zw;
-    half4 albedo = SAMPLE_TEXTURE2D(_MainTex, sampler_MainTex, uv) * _BaseColor;
+                output.positionCS = positionCS;
+                output.uv         = TRANSFORM_TEX(input.uv, _BaseMap);
+                output.fogFactor  = ComputeFogFactor(positionCS.z);
+                // **押し出す前の位置で取ること。** 輪郭は法線方向へずらして描くので、
+                // ずらした後の座標で切ると本体と縁がわずかに違う場所で消える。
+                output.dissolveGrad = ToonDissolveGradient(
+                    input.positionOS.xyz, TransformObjectToWorld(input.positionOS.xyz));
+                return output;
+            }
 
-    #if defined(_ALPHATEST_ON)
-        clip(albedo.a - _Cutoff);
-    #endif
+            half4 OutlineFrag(Varyings input) : SV_Target
+            {
+                float4 baseTex = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, input.uv);
 
-    #if defined(_DISSOLVE_ON)
-        ApplyIdolDissolveClip(uv, input.positionWS, input.positionOS,
-                               normalize(input.normalWS));
-    #endif
+                #if defined(_ALPHATEST_ON)
+                    clip(baseTex.a * _BaseColor.a - _Cutoff);
+                #endif
 
-    // アルベド連動: その場のアルベド × Outline Color を線色にブレンド。
-    //   髪には髪の、肌には肌の系統色の線が付き、固定単色より馴染む。
-    half3 lineColor = lerp(_OutlineColor.rgb, albedo.rgb * _OutlineColor.rgb, _OutlineAlbedoBlend);
+                // ディゾルブ。ForwardLit と**同じ式で同じ場所を切る**。
+                // 切らないと、**消えた本体の輪郭だけが宙に残る。**
+                UNITY_BRANCH
+                if (_DissolveAmount > 0.0)
+                {
+                    ToonDissolveClip(input.uv, input.dissolveGrad);
+                }
 
-    // フォグ（本体と同条件で沈め、線だけ浮かないようにする）。
-    lineColor = MixFog(lineColor, input.fogFactor);
+                float3 tinted = baseTex.rgb * _BaseColor.rgb * (1.0 - _OutlineAlbedoDarken);
+                float3 col    = lerp(_OutlineColor.rgb, tinted, _OutlineAlbedoBlend);
 
-    return half4(lineColor, _OutlineColor.a);
-}
+                // 暗転は輪郭にも掛ける（T-361）。掛けないと**暗転しきったキャラの
+                // 輪郭線だけが明るく残って宙に浮く**（ディゾルブで輪郭も切るのと同じ理屈）。
+                col = lerp(col, float3(0.0, 0.0, 0.0), _BlackOut);
 
-#endif // IDOL_OUTLINE_PASS_INCLUDED
+                col = MixFog(col, input.fogFactor);
+                return half4(col, 1);
+            }

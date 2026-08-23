@@ -1,8 +1,8 @@
 {
   "name": "com.origuma.easytoon-urp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "displayName": "EasyToon for URP",
-  "description": "High-quality Toon character shader for URP. BaseMap-first workflow with baked map enhancement (AO / Shade Normal / Hair Flow / Face SDF). Features double shadow with hue control, cel specular, angel-ring hair highlight, screen-space depth rim light, hair see-through (stencil), character-dedicated self shadow, and live-stage operation support.",
+  "description": "Toon character shader for URP built for 3D live stages. The Idol shader keeps the BRDF physical (GGX, Charlie sheen, Kajiya-Kay / anisotropic GGX hair, clearcoat, iridescence, glitter) and stylizes only the diffuse transfer, so the character sits inside PBR lighting: baked 16-bit face SDF shadows, curvature-driven soft terminator, HQ self shadow (PCSS), hair see-through, rim / Peach Fuzz, fill light, light conditioning against stage lighting, black-out, dissolve, outline, and motion vectors for TAA. Maps are baked in-editor (no DCC needed) via EasyShaderCore.",
   "unity": "6000.3",
   "documentationUrl": "https://github.com/orig-uma/EasyToon-URP",
   "changelogUrl": "https://github.com/orig-uma/EasyToon-URP/blob/main/CHANGELOG.md",
@@ -12,12 +12,15 @@
     "urp",
     "toon",
     "npr",
-    "cel",
     "character",
     "anime",
     "outline",
     "rimlight",
-    "vrm"
+    "vrm",
+    "pbr",
+    "ggx",
+    "stage",
+    "live"
   ],
   "author": {
     "name": "Origuma",

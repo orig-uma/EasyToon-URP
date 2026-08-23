@@ -1,25 +1,111 @@
-# EasyPBR(Doll) → EasyToon(Idol) 移行ガイド
+# ToonPBR for URP — 移行ガイド
 
-## 命名規約
+EasyToon (Idol) / EasyPBR (Doll) のマテリアルを ToonPBR へ移す。
 
-**意味・単位・レンジが一致するプロパティは Doll と同名にする**(後発の Idol が Doll に寄せる)。
-Unity はシェーダー差し替え時にプロパティ値を「名前」で保持するため、同名なら Doll → Idol の
-シェーダー差し替えだけで色・テクスチャ・数値が引き継がれる。Timeline / Animation の
-バインディングも維持される。**意味が異なるものは意図的に別名にする**(黙って間違った値が
-入るのを防ぐ。例: Doll `_ShadingStyle`=Toon/Smooth と Idol `_ShadingMode`=2Band/Ramp)。
+`Tools > Idol > EasyToon・EasyPBR から移行`
 
-## 意図的に別名のプロパティ(意味が異なる)
+---
 
-| Doll | Idol | 理由 |
-| :--- | :--- | :--- |
-| `_ShadingStyle`(Toon/Smooth) | `_ShadingMode`(2Band/Ramp) | 選択肢の意味が違う |
-| `_SurfaceTransparent` + Alpha Clip | `_RenderMode`(Opaque/Cutout) | サーフェス制御の構造が違う |
-| `_DiffuseLightLimit` 等 | `_AdditionalBlowoutLimit` | Doll は全ライト輝度上限、Idol は追加ライト限定 |
-| (なし) | 深度リム / Angel Ring / BackRim / CharaPart / キャラ影 / `_OcclusionToShadow` / `_ShadeRampMap` | Idol 固有機能 |
+## なぜ道具が要るか
 
-## マテリアル移行手順
+Unity はシェーダーを差し替えたとき、**名前と型が一致するプロパティだけ**を引き継ぐ。
+実測した重なりはこれだけしかない:
 
-1. **同名プロパティ**: Doll マテリアルのシェーダーを `Origuma/EasyToon_URP/Idol` に差し替えるだけで値が引き継がれる
-2. **変換ツール**(`Window > Origuma > Doll to Idol Converter`): シェーダー差し替えに加え、
-   マテリアル名から Chara Part を推定してプリセット(Stencil/Queue/HairSeeThrough)を適用し、
-   Doll の Alpha Clip / キーワード状態を Idol の Render Mode へ変換する
+| 移行元 | プロパティ数 | 同名で自動的に残る |
+| :--- | ---: | ---: |
+| Idol | 133 | **29** |
+| Doll | 175 | **38** |
+
+残りは「名前が違うだけで同じもの」と「ToonPBR に無い機能」が混ざっている。
+手で差し替えると前者が**黙って既定値に戻る。** 絵は出るので気付きにくい。
+
+---
+
+## 手順
+
+1. **数個を選んで「下見」を押す。** 何も変更しない
+2. 報告を読む（`%TEMP%/ToonPBRMigration/migration_dryrun.txt` にも出る）
+3. AO を持つマテリアルは「**AO を _MaskMap に流用する**」を ON にする
+4. 「移行を実行」
+5. **Surface Type が Default に落ちた分を手で直す**
+6. `python check.py` を回す
+
+取り消しは **Ctrl+Z 一回**で全件戻る。
+
+---
+
+## 報告の読み方
+
+### 落ちる（実際に設定されていた）
+
+**既定のまま落ちるものとは分けてある。** Doll では 103 → **27**。
+アーティストが触っていない値まで並べると読めなくなるため。
+
+移行元 184 マテリアルで、実際に失われるものの上位:
+
+| | 使用率 |
+| :--- | ---: |
+| Grain（法線を揺らすノイズ） | 55% |
+| Front / Up ブライトネス | 54% |
+| 鏡面の影ぶん減光 | 50%（**ToonPBR に相当品あり**・強度が固定なだけ）|
+| 副次鏡面ローブ | 46%（**設計思想により入れない**）|
+
+### サーフェスタイプの判定
+
+**Face と Hair しか判定できない。**
+
+| | 手がかり |
+| :--- | :--- |
+| Face | `_FaceSDFMap` が割当済み（正解データで 46 個中 1 個・完全一致）|
+| Hair | `_AnisoColor` が黒でない、または `_HairFlowMap` が割当済み（7 個中 5 個）|
+| **Skin** | **判定できない。** 移行元の値が Default と完全に同じ |
+| **Cloth** | **判定できない。** 同上 |
+
+**外れるときは必ず Default 側へ落ちる**（誤った型に化けたものは 0 件）。
+移行後に手で直せばよく、間違った型で描かれるよりずっとよい。
+
+### 変換係数の裏が取れていないもの
+
+尺度・逆数・補数を手で決めている。**正解データで裏が取れたのは 4 つだけ**
+（`_ReceiveShadowStrength` / `_ShadowHueShift` / `_ReceiverNormalBias` / `_OutlineWidth`）。
+残りは報告に名指しで並ぶので、絵を見て詰めること。
+
+---
+
+## AO の流用（既定 OFF）
+
+Doll / Idol は AO を単体テクスチャで持ち、ToonPBR は `_MaskMap` にパックして読む
+（**R=Metallic / G=Occlusion / B=Thickness / A=Smoothness**）。
+
+ON にすると生の AO を `_MaskMap` へ入れる。グレースケールなので G にも同じ値が入り、
+**遮蔽だけは正しく効く。** ただし R も B も AO になるので:
+
+- `_Metallic` を **0 に落とす**（移行時に自動でやる）── AO が金属度になるのを防ぐ
+- 透過を使うなら厚み（B）も AO になる。`param_check` が撃つ
+
+金属度を使う予定があるなら、**AO を G に詰めたマップを焼き直すこと。**
+
+---
+
+## 落とし穴（移行元の文書から写した・実証済み）
+
+- **Render Mode で Render Queue を動かさないこと。**
+  Cutout を AlphaTest 帯（2450+）へ動かすと部位の描画順が壊れる
+- **「斜めからまつ毛が濃く見える」を ZTest / ZWrite で直さないこと。**
+  原因は透過ではなく **Brow のアウトライン**が髪を突き抜けて手前に出ること。
+  Outline Width を 0 にするか Z Offset を上げる
+
+---
+
+## 機械で守っていること
+
+| | |
+| :--- | :--- |
+| 移行先の名前 | `shader_lint` W107 |
+| 移行元の名前 | `param_check`（対応表を移行元シェーダーと突き合わせ）|
+| 値域（変換なし） | `param_check`（**移行元ごとに別々に見る**）|
+| 値域（変換あり） | 下見のたびに Unity 側で 11 点サンプル |
+| 既定 → 既定 | 宣言したルールだけ、下見のたびに検算 |
+
+**式の形の違いだけは機械にできない。** 両方のシェーダーを並べて読むしかなく、
+それで 3 つ見つかっている（リムの当て先 / リムのぼかし方 / ラップの正規化）。

@@ -1,224 +1,211 @@
-# EasyToon for URP — アーキテクチャ設計
+# ToonPBR for URP — アーキテクチャ設計
 
-要件は [REQUIREMENTS.md](REQUIREMENTS.md) を参照。本書は実装のための設計を定める。
+EasyToon パッケージ内 Idol シェーダー（実装接頭辞 ToonPBR）の設計文書。
+姉妹シェーダー **Doll（EasyPBR）と違う所を明示する**のがこの文書の役目。
 
-## 命名
+> 呼称の経緯: 旧 Idol シェーダーは Cel へ改名し、この新シェーダーが
+> Idol の名を引き継いだ（T-249）。その Cel は **T-356 で廃止**した
+>（用途が Idol で満たされたため一本化。セル鏡面・2影などの様式化機能は
+> 「BRDF は物理ベースのまま」の方針に合わず引き継がない）。
 
-- パッケージ: `com.origuma.easytoon-urp`
-- シェーダー: `Origuma/EasyToon_URP/Idol`（3D ライブの主役＝アイドルを想定したキャラクター本命シェーダー。Doll の Toon 版対抗）
-- asmdef: `Origuma.EasyToon.URP.Runtime` / `Origuma.EasyToon.URP.Editor`
-- LightMode: アウトライン `IdolOutline` / キャラシャドウキャスター `IdolCharShadow`
-- プロパティ接頭辞なし（EasyPBR と同じ命名慣習）。**ベイクマップのプロパティ名は EasyPBR と同名**（Baker 再利用のため必須）:
-  `_OcclusionMap` `_OcclusionStrength` `_CavityMap` `_CurvatureMap` `_ShadeNormalMap` `_SSSMap` `_HairFlowMap` `_FaceSDFMap`
-- **Doll と意味・単位・レンジが一致するプロパティは同名にする**（シェーダー差し替えで値が引き継がれる）。対応表は [MIGRATION.md](MIGRATION.md)。意味が異なるものは意図的に別名（例: `_ShadingStyle` ≠ `_ShadingMode`）
+## 命名（確定）
+
+| | 値 |
+| :--- | :--- |
+| シェーダー名 | `Origuma/EasyToon_URP/Idol` |
+| 輪郭の LightMode | `IdolOutline` |
+| 前髪透過の LightMode | `IdolHairSeeThrough`（T-341。旧 `SRPDefaultUnlit`） |
+| コードの接頭辞 | `Toon*` / `_Toon*`（HLSL・C# とも。LightMode だけ `Idol*`） |
+| Renderer Feature | `ToonOutlineFeature` / `HairSeeThroughFeature` |
 
 ## パッケージ間依存
 
-```
-com.origuma.easyshader-core (共通基盤)
-    ↑                      ↑
-com.origuma.easypbr-urp   com.origuma.easytoon-urp（本パッケージ）
-(>= 0.6.0)                 ・HLSL: Packages/com.origuma.easyshader-core/Runtime/Shaders/Common/** を絶対パス include
-                           ・依存宣言は package.json に置かず、PM 追加直後（および起動時）に
-                             Installer が自動導入（UPM は git 依存を解決できないため。→ Editor/Installer/）
-                           ・本体 Editor asmdef は versionDefines + defineConstraints（EASYSHADERCORE_PRESENT）で
-                             Core 不在時にコンパイル対象から除外。コンパイルエラーでドメインリロードが
-                             止まらず、PM 追加直後に Installer が走れる（＝再起動不要でゼロクリック導入）
-                           ・C# Editor: asmdef 参照 Origuma.EasyShaderCore.Editor で
-                             Baker 群 (EasyPbr*Baker, public) / ShaderGuiKit を再利用
-```
+**EasyShaderCore とは純粋関数だけを共有する**（設計ルール 3。T-340 で実施）。
+`ToonPBRCommon.hlsl` が Core の `Common_Math` / `Common_Color` / `Common_Sampling` /
+`BRDF/BRDF_GGX` を include し、実装が同値の 7 関数（`ToonIGN` / GGX の D・V・F /
+`ToonVogelDisk` / `ToonRgbToHsv` / `ToonHsvToRgb`）は本体を Core に置き、Toon\* 側は
+1 行の前方転送で残す（静的検査が Toon 接頭辞だけを見るため・呼び出し側を触らないため）。
+VogelDisk（位相回転版）と HSV（max 下限形・float）は当初 Core 版が旧式で寄せられず、
+**Idol の実装を Core へ逆輸入**して同値化した ── Doll の影も
+同じ sincos 削減を得ている。
 
-- **EasyToon は EasyPBR に依存しない**（依存は `com.origuma.easyshader-core` のみ）。
-  EasyPBR は Doll→Idol 変換（DollToIdolConverterWindow）の変換**対象**としてのみ関係し、
-  コード依存はない（シェーダー名文字列で参照。EasyPBR 不在でも動作する）
-- **EasyShaderCore への変更ルール**: Common HLSL は「純粋関数のみ・特定シェーダー非依存」を維持する。
-  Idol 固有ポリシー（陰ランプ・ステンシル運用等）を core に入れるのは禁止。
-  Baker の呼び出し面（`Bake(root, material, Settings)`）は互換維持
-- EasyPBR の `Doll/` 配下（ポリシー層）の include は引き続き禁止 — Toon 固有ポリシーは Idol 側に書く
+**寄せないもの**（判断は各関数のコメントに明記）: 影 HQ / 環境反射 / Dissolve
+（Idol の方が高機能）。`ToonD_Charlie` / `ToonV_Ashikhmin` / `ToonSheenAlbedo` /
+`ToonAOMultiBounce` / `ToonEnvBRDF_AB` は Core に受け皿が無いため自前のまま
+（将来 Core 側へ足すなら候補）。
+
+**EasyPBR の `Doll/` は include しない**（設計ルール 4）。現状 0 件。
 
 ## ディレクトリ構成
 
-```text
-com.origuma.easytoon-urp/
-  package.json
-  README.md / CHANGELOG.md / LICENSE.md
-  Documentation~/
-    REQUIREMENTS.md  ARCHITECTURE.md  MIGRATION.md  VERIFICATION.md
-  Runtime/
-    Scripts/
-      Origuma.EasyToon.URP.Runtime.asmdef
-      IdolOutlineFeature.cs        LightMode "IdolOutline" を後段一括描画 (Render Graph)
-      IdolCharShadowFeature.cs     キャラ専用シャドウマップ (Render Graph)
-      IdolCharacter.cs             キャラ登録・仮想ライト方向・演出一括制御
-    Shaders/
-      Idol/
-        Idol.shader                Properties / Pass 定義 / Stencil
-        IdolInput.hlsl             CBUFFER・テクスチャ宣言（単一 CBUFFER 厳守）
-        IdolSurfaceTypes.hlsl      IdolSurfaceData 型定義のみ
-        IdolSurface.hlsl           サーフェス収集（GatherSurface / Varyings 定義後 include）
-        IdolLighting.hlsl          Toon ライティング統合（陰ランプ・セルスペキュラ・SDF 合成）
-        IdolRim.hlsl               深度リム / フレネルリム / バックライトリム / 髪スクリーン影
-        IdolHair.hlsl              天使の輪 / ヘアフロー
-        IdolShadows.hlsl           キャラシャドウ + URP 影フォールバックのラッパー
-        IdolDissolve.hlsl          Dissolve のサンプリング/プロパティ解決（Fx_Dissolve 委譲）
-        IdolFabric.hlsl            ストッキング/シアー生地
-        Passes/
-          ForwardPass.hlsl / ShadowPass.hlsl / DepthOnlyPass.hlsl /
-          DepthNormalsPass.hlsl / OutlinePass.hlsl / CharShadowPass.hlsl
-  Editor/
-    Origuma.EasyToon.URP.Editor.asmdef   (references: EasyToon.Runtime, EasyShaderCore.Editor, URP /
-                                          defineConstraints: EASYSHADERCORE_PRESENT — Core 不在時は除外)
-    IdolShaderGUI.cs               カスタムインスペクター。ShaderGuiKit(EasyShaderCore) を再利用し、
-                                    Render Mode / Chara Part プリセット / キーワード同期を担う
-                                    （状態変更ロジックは同ファイル内 IdolMaterialSetup に分離）
-    IdolBakingPanel.cs             Baker 呼び出し UI（EasyShaderCore の public Baker へ委譲。
-                                    AO / Shade Normal / Hair Flow / Face SDF の 4 種）
-    Installer/
-      Origuma.EasyToon.URP.Installer.asmdef   参照ゼロの独立 asmdef（Core 不在でも必ずコンパイル）
-      EasyShaderCoreInstaller.cs    Core 不在を検知し Client.Add で自動インストール（ゼロクリック）。
-                                    失敗時のみ手動手順つきの案内ウィンドウを表示（参照ゼロの独立 asmdef）
-    IdolSetupWindow.cs             RendererFeature 2 種のセットアップ Window
-                                    （EasyShaderCore の FeatureSetupWindowBase ベース。
-                                    エントリ宣言のみで描画/ロジックは Core 委譲）
-                                    （Window > Origuma > Idol Setup。アクティブ URP Asset の
-                                    Renderer Data を自動収集し追加/削除・Compat Mode 警告）
+```
+Idol.shader                 プロパティ・パス宣言・pragma のみ
+ToonPBRCommon.hlsl          include・CBUFFER・テクスチャ宣言
+Shading/                    シェーディング本体。**include の順序がそのまま依存関係**
+  ToonPBRTypes.hlsl         構造体
+  ToonPBRColor.hlsl         色ユーティリティ・曲率推定
+  ToonPBRDiffuse.hlsl       拡散の伝達関数・スペキュラ AA のカーネル
+  ToonPBRSpecular.hlsl      GGX / Charlie / Kajiya-Kay・クリアコート
+  ToonPBREnv.hlsl           プローブのブレンド・多重散乱・AO・鏡面遮蔽
+  ToonPBRShadows.hlsl       影 2 種（HQ / マイクロ。コンタクト・前髪は T-344 で廃止）
+  ToonPBRLighting.hlsl      1 灯分のシェーディング・間接光
+  ToonPBRRim.hlsl           リムライト
+Passes/                     各パスの本体
+  ForwardPass.hlsl / OutlinePass.hlsl / ShadowPass.hlsl /
+  DepthOnlyPass.hlsl / DepthNormalsPass.hlsl /
+  MotionVectorsPass.hlsl
 ```
 
+**`#pragma` を `Passes/` や `Shading/` へ置かないこと。**
+Unity は素の `#include` の中の pragma を読まず、**キーワードが永久に立たない。**
+コンパイルは通り絵も出るので実機で気付けない。`param_check` が見ている。
+
 ## シェーディングモデル設計
+
+> **BRDF は物理ベースのまま維持し、拡散光の伝達関数だけを様式化する。**
+
+旧 Cel（T-356 で廃止）との最大の違い。Cel は鏡面もセル化できたが、
+**ToonPBR はしない。** 鏡面は GGX / Charlie / Kajiya-Kay をそのまま使う。
 
 ### 陰の決定パイプライン
 
 ```
-NdotL(ShadeNormal 優先) ── HalfLambert ─┐
-_OcclusionMap → しきい値オフセット ──────┤
-                                        ├─ ramp = ToonRamp2Band or RampTexture
-CastShadow(キャラシャドウ or URP 影) ────┤     (uniform 分岐 _ShadingMode)
-Face SDF(顔マテリアルのみ) ─────────────┘
-albedo / shadow1Albedo / shadow2Albedo (色相シフト・彩度適用済み, ライト非依存に 1 回算出)
-→ 最終色 = lerp 3 段。落ち影は専用色 _CastShadowColor で別塗り分け
+NdotL
+  → ToonWrapDiffuse((N·L + w) / (1 + w)²)      **厳密にエネルギー保存**（検算済み）
+  → + NPRMap の G（影のオフセット）
+  → × リアルタイム影（同じ伝達関数を通す。別々に掛けると境界だけ硬くなる）
+  → smoothstep(閾値 − s, 閾値 + s)             s = _ShadowSoftness × (1 + 曲率 × 係数)
 ```
 
-- EasyPBR `BRDF_Diffuse.hlsl` の `ToonRamp` / `ShadeRamp` / `ShadedAlbedo` / `ResolveCastShadow` を再利用し、しきい値オフセットと Ramp テクスチャ対応は Idol 側ポリシー層で実装
-- 追加ライト: Forward+ ループ。トゥーン化（同ランプ適用）と Anti-Blowout(Max/Add) を通す
-- スペキュラ: `BlinnPhongLobe` → `smoothstep(threshold±softness)` でセル化。`ApplySpecularAA` 適用
+**曲率で柔らかさが変わるのが中核。** 曲率の高い面ほど境界が広い。
 
-### キーワード方針（EasyPBR 哲学の踏襲）
+### 鏡面
 
-| 静的 keyword（⚡バリアント） | 種別 | 理由 |
-| :--- | :--- | :--- |
-| `_ALPHATEST_ON` | shader_feature | 早期 Z 喪失防止 |
-| `_IDOL_CHARSHADOW` | multi_compile_fragment（グローバル） | キャラ専用影サンプルの全経路コンパイルによる occupancy 低下防止。IdolCharShadowFeature が有効/無効を切替 |
-| `_DISSOLVE_ON` | shader_feature | 常時ノイズサンプル化防止 |
+セル化しない。代わりに:
 
-静的キーワードは上表の 3 つのみ。Dissolve の軸（None/WorldY/LocalY）はキーワードにせず uniform `_DissolveType` の動的分岐にしてバリアント数を抑える。
+| | |
+| :--- | :--- |
+| 主ローブ | GGX（多重散乱の補償つき） |
+| 布 | Charlie sheen + Ashikhmin。**エネルギー保存**（下地を `1 − sheen×E` で縮める） |
+| 髪 | 異方性 GGX（2 ローブ）または Kajiya-Kay |
+| クリアコート | 二層目。拡散・鏡面の両方を減衰させる |
 
-それ以外（Shading Mode / Ramp / MatCap / Emission / 深度リム / SDF / 各ベイクマップ有無 / 仮想ライト方向）はすべて uniform 動的分岐。未ベイク時は Intensity 0 でサンプルスキップ。
+### キーワード方針
+
+**8 個のみ。** 追加は `param_check` の `ALLOWED_KEYWORDS` へ書くのが手続き。
+
+```
+_ALPHATEST_ON  _HQ_SHADOW_ON  _OUTLINE_ON
+_SURFACETYPE_{DEFAULT,SKIN,FACE,HAIR,CLOTH}
+```
 
 ### ステンシルレイアウト（前髪透過）
 
-Material Type（enum プロパティ `_CharaPart`: Body / Face / Brow(眉・まつ毛) / Hair / Eye）で Pass の Stencil ブロックを切り替える:
+**実装済み**（T-223）。ビットの割り当てはこう:
 
-| 部位 | Stencil 動作 |
-| :--- | :--- |
-| Brow / Eye | 描画時に Ref=2 (Brow) / 4 (Eye) を書き込み |
-| Hair | Ref & ReadMask で Brow/Eye 済みピクセルを検出し、`_HairSeeThroughAlpha` でブレンド描画（2nd pass or 同 pass 内 Comp）|
-| Face / Body | 影響なし（Ref=1 書き込みのみ・将来の picking 用）|
+| ビット | 使う部位 | 書く / 読む |
+| :--- | :--- | :--- |
+| 1 | 髪 | 従来方式（FR-22・瞳を ZTest Always で手前に出す）で髪が書く |
+| 2 | 眉 | 前髪透過で眉が書く |
+| 4 | 目 | 前髪透過で目が書く |
 
-描画順は Render Queue 微調整（Face < Brow/Eye < Hair）で保証。実装は
-「Hair を 2 パス（不透明 Comp Equal ＋ 透過の重ね描き）」方式とする。
+**2 つの方式は併用しない。** ビット 1 は「瞳が不透明で手前に出る」方式、
+ビット 2/4 は「髪が半透明に透ける」方式。使うビットを分けてあるので、
+片方を設定したマテリアルにもう片方が誤爆することはない。
 
-### スクリーンスペース深度リム
-
-1. `_CameraDepthTexture` を自ピクセルとライト方向（スクリーン空間投影）へ `_RimWidthPx / 画面解像度` オフセットした位置でサンプル
-2. 線形深度差 > `_RimDepthThreshold`（キャラ厚を考慮）でリム判定
-3. `rimColor(HDR) × ライト色 × 受光マスク` を加算。フレネルリムと個別強度で併用可
-
-### キャラ専用シャドウ
-
-- `IdolCharShadowFeature`（Render Graph）: `IdolCharacter.ActiveCharacters` の合成 Bounds を、メインライト方向から包む正射影 VP で専用深度テクスチャ（Shadowmap フォーマット・D16/D32 選択・解像度 1024/2048/4096 選択）へ `IdolCharShadow` パスで描画。v1 は全キャラで 1 枚（アトラスなし）
-- グローバル供給（per-material CBUFFER には入れない＝SRP Batcher 維持）:
-  - `_IdolCharShadowMap`（`SetGlobalTextureAfterPass`）
-  - `_IdolCharShadowMatrix`（ライト VP。受影・キャスターで共有）
-  - `_IdolCharShadowParams`（x=1/解像度, y=強度, z=有効フラグ, w=0）
-  - `_IdolCharShadowBias`（x=深度, y=法線。キャスター側）
-- キーワード: Feature 有効かつ登録キャラ>0 かつメインライト（Directional）在で `_IDOL_CHARSHADOW`（グローバル）を Enable、それ以外で Disable。メインライト不在フレームは何もしない
-- 受影サンプル: `IdolShadows.hlsl` が `_IDOL_CHARSHADOW` 定義時に positionWS を `_IdolCharShadowMatrix` で射影し、3x3 PCF（`SAMPLER_CMP`）でサンプルして URP 標準影と `min()` 合成（髪→顔の落ち影がこれで出る）。範囲外は 1（影なし）
-- 受影側追加バイアス `_CharShadowFaceBias`（マテリアル CBUFFER、Face/Eye のアクネ追い込み用・既定 0）
-- 未使用時（Feature 未追加 or 無効）: `_IDOL_CHARSHADOW` 未定義で URP メインライト影のみのフォールバック
-
-### 仮想ライト方向・演出一括制御
-
-- `IdolCharacter`（ExecuteAlways）: 配下 Renderer を自動収集（+手動リスト）し、`ActiveCharacters` static レジストリへ OnEnable/OnDisable で登録/解除。合成 Bounds を Feature へ提供
-- 仮想ライト方向オーバーライド: bool + Pitch/Yaw/Blend を `_VirtualLightDir`（float4: xyz=正規化方向, w=ブレンド）へ書く。ForwardPass で `mainLight.direction = normalize(lerp(mainLight.direction, _VirtualLightDir.xyz, w))` に差し替え（陰・スペキュラ・リム・SDF すべてに効く）。既定 w=0 で素通し
-- 演出一括制御（BlackOut / BackRim / HairSeeThroughAlpha）を配下 Idol マテリアルへ一括反映。`DollLiveDirector` 方式踏襲: Play=マテリアルインスタンス（SRP Batcher 維持・MPB 不使用）、Edit=MPB 非破壊プレビュー。Timeline から public フィールド直キー可
-- キャラ影 Feature 未使用でも単体で動作（仮想ライト・演出は Feature 非依存）
-
-### Dissolve（EasyShaderCore の Fx_Dissolve を流用）
-
-- `_DISSOLVE_ON`（shader_feature）を全パス（ForwardLit / HairSeeThrough / ShadowCaster / DepthOnly / DepthNormals / Outline / CharShadow）に追加
-- `IdolDissolve.hlsl` が `_DissolveTex` をサンプルし、EasyPBR `Fx_Dissolve.hlsl` の `ResolveDissolve` へ委譲（`Doll/` は include せず Common のみ）。軸 None/WorldY/LocalY は uniform `_DissolveType` の動的分岐でバリアント増加を回避。クリップは各パス、エッジ発光は ForwardLit で Emission に加算
-- プロパティ（Idol 側 CBUFFER）: `_DissolveTex` `_DissolveAmount` `_DissolveEdgeColor` `_DissolveEdgeColor2` `_DissolveEdgeWidth` `_DissolveEdgeStep` `_DissolveType`（+ `_DissolveInvert` `_DissolveStartY` `_DissolveEndY` `_DissolveNoiseScale` `_DissolveNoiseStrength`）
-
-### 表現拡張 R9 — 2 機能とも既定 OFF・新規キーワードなし（uniform 分岐）
-
-
-**髪→顔のスクリーンスペース落ち影**（`IdolRim.hlsl` の `CalculateHairScreenShadow`）:
-
-```
-occluderDiff = selfEyeDepth - offsetEyeDepth      // ライト方向へ _HairShadowOffsetPx 先の深度
-hairShadow   = window(occluderDiff, [_HairShadowDepthMin, _HairShadowDepthMax])  // 薄い近接遮蔽のみ
-castShadow   = min(castShadow, 1 - hairShadow × _HairShadowIntensity)
-```
-
-- 「ライト方向のスクリーン投影向き」は深度リムと共通の `GetLightScreenDir` に集約
-  （スクリーン Y 反転等の座標系修正を 1 箇所にするため）
-- 合成順: URP 影・キャラ影 → 髪影 → SDF（`_FaceSDFShadowMix` が後段で castShadow に掛かる）。
-  Face/Brow/Eye マテリアルで有効化する運用
-
-**ストッキング/シアー生地**（`IdolFabric.hlsl` の `ApplyStocking`）:
-
-```
-graze   = pow(1 - NdotV, _StockingPower)                          // シルエットほど 1
-opacity = lerp(_StockingFrontOpacity, 1, graze) × mask × intensity
-fabric  = lerp(albedo × _StockingColor, _StockingColor, graze)    // 正面=透け / 縁=布密
-albedo  = lerp(albedo, fabric, opacity)
-sheen   = _StockingSheenColor × pow(graze, _StockingSheenPower) × mask × intensity  // 加算
-```
-
-- GatherSurface のアルベド確定直後（陰色算出より前）に適用 → 陰色にも布色が自動で乗る。
-  すそ光沢（sheen）はライト非依存の加算（ApplyPostEffects・HDR）。適用範囲は `_StockingMask`(R)
+前髪透過は `HairSeeThrough` パス（`IdolHairSeeThrough`。T-341）だけで成立する。
+**ゲートはステンシルそのもの** ── 眉と目がビット 2/4 を書いていなければ
+1 画素も描かれないので、設定していないマテリアルには影響しない。
+**キーワードは持たない**（持たせると、ステンシルを設定しただけでは効かない）。
 
 ## Pass / LightMode
 
 | Pass | LightMode | 備考 |
 | :--- | :--- | :--- |
-| ForwardLit | UniversalForward | メイン。Hair は Stencil Comp Equal で眉・目の上を描かない |
-| HairSeeThrough | SRPDefaultUnlit | 前髪透過。Brow/Eye のステンシル bit 上にのみ半透明で重ね描き。中身は ForwardPass.hlsl を `IDOL_HAIR_SEETHROUGH` define で流用 |
-| ShadowCaster | ShadowCaster | URP 標準落ち影用 |
-| DepthOnly / DepthNormals | 同名 | Forward+ / SSAO / 深度リム前提のため必須。ForwardLit と同一のプロパティ駆動 Stencil を敷き、Depth Priming 構成でも前髪透過ビットを一致させる |
-| Outline | IdolOutline | `IdolOutlineFeature` が後段一括描画 |
-| CharShadowCaster | IdolCharShadow | `IdolCharShadowFeature` が専用深度マップへ描画。頂点変換はグローバル `_IdolCharShadowMatrix`、バイアスは `_IdolCharShadowBias` |
+| ForwardLit | UniversalForward | メイン |
+| **HairSeeThrough** | **IdolHairSeeThrough** | 前髪透過。`HairSeeThroughFeature` が後段一括描画（T-341）。`ForwardPass.hlsl` を define 違いで再利用 |
+| Outline | **IdolOutline** | `ToonOutlineFeature` が後段一括描画。既定 OFF |
+| ShadowCaster | ShadowCaster | `_ShadowCasterOff` で顔だけ外せる |
+| DepthOnly | DepthOnly | **リム（深度モード）の前提** |
+| DepthNormals | DepthNormals | **SSAO の前提** |
+| MotionVectors | MotionVectors | **TAA の前提** |
 
-前髪透過のステンシル運用は IdolShaderGUI の **Chara Part プリセット**が唯一の入口
-（`IdolMaterialSetup.ApplyCharaPart` が Stencil / Render Queue / HairSeeThrough パス有効化を一括適用）:
+**7 パス。** 前髪影・コンタクト影は T-344 で廃止し HQ セルフシャドウへ一本化した。機能面では 2影（2nd Shadow）を持たない（**見送りで確定** ── Ramp Override が N 段・色も自由で上位互換。T-362）。
 
-| 部位 | Stencil 設定 | Render Queue | HairSeeThrough パス |
-| :--- | :--- | :--- | :--- |
-| Body / Face | 既定値（Comp=Always, Keep, Mask 255）| 2000 | 無効 |
-| Brow | Ref=2, Comp=Always, Pass=Replace, WriteMask=6 | 2002 | 無効 |
-| Eye  | Ref=4, Comp=Always, Pass=Replace, WriteMask=6 | 2002 | 無効 |
-| Hair | Ref=0, Comp=Equal, ReadMask=6 | 2010 | **有効**（`SetShaderPassEnabled("SRPDefaultUnlit", true)`。穴を半透明で埋める）|
+## 移植の手順（完了済みの記録）
 
-描画順 Brow/Eye → Hair は部位 Queue で保証する。Render Mode（Opaque/Cutout）は
-キーワード・RenderType のみを切り替え、Queue には触れない — Cutout を AlphaTest 帯
-（2450+）へ動かすと Brow(Cutout) が Hair(Opaque) より後になり前髪透過が壊れるため、
-部位 Queue を常に優先する。
+**移植は完了した**（`Packages/com.origuma.easytoon-urp/` 配下に配置済み・検証道具は `Documentation~/` にある）。以下は当時の手順の記録で、コマンド中のパスは移植前のもの。
+
+**1. 名前を決めて振り直す。**
+
+```bash
+cd Assets/ToonPBR
+python rename_shader.py <名前>          # 下見。70 箇所 / 23 ファイル
+python rename_shader.py <名前> --apply
+python check.py --self-test             # W107 が片側漏れを撃つ
+```
+
+作法は Idol から読み取ってある ── シェーダー名 `Origuma/EasyToon_URP/<名前>`、
+LightMode は `<名前>Outline` / `<名前>HairSeeThrough`。
+
+**2. `ShaderCompileCheck.cs` を消すか `Editor/` へ移す。**
+`ToonPBRVariantCheck` に置き換わっていてどこからも呼ばれておらず、
+しかも `Editor/` の外にある。**パッケージでは Editor 専用コードを
+`Editor/` に置かないと実行時にも載る。**
+
+**3. ファイルを移す。**
+
+| 元 | 先 |
+| :--- | :--- |
+| `*.shader` / `*.hlsl` / `Shading/` / `Passes/` | `Runtime/Shaders/<名前>/` |
+| `Runtime/*.cs` | `Runtime/Scripts/`（`Origuma.EasyToon.URP.Runtime`）|
+| `Editor/*.cs` | `Editor/`（`Origuma.EasyToon.URP.Editor`）|
+| `*.md` / `check.py` ほかの道具 | `Documentation~/`（Unity は `~` 付きを無視する）|
+
+**`.meta` を一緒に動かすこと。** GUID が保たれるので、
+**46 個のマテリアルの参照は切れない**（名前ではなく GUID で指している）。
+
+`.shader` は `ToonPBRCommon.hlsl` を相対パスで include しているので、
+まとめて動かせば include も切れない。
+
+**4. asmdef の参照は足りている（実測済み）。**
+
+パッケージの 2 つの asmdef が持つ参照だけでコンパイルできることを確かめた:
+
+| | 参照 | 結果 |
+| :--- | :--- | :--- |
+| `Runtime/*.cs` | URP Runtime + Core Runtime | **エラー 0** |
+| `Editor/*.cs` | 上 + EasyShaderCore.Editor + 自分の Runtime | **エラー 0** |
+
+**4.5. 道具のパス解決（済み・実地で確認）。** ツリーは移すと 4 箇所に分かれるが、
+検査は名前で部品を探す形にしてある（`find_file` / `find_main_shader`）。
+**本番と同じ配置を作って 4 つの道具が通ることを確かめた**（T-250）。
+移した後は `root` に**パッケージルート**を渡すこと。
+
+**5. `package.json` と `CHANGELOG.md` を更新する。**
+
+**全項目完了。** `ShaderCompileCheck.cs` は削除済み（`ToonPBRVariantCheck` が後継）。
 
 ## 設計ルール
 
-1. CBUFFER 単一・全プロパティ包含（SRP Batcher 互換）— `UnityPerMaterial` 外の per-material uniform 禁止
-2. キーワードは上表のみ。`shader_feature` の安易な追加は禁止
-3. EasyShaderCore の Common HLSL は「純粋関数のみ・特定シェーダー非依存」を維持（Idol 固有ポリシーの持ち込み禁止）
-4. include は URP Core → EasyShaderCore Common → Idol 型 → Idol ポリシーの順。EasyPBR `Doll/` の include 禁止
-5. 未ベイク・既定値で全機能が安全にスキップされること必須（テクスチャ既定値 white/bump の明示）
-6. RendererFeature は Render Graph API（非 Compatibility）で書くこと必須
+Idol の 6 つに従う。現状:
+
+1. CBUFFER 単一・全プロパティ包含 — **満たす**
+2. キーワードは上表のみ — **満たす**（8 個。許可リストで機械的に守る）
+3. Core は純粋関数のみ — **満たす**（共有は純関数 4 つ: IGN / GGX の D・V・F。T-340）
+4. include 順 / `Doll/` 禁止 — **満たす**
+5. 未ベイク・既定値で安全にスキップ — **満たす**（2D 20 個すべて既定値あり）
+6. RendererFeature は Render Graph — **満たす**（2 つとも）
+
+## 検証
+
+`python check.py --self-test` で静的検査・値の検算・自己診断を回す。
+実コンパイルは `--unity` を渡す（57 組 × D3D/Vulkan × 頂点/フラグメント）。
+
+**物理の検算を持っている。**
+sheen の多項式・環境 BRDF・拡散のラップ・平均フレネル・AO 多重バウンスを
+Python 側で積分して突き合わせている。
+
+**既知の食い違い:** `ToonV_SmithGGX` が Karis の近似形で、
+厳密な Smith より**常に暗い**（RMS 13% / 最悪 27%）。
+髪の異方版は厳密形なので、**同じ物理状況で髪と体の明るさが食い違う**（T-214・指示待ち）。
