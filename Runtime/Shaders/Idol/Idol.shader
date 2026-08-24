@@ -105,7 +105,9 @@ Shader "Origuma/EasyToon_URP/Idol"
 
         [Space(10)][Header(Terminator)][Space(4)]
         _TerminatorColor         ("Terminator Color", Color) = (1.0, 0.82, 0.72, 1)
-        _TerminatorStrength      ("  Strength", Range(0,1)) = 0.35
+        // 既定 0 = 無効（T-384・利用者判断）。明暗境界の暖色は好みが分かれる
+        // 演出なので、入れる人だけが立てる。0 なら色計算は lerp で素通し。
+        _TerminatorStrength      ("  Strength", Range(0,1)) = 0
         _TerminatorSharpness     ("  Sharpness", Range(0.1,8)) = 2.0
         // 引きの画で線として煩くなるので距離で消す。寄り（〜20m）では従来どおり。
         _TerminatorFadeStart     ("  Fade Start (m)", Range(0,200)) = 20
@@ -120,7 +122,16 @@ Shader "Origuma/EasyToon_URP/Idol"
 
         [Space(10)][Header(Specular)][Space(4)]
         // 直接光の鏡面の倍率。移植元（EasyToon の Idol）と同名・同意味。
-        _SpecularIntensity       ("Specular Intensity", Range(0,4)) = 0.2
+        // 既定 0 = 無効（T-384・利用者判断）。トゥーンの既定はハイライト無しで、
+        // ツヤは入れる人だけが立てる（環境反射・グリッタ等は別ノブのまま）。
+        _SpecularIntensity       ("Specular Intensity", Range(0,4)) = 0
+        // 金属部（Mask Map R × Metallic）だけ倍率を上書きする（T-383）。
+        // 肌向けに Intensity を絞ると金具まで死ぬ／逆だと肌がテカる問題の分離。
+        // ローブは増やさない ── マスクはほぼ二値なので、パラメータを metallic で
+        // lerp すれば結果を混ぜるのと同じ絵になり、境界は自然なフェードになる。
+        // 既定 1 = 従来と完全一致。
+        _MetalSpecularBoost      ("  Metal Specular Boost", Range(0,4)) = 1
+        _MetalEnvBoost           ("  Metal Env Boost", Range(0,4)) = 1
         // 鏡面が持ち去ったエネルギーを拡散から引く。**既定 0（従来どおり）。**
         // 間接光側（FR-74）は影響が 1% 未満なので常時入れているが、
         // 直接光は縁で最大 23% と**見える量**なので、入れるかどうかは絵の判断。

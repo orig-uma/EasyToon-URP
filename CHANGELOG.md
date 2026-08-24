@@ -2,11 +2,25 @@
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-08-25
+
+### Changed
+
+- **既定値の変更（利用者判断・T-384）**: `Specular Intensity` 0.2 → **0**、`Terminator - Strength` 0.35 → **0**。新規マテリアルはハイライトとターミネータ暖色が無効の素のトゥーンから始まり、使う人だけが立てる。**既存マテリアルは保存値を持つため変わらない。** 2nd Lobe（既定 0）・環境反射・グリッタは従来どおり。
+
+### Added
+
+- **金属部だけ鏡面の倍率を上書きする `Metal Specular Boost` / `Metal Env Boost` を追加**（スペキュラタブ、T-383）。`Specular Intensity` / `Env Specular Intensity` はマテリアル全体に掛かるため、肌向けに絞ると金具まで死に、金具向けに上げると肌がテカる ── 金属マスク（Mask Map R × Metallic）で倍率を lerp して分離した。**ローブは増やさない**（マスクはほぼ二値なので、パラメータの lerp で結果の合成と同じ絵になる。追加コストはフラグメント 1 回の lerp 2 個）。Smoothness の上書きノブは意図的に無い ── metallic を持てている時点で Mask Map があるので、ツヤの描き分けは A チャンネルの仕事。クリアコート層（誘電体）には掛からない。既定 1 = 既存の絵は不変。
+
+### Fixed
+
+- **本体 Editor asmdef の `versionDefines` 式 `[0.3.0,)` が Unity に無効と判定され（`ExpressionNotValidException`）、Editor アセンブリごとコンパイルされず Inspector のカスタム UI が出なかった問題を修正。** Unity の式は開区間を受け付けず、素の `0.3.0` が「0.3.0 以上」を意味する。0.2.0 で入れた Core 最低バージョン連動の意図はそのまま。
+
 ## [0.2.0] - 2026-08-23
 
 ### Fixed
 
-- **旧 EasyShaderCore が入ったまま本パッケージを更新すると、Core が更新されず本体 Editor がコンパイルエラーになる問題を修正。** Installer は「Core が存在するか」しか見ておらず、0.2.0 が要求する Core 0.3.0 の新 API が無い 0.2.0 のままでも無音だった。Installer に必要最低バージョン（0.3.0）の比較を入れ、古ければピン留め URL（`#v0.3.1`）へ差し替える。本体 Editor asmdef の `versionDefines` も `[0.3.0,)` に揃え、古い Core では本体を除外してコンパイルエラーを出さず Installer が走れるようにした。
+- **旧 EasyShaderCore が入ったまま本パッケージを更新すると、Core が更新されず本体 Editor がコンパイルエラーになる問題を修正。** Installer は「Core が存在するか」しか見ておらず、0.2.0 が要求する Core 0.3.0 の新 API が無い 0.2.0 のままでも無音だった。Installer に必要最低バージョン（0.3.0）の比較を入れ、古ければピン留め URL（`#v0.3.1`）へ差し替える。本体 Editor asmdef の `versionDefines` も `0.3.0`（= 0.3.0 以上）に揃え、古い Core では本体を除外してコンパイルエラーを出さず Installer が走れるようにした。
 
 ### Changed (Breaking)
 

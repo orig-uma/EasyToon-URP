@@ -308,7 +308,7 @@ if (_UseRampMap > 0.5)
     // **倍率を掛ける。** これが無いと base GGX が実質 1.0 で出っぱなしになり、
     // Metallic が 0 でも「濡れたプラスチック」に見える。
     // Hair は自前の _HairSpecIntensity を持つのでこの経路に来ない。
-    specular = D * Vis * F * NdotLs * s.specMask * _SpecularIntensity;
+    specular = D * Vis * F * NdotLs * s.specMask * _SpecularIntensity * s.metalSpecBoost;
 
     // 拡散から引く量。F は VdotH 依存なので光源ごとに変わる。
     //
@@ -319,7 +319,9 @@ if (_UseRampMap > 0.5)
     // 3 つが重なるローアングルの逆光で `saturate(1 − 4) = 0` となり、
     // **影色ごと拡散が消えて靴が真っ黒**になっていた（利用者報告）。
     // 光の当たる面だけ（NdotLs でゲート）・割合は 1 で頭打ち。
-    specTaken = saturate(dot(F, float3(0.2126, 0.7152, 0.0722)) * s.specMask * _SpecularIntensity)
+    // Metal Boost も掛ける ── 「実際に足した割合」の原則（T-379）を保つ。
+    specTaken = saturate(dot(F, float3(0.2126, 0.7152, 0.0722)) * s.specMask
+                         * _SpecularIntensity * s.metalSpecBoost)
               * NdotLs;
 
     // 直接光にも同じ補償を掛ける。IBL 側だけ補うと、光源が動いたときに
@@ -561,7 +563,10 @@ float3 ToonShadeIndirect(ToonSurface s, ToonContext c, float mainLit, float main
     // 環境反射にも同じ遮蔽を掛ける。拡散だけ暗くすると、狭い場所で
     // 映り込みだけが residual に残って浮く。
     float specOcclusion = ToonSpecularOcclusion(c.NdotV, s.occlusion, s.roughness) * s.cavity;
-    float3 indirectSpecular = env * envBRDF * _EnvSpecIntensity * specOcclusion;
+    // Metal Env Boost は**下地にだけ**掛ける。クリアコート層（下の Fc の加算）は
+    // 誘電体の薄膜なので、金属倍率の対象にしない。
+    float3 indirectSpecular = env * envBRDF * (_EnvSpecIntensity * s.metalEnvBoost)
+                            * specOcclusion;
 
     // **鏡面が持ち去ったぶんを拡散から引く。**
     // Fdez-Agüera の多重散乱モデルは鏡面側（FssEss + Fms*Ems）だけでなく
@@ -581,7 +586,8 @@ float3 ToonShadeIndirect(ToonSurface s, ToonContext c, float mainLit, float main
     // **ノブは付けない。** 足したぶんを引くのに選択の余地は無く、
     // ノブは保存を壊す方向にしか使えない（シーンの `_SheenEnergyConservation` は
     // アルベドのフィットが近似なので調整の余地があり、事情が違う）。
-    float specTaken = dot(envBRDF, float3(0.2126, 0.7152, 0.0722)) * _EnvSpecIntensity;
+    float specTaken = dot(envBRDF, float3(0.2126, 0.7152, 0.0722))
+                    * _EnvSpecIntensity * s.metalEnvBoost;
     indirectDiffuse *= saturate(1.0 - specTaken * specOcclusion);
 #if defined(_SURFACETYPE_CLOTH)
     indirectSpecular *= c.sheenScale;

@@ -30,7 +30,7 @@ namespace Origuma.EasyToon.URP.Installer
         private const string CoreGitUrlPinned = CoreGitUrl + "#v0.3.1";
         // **必要最低バージョン。** これより古い Core が入っていると本体 Editor が
         // Core の新 API を参照してコンパイルできない。本体 Editor asmdef の
-        // versionDefines は同じ下限（[0.3.0,)）で、古い Core では本体を除外して
+        // versionDefines は同じ下限（"0.3.0" = 0.3.0 以上）で、古い Core では本体を除外して
         // コンパイルエラーを出さず、このインストーラーが更新に進めるようにしてある。
         // **両方を同時に上げること。** 片方だけ上げると「本体は除外されたのに
         // インストーラーは何もしない」か、その逆になる。

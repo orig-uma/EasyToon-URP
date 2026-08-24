@@ -1277,6 +1277,10 @@ namespace ToonNPR.EditorTools
                         "**ツヤのダイヤル。**鏡面ローブの幅で、低いと広くうっすら・"
                         + "高いと締まった光沢になります。Base タブ > Mask Map > "
                         + "Smoothness Scale と同一プロパティです（A チャンネルの倍率）");
+                    // 金属部だけの上書き（T-383）。Smoothness のノブは意図的に無い ──
+                    // metallic を持てている時点で Mask Map を用意できているので、
+                    // ツヤの描き分けは同じテクスチャの A チャンネルの仕事（利用者判断）。
+                    DrawMetalOverride(e);
                     P(e, "_SpecularIntensity", "Specular Intensity",
                         "Strength only - the tightness of the highlight comes from "
                         + "Smoothness above. Hair and cloth do not go through this - "
@@ -2069,6 +2073,31 @@ namespace ToonNPR.EditorTools
                         ? "**テクスチャはありますが強度が 0 なので出ません。**\n"
                         : "**The texture is assigned but the strength is 0, so nothing shows.**\n")
                     + sleeping.TrimEnd(), MessageType.Info);
+        }
+
+        /// <summary>
+        /// 金属部（Mask Map R × Metallic）だけの鏡面倍率。Metallic 0 の材質では
+        /// 何にも効かないので、セクションごと出さない（値で出入りするのは
+        /// SubHeader 以下のまとまりだが、スライダーより上には現れないので
+        /// T-377 の制御 ID ずれは起きない）。
+        /// </summary>
+        private void DrawMetalOverride(MaterialEditor e)
+        {
+            if (!IsPositive("_Metallic")) return;
+            SubHeader("Metal Override", "Metal Override（金属部の上書き）");
+            P(e, "_MetalSpecularBoost", "Metal Specular Boost",
+                "Multiplies Specular Intensity on metallic areas only "
+                + "(Mask Map R x Metallic). 1 = same as before. Lets you tame skin "
+                + "highlights without killing metal accents, and vice versa",
+                "金属部（Mask Map R × Metallic）だけ Specular Intensity に掛かる倍率。"
+                + "1 で従来どおり。肌のハイライトを絞っても金具を殺さない（逆も）ための分離です");
+            P(e, "_MetalEnvBoost", "Metal Env Boost",
+                "Multiplies Env Specular Intensity on metallic areas only. "
+                + "Metal reads mostly from reflections, so raise this when metal "
+                + "looks dead in dim stages. Does not affect the clearcoat layer",
+                "金属部だけ Env Specular Intensity に掛かる倍率。金属の見た目はほぼ映り込みで"
+                + "決まるので、暗いステージで金具が死ぬときに上げます。クリアコート層には掛かりません");
+            EditorGUILayout.Space(2);
         }
 
         private void WarnDiffuseReach()

@@ -14,6 +14,8 @@ struct ToonSurface
     float3 albedo;
     float  alpha;
     float3 diffuseColor;        // albedo * (1 - metallic)
+    float  metalSpecBoost;      // lerp(1, _MetalSpecularBoost, metallic)。非金属では 1
+    float  metalEnvBoost;       // lerp(1, _MetalEnvBoost, metallic)。同上
     float3 f0;
     float  perceptualRoughness;
     float  roughness;

@@ -80,6 +80,8 @@ CBUFFER_START(UnityPerMaterial)
     float  _MicroShadow;
     float  _SpecularTintStrength;
     float  _SpecularIntensity;
+    float  _MetalSpecularBoost;
+    float  _MetalEnvBoost;
     float  _SpecEnergyConservation;
     float4 _SpecularTint;
 

@@ -222,6 +222,11 @@
 
                 s.diffuseColor = s.albedo * (1.0 - metallic);
                 s.f0           = lerp(0.04, s.albedo, metallic);
+                // 金属部だけスペキュラの倍率を上書き（T-383）。f0 と同じく
+                // **デカール適用後の metallic** から作ること。ライトに依存しないので
+                // ここで 1 回だけ。metallic 0 なら 1 = 従来と完全一致。
+                s.metalSpecBoost = lerp(1.0, _MetalSpecularBoost, metallic);
+                s.metalEnvBoost  = lerp(1.0, _MetalEnvBoost, metallic);
                 s.perceptualRoughness = 1.0 - smoothness;
 
                 // 影色はライトに依存しないので1回だけ求める。**diffuseColor の確定後**に置くこと
