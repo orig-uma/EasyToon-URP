@@ -40,6 +40,11 @@ namespace ToonNPR.EditorTools
         private enum ToonSurfaceType { Default = 0, Skin = 1, Face = 2, Hair = 3, Cloth = 4 }
 
         private ShaderGuiKit _kit;
+
+        // ランプ未割り当ての材質で編集する下書き（T-396）。割り当て済みなら
+        // ToonRampAsset の gradient を直接編集するので使わない。
+        private Gradient _rampDraft;
+        private Material _rampDraftFor;
         private ToonPBRBakingPanel _baking;
         private MaterialEditor _editor;
 
@@ -459,9 +464,7 @@ namespace ToonNPR.EditorTools
         private void DrawTabShading(MaterialEditor e)
         {
             DrawDiffuseTransfer(e);
-            DrawShadowColor(e);
-            DrawTerminator(e);
-            DrawRamp(e);
+            DrawShadeColor(e);
             DrawHQShadow(e);
 
             // 顔 SDF は「陰の境界をどう決めるか」の機能であって質感ではないので、
@@ -477,9 +480,6 @@ namespace ToonNPR.EditorTools
                 if (!Section("diffuse", true, "Diffuse Transfer", "拡散の伝達関数")) return;
                 using (new EditorGUI.IndentLevelScope())
                 {
-                    Note("The only stylized part of the BRDF. Specular stays physically based.",
-                        "BRDF のうち様式化しているのはここだけ。鏡面反射は物理ベースのまま。");
-
                     P(e, "_ShadowThreshold", "Shadow Threshold",
                         "Where the light-to-shadow transition sits",
                         "明暗の境界の位置");
@@ -535,43 +535,49 @@ namespace ToonNPR.EditorTools
             }
         }
 
-        private void DrawShadowColor(MaterialEditor e)
+        // 「影の色」は 1 節（T-399・利用者判断）。Ramp を使うか使わないかで中身が
+        // 分岐する ── 使うならランプ（アセット編集）、使わないなら HSV。Blend が
+        // 1 未満のときだけ HSV が混ざるので、そのときは HSV も下に出す。
+        // 落ち影の色は Ramp の後段で掛かるので、どちらでも出す。
+        private void DrawShadeColor(MaterialEditor e)
         {
             using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
             {
-                if (!Section("shadowcolor", true, "Shadow Color (HSV)", "影の色 (HSV)")) return;
+                if (!Section("shadecolor", true, "Shade Color", "影の色")) return;
                 using (new EditorGUI.IndentLevelScope())
                 {
-                    Note("Reference art rotates the hue and raises saturation in shadow, "
-                        + "instead of only darkening it.",
-                        "参考にしている絵では、影は暗くなるだけでなく色相が回り彩度が上がっている。");
+                    DrawToggleWithTexture(e, "_UseRampMap", "_RampMap");
 
-                    P(e, "_ShadowHueShift", "Hue Shift",
-                        "Rotates the shadow hue. Together with Saturation at 1 the whole "
-                        + "HSV conversion is skipped, so leaving both at default costs nothing",
-                        "影の色相を回します。Saturation が 1 のまま両方とも既定なら"
-                        + "HSV 変換ごと飛ぶので、触らなければコストはゼロです");
-                    P(e, "_ShadowSaturation", "Saturation Scale",
-                        "Reference art raises saturation in shadow rather than only darkening it",
-                        "参考にしている絵では、影は暗くなるだけでなく彩度が上がります");
-                    P(e, "_ShadowValue", "Value Scale",
-                        "Lower for deeper shadows. Ambient in the Lighting tab also lifts them",
-                        "下げると影が濃くなります。「ライト」タブの環境光も影を持ち上げます");
-                    P(e, "_AddLightShadowColor", "Shadow Color from Add. Lights",
-                        "How much of the shadow colouring additional lights get. "
-                        + "Full strength on every point light usually reads as dirty",
-                        "追加光源の影にどれだけ影色を掛けるか。"
-                        + "点光源すべてに全量掛けると濁って見えがちです");
-                    P(e, "_ShadowTint", "Tint (multiply)",
-                        "Multiplied onto the shadow after the HSV step",
-                        "HSV の後に影へ乗算されます");
-                    P(e, "_ShadowColor", "Shadow Hue (mix toward)",
-                        "A hue to pull the shadow toward. Its brightness is normalised away, "
-                        + "so only the hue is taken - picking a dark colour does not darken",
-                        "影を寄せたい色相。明るさは正規化して落とすので**色相だけ**が効きます"
-                        + "（暗い色を選んでも暗くはなりません）");
-                    P(e, "_ShadowColorMix", "Hue Mix",
-                        "0 skips this step entirely", "0 でこの処理ごと飛びます");
+                    if (IsOn("_UseRampMap"))
+                    {
+                        // ランプ（アセットを直接編集。即反映・Undo 可。T-396 / T-398）
+                        DrawRampEditor(e);
+                        P(e, "_RampStrength", "Blend",
+                            "1 = the ramp alone decides the shade colour. Below 1 the HSV shade "
+                            + "colour is blended in and its controls appear below",
+                            "1 でランプだけが影の色を決めます。1 未満では HSV の影色が混ざり、"
+                            + "その設定が下に出ます");
+                        // 多段ランプ（NPR.a で行選択）は外部テクスチャを挿したときだけの話。
+                        if (e.target is Material rampMat && ToonPBRRampGenerator.FindAsset(rampMat) == null
+                            && rampMat.HasTexture("_RampMap") && rampMat.GetTexture("_RampMap") != null)
+                        {
+                            P(e, "_RampRowCount", "Ramp Row Count",
+                                "How many ramps are stacked vertically in the texture",
+                                "テクスチャに縦へ何本のランプを並べてあるか");
+                            P(e, "_RampIndexOverride", "Ramp Index Override (-1 = use NPR.a)",
+                                "-1 picks the row per-pixel from the A channel of the NPR Map",
+                                "-1 で NPR マップの A から画素ごとに行を選びます");
+                        }
+                        if (GetFloat("_RampStrength") < 1f)
+                        {
+                            SubHeader("HSV (blended in below Blend 1)", "HSV（Blend が 1 未満のぶん混ざる）");
+                            DrawShadowHsv(e);
+                        }
+                    }
+                    else
+                    {
+                        DrawShadowHsv(e);
+                    }
 
                     SubHeader("Cast Shadow Color", "落ち影の色");
                     Note("Colour only. Whether a shadow lands at all is Receive Realtime Shadow "
@@ -596,56 +602,135 @@ namespace ToonNPR.EditorTools
             }
         }
 
-        private void DrawTerminator(MaterialEditor e)
+        // HSV で影色を作る側（Ramp を使わないとき、または Blend < 1 のとき）。
+        private void DrawShadowHsv(MaterialEditor e)
         {
-            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+            P(e, "_ShadowHueShift", "Hue Shift",
+                "Rotates the shadow hue. Together with Saturation at 1 the whole "
+                + "HSV conversion is skipped, so leaving both at default costs nothing",
+                "影の色相を回します。Saturation が 1 のまま両方とも既定なら"
+                + "HSV 変換ごと飛ぶので、触らなければコストはゼロです");
+            P(e, "_ShadowSaturation", "Saturation Scale",
+                "Above 1 keeps the shadow vivid instead of muddy - the usual anime choice",
+                "1 より上げると影が濁らず鮮やかに残ります（アニメ塗りの定番）");
+            P(e, "_ShadowValue", "Value Scale",
+                "Lower for deeper shadows. Ambient in the Lighting tab also lifts them",
+                "下げると影が濃くなります。「ライト」タブの環境光も影を持ち上げます");
+            P(e, "_AddLightShadowColor", "Shadow Color from Add. Lights",
+                "How much of the shadow colouring additional lights get. "
+                + "Full strength on every point light usually reads as dirty",
+                "追加光源の影にどれだけ影色を掛けるか。"
+                + "点光源すべてに全量掛けると濁って見えがちです");
+            P(e, "_ShadowTint", "Tint (multiply)",
+                "Multiplied onto the shadow after the HSV step",
+                "HSV の後に影へ乗算されます");
+            P(e, "_ShadowColor", "Shadow Hue (mix toward)",
+                "A hue to pull the shadow toward. Its brightness is normalised away, "
+                + "so only the hue is taken - picking a dark colour does not darken",
+                "影を寄せたい色相。明るさは正規化して落とすので**色相だけ**が効きます"
+                + "（暗い色を選んでも暗くはなりません）");
+            P(e, "_ShadowColorMix", "Hue Mix",
+                "0 skips this step entirely", "0 でこの処理ごと飛びます");
+        }
+
+        private void DrawRampPresets(System.Action<Gradient> apply)
+        {
+            // プリセット（T-397）: 押した瞬間に差し替わる（アセットなら即反映）。
+            EditorGUILayout.LabelField(_kit.Jp ? "プリセット" : "Presets", EditorStyles.miniLabel);
+            var presets = ToonPBRRampGenerator.Presets;
+            for (int i = 0; i < presets.Length; i += 4)
             {
-                if (!Section("terminator", false, "Terminator", "Terminator（明暗境界）")) return;
-                using (new EditorGUI.IndentLevelScope())
+                using (new EditorGUILayout.HorizontalScope())
                 {
-                    P(e, "_TerminatorColor", "Terminator Color",
-                        "The warm band right at the light-shadow boundary",
-                        "明暗の境目に出る暖色の帯");
-                    P(e, "_TerminatorStrength", "Strength",
-                        "Applies to every surface type, not just skin. Keeping the boundary "
-                        + "colour consistent across the body is a deliberate stylisation",
-                        "肌だけでなく全部の質感に掛かります。境界の色を全身で揃えるのは"
-                        + "意図的な様式化です");
-                    P(e, "_TerminatorSharpness", "Sharpness",
-                        "How fast the band falls off from its centre",
-                        "帯の芯からどれだけ速く落ちるか");
-                    P(e, "_TerminatorFadeStart", "Fade Start (m)",
-                        "Distance where the band starts to fade out",
-                        "帯が消え始める距離（メートル）");
-                    P(e, "_TerminatorFadeEnd", "Fade End (m)", null, null);
+                    for (int j = i; j < i + 4 && j < presets.Length; j++)
+                    {
+                        var pr = presets[j];
+                        if (GUILayout.Button(_kit.Jp ? pr.Jp : pr.En, EditorStyles.miniButton))
+                            apply(pr.Build());
+                    }
                 }
             }
         }
 
-        private void DrawRamp(MaterialEditor e)
+        private void DrawRampEditor(MaterialEditor e)
         {
-            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+            var mats = System.Array.ConvertAll(e.targets, t => t as Material);
+            if (mats.Length == 0 || mats[0] == null) return;
+
+            // 選択中の全材質が同じアセットを指しているときだけ「そのアセットを編集」。
+            var asset = ToonPBRRampGenerator.FindAsset(mats[0]);
+            bool shared = asset != null;
+            for (int i = 1; shared && i < mats.Length; i++)
+                shared = ToonPBRRampGenerator.FindAsset(mats[i]) == asset;
+            bool editing = asset != null && shared;
+
+            // 並び（利用者判断）: 1. アセット → 2. 新規 / 複製 → 3. プリセット → 4. Gradient。
+            // PNG の書き出しはアセット側の Inspector（ToonRampAssetEditor）にだけ置く。
+
+            // 1. どのランプを使っているか
+            EditorGUILayout.ObjectField(_kit.Jp ? "ランプアセット" : "Ramp Asset",
+                editing ? asset : null, typeof(ToonRampAsset), false);
+            if (asset != null && !shared)
+                Note("The selected materials use different ramps. Create a new one to give them a shared ramp.",
+                    "選択中の材質は別々のランプを使っています。新規作成すると全員に 1 つの共有ランプが割り当てられます");
+
+            // 2. 新規 / 複製
+            int n = mats.Length;
+            using (new EditorGUILayout.HorizontalScope())
             {
-                if (!Section("ramp", false, "Ramp Override", "ランプで上書き")) return;
-                using (new EditorGUI.IndentLevelScope())
+                string newBtn = _kit.Jp
+                    ? (n > 1 ? $"新規ランプアセットを作成（{n} 件で共有）" : "新規ランプアセットを作成")
+                    : (n > 1 ? $"New ramp asset (shared by {n})" : "New ramp asset");
+                if (GUILayout.Button(newBtn))
                 {
-                    DrawToggleWithTexture(e, "_UseRampMap", "_RampMap");
-                    if (IsOn("_UseRampMap"))
-                        using (new EditorGUI.IndentLevelScope())
-                        {
-                            P(e, "_RampRowCount", "Ramp Row Count",
-                                "How many ramps are stacked vertically in the texture",
-                                "テクスチャに縦へ何本のランプを並べてあるか");
-                            P(e, "_RampIndexOverride", "Ramp Index Override (-1 = use NPR.a)",
-                                "-1 picks the row per-pixel from the A channel of the NPR Map",
-                                "-1 で NPR マップの A から画素ごとに行を選びます");
-                            P(e, "_RampStrength", "Blend",
-                                "Blends between the curvature-driven step and the ramp. "
-                                + "The ramp is never mandatory",
-                                "曲率駆動のステップとランプの間を混ぜます。ランプは必須ではありません");
-                        }
+                    // 未割り当てなら下書き（外部 PNG の色を読み込んだもの）から、
+                    // 割り当て済みなら既定から。同名アセットがあれば再利用される。
+                    var g = editing ? ToonPBRRampGenerator.DefaultGradient()
+                                    : (_rampDraft ?? ToonPBRRampGenerator.DefaultGradient());
+                    ToonPBRRampGenerator.CreateAndAssign(mats, g);
+                    _rampDraftFor = null;
+                }
+                using (new EditorGUI.DisabledScope(!editing))
+                {
+                    if (GUILayout.Button(_kit.Jp ? "複製して分岐" : "Duplicate for these"))
+                        ToonPBRRampGenerator.DuplicateAndAssign(mats, asset);
                 }
             }
+
+            if (editing)
+            {
+                // 3. プリセット → 4. Gradient（どちらもアセットへ即反映・Undo 可）
+                DrawRampPresets(g => ToonPBRRampGenerator.SetGradient(asset, g));
+                EditorGUI.BeginChangeCheck();
+                var edited = EditorGUILayout.GradientField(
+                    Label("Gradient (left = shadow)", null, null), asset.gradient);
+                if (EditorGUI.EndChangeCheck())
+                    ToonPBRRampGenerator.SetGradient(asset, edited);
+                Note("Edits apply to the scene immediately and can be undone. The asset is shared by "
+                    + "every material that references it - Duplicate to give these their own copy. "
+                    + "Export PNG from the asset's own Inspector.",
+                    "編集はその場でシーンに反映され、Undo できます。アセットは参照している全材質で"
+                    + "共有 ── 選択中だけ別にしたいときは「複製して分岐」。PNG への書き出しは"
+                    + "アセット自身の Inspector から");
+                return;
+            }
+
+            // 未割り当て / 外部テクスチャ: 下書きを編集して「新規作成」で焼く。
+            if (_rampDraftFor != mats[0] || _rampDraft == null)
+            {
+                _rampDraft = ToonPBRRampGenerator.GradientFromTexture(
+                                 mats[0].HasTexture("_RampMap") ? mats[0].GetTexture("_RampMap") : null)
+                             ?? ToonPBRRampGenerator.DefaultGradient();
+                _rampDraftFor = mats[0];
+            }
+            if (mats[0].HasTexture("_RampMap") && mats[0].GetTexture("_RampMap") != null && asset == null)
+                Note("An external ramp texture is assigned. Its colours were read into the gradient below - "
+                    + "create a ramp asset to edit it live.",
+                    "外部のランプテクスチャが割り当てられています。その色を下の Gradient に読み込みました ── "
+                    + "新規ランプアセットを作ると即時編集できます");
+            DrawRampPresets(g => _rampDraft = g);
+            _rampDraft = EditorGUILayout.GradientField(
+                Label("Gradient (left = shadow)", null, null), _rampDraft);
         }
 
         private void DrawHQShadow(MaterialEditor e)
@@ -666,8 +751,16 @@ namespace ToonNPR.EditorTools
                                 "URP Asset のシャドウ解像度とカスケードも合わせて詰めること。");
 
                             P(e, "_HQShadowSoftness", "Penumbra (texels)",
-                                "In shadow-map texels, not metres",
-                                "単位はシャドウマップのテクセル。メートルではありません");
+                                "Filter radius = 1 + value x 6 shadow-map texels (not metres). "
+                                + "16 taps are fixed, so above ~1.5 the disk gets sparse and "
+                                + "dither grain starts to show - use it when you want abstraction "
+                                + "more than cleanliness. Lowering the shadow-map resolution widens "
+                                + "the world-space penumbra for free at the same value",
+                                "フィルタ半径 = 1 + 値 × 6 テクセル（メートルではありません）。"
+                                + "タップは 16 固定なので、1.5 あたりから粒（ディザのノイズ）が"
+                                + "見え始めます ── きれいさより抽象化を優先したいときの領域。"
+                                + "シャドウマップの解像度を下げれば同じ値でもワールドでの半影は"
+                                + "広がります（タダで柔らかくなる）");
                             P(e, "_ShadowPenumbraScale", "Penumbra Scale", null, null);
                             P(e, "_ReceiverNormalBias", "Receiver Normal Bias", null, null);
                             P(e, "_ShadowContactHardening", "Contact Hardening (PCSS)",
@@ -1262,9 +1355,6 @@ namespace ToonNPR.EditorTools
                 if (!Section("specular", true, "Specular", "スペキュラ")) return;
                 using (new EditorGUI.IndentLevelScope())
                 {
-                    Note("Physically based and never stepped: GGX, Charlie sheen and Kajiya-Kay stay as they are.",
-                        "物理ベースのまま。GGX / Charlie sheen / Kajiya-Kay はステップ化しません。");
-
                     // ツヤ（ハイライトの締まり）を決めるのはローブ幅 = _Smoothness だが、
                     // そのダイヤルは標準 PBR の流儀どおり表面属性として Base タブ
                     // （Mask Map の A チャンネル倍率）にある。「Specular タブを触っても

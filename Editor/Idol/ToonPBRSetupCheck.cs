@@ -605,6 +605,22 @@ namespace ToonNPR.EditorTools
                     hit[0]);
             }
 
+            // **ブルーノイズが欠けている / 小さすぎる。** 影フィルタの回転角に使う
+            // ので（T-390）、無いと gray = 一定角 → 画面全体が同時にテクセル境界を
+            // 踏んで**明滅**する（T-124 の症状）。既定は .shader.meta が包内の 256²
+            // を指すが、他パッケージのテクスチャを参照したまま消えた材質を拾う。
+            var badNoise = mats.Where(m =>
+                {
+                    if (!m.HasTexture("_BlueNoiseTex")) return false;
+                    var t = m.GetTexture("_BlueNoiseTex");
+                    return t != null && (t.width < 64 || t.height < 64);
+                }).ToArray();
+            if (badNoise.Length > 0)
+                Add(Level.Warning, $"ブルーノイズが小さすぎる: {badNoise.Length} 件",
+                    "_BlueNoiseTex に 64px 未満のテクスチャが入っている。影フィルタの"
+                    + "回転角が偏り、縞や明滅になる。空にすればシェーダー既定（包内の 256²）に戻る。",
+                    badNoise[0]);
+
             // **サーフェスタイプは設定されているのに、そのタイプの機能が全部 0。**
             //
             // タイプを分けている意味が無い状態で、描画は Default と同一になる。

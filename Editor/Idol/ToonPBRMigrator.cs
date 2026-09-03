@@ -130,7 +130,6 @@ namespace ToonNPR.EditorTools
         private static readonly HashSet<string> AnchoredRules = new HashSet<string>
         {
             // lint:foreign-begin  ここは**移行元**のプロパティ名
-            "_SkinScatterWidth",      // → _TerminatorSharpness   0.5 → 2.0
             "_SpecularAA",            // → _SpecAAVariance        1.0 → 0.15
             "_RimThickness",          // → _RimFresnelPower       0.2 → 2.5
             "_IridescenceThickness",  // → 同名                   3.0 → 1.0
@@ -214,14 +213,8 @@ namespace ToonNPR.EditorTools
             new Rule(Kind.Number,"_ShadowSaturation","_ShadowSaturation"),
             new Rule(Kind.Color, "_CastShadowColor", "_CastShadowColor"),
 
-            // 逆光側の散乱。EasyToon/EasyPBR は「肌の散乱」、ToonPBR は
-            // 「ターミネータ」という名前で同じ現象を扱っている。
-            new Rule(Kind.Color, "_SkinScatterColor",    "_TerminatorColor"),
-            new Rule(Kind.Number,"_SkinScatterIntensity","_TerminatorStrength"),
-            // Width が広いほど境界は緩い ＝ Sharpness は小さい。**逆数の関係。**
-            new Rule(Kind.Number,"_SkinScatterWidth",    "_TerminatorSharpness",
-                     v => Clamp(1.0f / Mathf.Max(v, 0.125f), 0.1f, 8.0f),
-                     "Width から Sharpness へ逆数で変換"),
+            // Doll の Skin Scatter（境界帯の色付け）は運ばない。Idol 側の受け皿だった
+            // Terminator は T-392 で廃止 ── 境界の色は Ramp Override（生成 UI）で置く。
 
             // 鏡面
             new Rule(Kind.Number,"_Smoothness",         "_Smoothness"),

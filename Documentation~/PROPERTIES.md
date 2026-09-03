@@ -8,7 +8,7 @@
 python gen_properties.py --write
 ```
 
-シェーダー: `Idol.shader` / プロパティ 211 個
+シェーダー: `Idol.shader` / プロパティ 206 個
 
 ⚡ はシェーダーバリアントを生むもの（マテリアル間で値が違うとバッチが分断される）。
 
@@ -124,41 +124,19 @@ python gen_properties.py --write
 | プロパティ | 表示名 | 型 | 既定 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
 | `_HQShadowOn` ⚡ | Enable HQ Self Shadow | `Float` | `0` | 主光源のみ。全機能の中でテクスチャフェッチが一番多い |
-| `_HQShadowSoftness` | Penumbra (texels) | `Range(0,1)` | `0.3` | 単位はシャドウマップのテクセル。メートルではありません |
+| `_HQShadowSoftness` | Penumbra (texels) | `Range(0,3)` | `0.3` | フィルタ半径 = 1 + 値 × 6 テクセル（メートルではありません）。タップは 16 固定なので、1.5 あたりから粒（ディザのノイズ）が見え始めます ── きれいさより抽象化を優先したいときの領域。シャドウマップの解像度を下げれば同じ値でもワールドでの半影は広がります（タダで柔らかくなる） |
 | `_ShadowPenumbraScale` | Penumbra Scale | `Range(0,1000)` | `200` | — |
 | `_ReceiverNormalBias` | Receiver Normal Bias | `Range(0,4)` | `1` | — |
 | `_ShadowContactHardening` | Contact Hardening (PCSS) | `Float` | `0` | 遮蔽物が近いところで半影を狭めます |
 
-### 影の色 (HSV)（Shadow Color (HSV)）
-
-| プロパティ | 表示名 | 型 | 既定 | 説明 |
-| :--- | :--- | :--- | :--- | :--- |
-| `_ShadowHueShift` | Hue Shift | `Range(-0.2,0.2)` | `-0.03` | 影の色相を回します。Saturation が 1 のまま両方とも既定ならHSV 変換ごと飛ぶので、触らなければコストはゼロです |
-| `_ShadowSaturation` | Saturation Scale | `Range(0,3)` | `1.3` | 参考にしている絵では、影は暗くなるだけでなく彩度が上がります |
-| `_ShadowValue` | Value Scale | `Range(0,1)` | `0.75` | 下げると影が濃くなります。「ライト」タブの環境光も影を持ち上げます |
-| `_AddLightShadowColor` | Shadow Color from Add. Lights | `Range(0,1)` | `1` | 追加光源の影にどれだけ影色を掛けるか。点光源すべてに全量掛けると濁って見えがちです |
-| `_ShadowTint` | Tint (multiply) | `Color` | `(1,1,1,1)` | HSV の後に影へ乗算されます |
-| `_ShadowColor` | Shadow Hue (mix toward) | `Color` | `(0.50, 0.32, 0.62, 1)` | 影を寄せたい色相。明るさは正規化して落とすので**色相だけ**が効きます（暗い色を選んでも暗くはなりません） |
-| `_ShadowColorMix` | Hue Mix | `Range(0,1)` | `0` | 0 でこの処理ごと飛びます |
-
-### 影の色 (HSV)（Shadow Color (HSV)） ／ 落ち影の色
+### 影の色（Shade Color） ／ 落ち影の色
 
 | プロパティ | 表示名 | 型 | 既定 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
 | `_CastShadowColor` | Cast Shadow Color | `Color` | `(0.5, 0.45, 0.5, 1)` | シャドウマップ由来の落ち影（髪・手）だけに掛ける色。NdotL の陰は通常の影色のままです |
 | `_CastShadowColorStrength` | Cast Shadow Color Strength | `Range(0,1)` | `0` | 色をどれだけ掛けるか。0 で落ち影も通常の影色。影の中の鏡面と環境光も同時に落とすので、落ち影がNdotL の陰とは別の出来事として見えます |
 
-### Terminator（明暗境界）（Terminator）
-
-| プロパティ | 表示名 | 型 | 既定 | 説明 |
-| :--- | :--- | :--- | :--- | :--- |
-| `_TerminatorColor` | Terminator Color | `Color` | `(1.0, 0.82, 0.72, 1)` | 明暗の境目に出る暖色の帯 |
-| `_TerminatorStrength` | Strength | `Range(0,1)` | `0` | 肌だけでなく全部の質感に掛かります。境界の色を全身で揃えるのは意図的な様式化です |
-| `_TerminatorSharpness` | Sharpness | `Range(0.1,8)` | `2.0` | 帯の芯からどれだけ速く落ちるか |
-| `_TerminatorFadeStart` | Fade Start (m) | `Range(0,200)` | `20` | 帯が消え始める距離（メートル） |
-| `_TerminatorFadeEnd` | Fade End (m) | `Range(0,200)` | `40` | — |
-
-### ランプで上書き（Ramp Override）
+### 影の色（Shade Color）
 
 | プロパティ | 表示名 | 型 | 既定 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
@@ -166,7 +144,7 @@ python gen_properties.py --write
 | `_RampMap` | Ramp Map | `2D` | `"white" {}` | — |
 | `_RampRowCount` | Ramp Row Count | `Float` | `8` | テクスチャに縦へ何本のランプを並べてあるか |
 | `_RampIndexOverride` | Ramp Index Override (-1 = use NPR.a) | `Float` | `-1` | -1 で NPR マップの A から画素ごとに行を選びます |
-| `_RampStrength` | Blend | `Range(0,1)` | `1` | 曲率駆動のステップとランプの間を混ぜます。ランプは必須ではありません |
+| `_RampStrength` | Blend | `Range(0,1)` | `1` | 1 でランプだけが影の色を決めます。1 未満では HSV の影色が混ざり、その設定が下に出ます |
 
 ### 顔（SDF）（Face (SDF)）
 
@@ -500,10 +478,17 @@ python gen_properties.py --write
 | プロパティ | 表示名 | 型 | 既定 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
 | `_Cutoff` | Cutoff | `Range(0,1)` | `0.5` | このアルファ未満の画素を捨てます |
+| `_ShadowHueShift` | Hue Shift | `Range(-0.2,0.2)` | `-0.03` | 影の色相を回します。Saturation が 1 のまま両方とも既定ならHSV 変換ごと飛ぶので、触らなければコストはゼロです |
+| `_ShadowSaturation` | Saturation Scale | `Range(0,3)` | `1.3` | 1 より上げると影が濁らず鮮やかに残ります（アニメ塗りの定番） |
+| `_ShadowValue` | Value Scale | `Range(0,1)` | `0.75` | 下げると影が濃くなります。「ライト」タブの環境光も影を持ち上げます |
+| `_AddLightShadowColor` | Shadow Color from Add. Lights | `Range(0,1)` | `1` | 追加光源の影にどれだけ影色を掛けるか。点光源すべてに全量掛けると濁って見えがちです |
+| `_ShadowTint` | Tint (multiply) | `Color` | `(1,1,1,1)` | HSV の後に影へ乗算されます |
+| `_ShadowColor` | Shadow Hue (mix toward) | `Color` | `(0.50, 0.32, 0.62, 1)` | 影を寄せたい色相。明るさは正規化して落とすので**色相だけ**が効きます（暗い色を選んでも暗くはなりません） |
+| `_ShadowColorMix` | Hue Mix | `Range(0,1)` | `0` | 0 でこの処理ごと飛びます |
 | `_SrcBlend` | Source Blend | `Float` | `1` | — |
 | `_DstBlend` | Destination Blend | `Float` | `0` | — |
 | `_ZWrite` | ZWrite | `Float` | `1` | 半透明では通常 Off のままにします |
 
 ---
 
-説明のあるもの 156 / 211。**残り 55 個は tooltip が書かれていない** ── `ToonPBRShaderGUI.cs` に足すとここにも出ます。
+説明のあるもの 152 / 206。**残り 54 個は tooltip が書かれていない** ── `ToonPBRShaderGUI.cs` に足すとここにも出ます。

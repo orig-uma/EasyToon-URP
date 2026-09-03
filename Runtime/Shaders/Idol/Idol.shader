@@ -76,7 +76,12 @@ Shader "Origuma/EasyToon_URP/Idol"
         [Space(10)][Header(High Quality Self Shadow    main light only)][Space(4)]
         // これだけキーワード。全経路コンパイルで occupancy が落ちるため。
         [Toggle(_HQ_SHADOW_ON)] _HQShadowOn ("Enable HQ Self Shadow", Float) = 0
-        _HQShadowSoftness        ("  Penumbra (texels)", Range(0,1)) = 0.3
+        // 可動域を 1 → 3 に広げた（T-389）。半径 = 1 + 値 × 6 テクセル（1 で 7、
+        // 3 で 19）。タップは 16 固定なので 1.5（半径 10）あたりから 1 タップが
+        // 受け持つ面積が増えて粒（ディザのノイズ）が見え始める。それより上は
+        // 「粒を許容してでも抽象化したい」用途。単位がテクセルなので、シャドウ
+        // マップの解像度を下げれば同じ値でもワールドでの半影は広がる。
+        _HQShadowSoftness        ("  Penumbra (texels)", Range(0,3)) = 0.3
         // 半影の広がり方。深度差（＝遮蔽物までの距離）に掛ける倍率。
         // 上げるほど「離れた影ほど柔らかい」が強く出る。
         _ShadowPenumbraScale     ("  Penumbra Scale", Range(0,1000)) = 200
@@ -103,15 +108,6 @@ Shader "Origuma/EasyToon_URP/Idol"
         _CastShadowColor         ("Cast Shadow Color", Color) = (0.5, 0.45, 0.5, 1)
         _CastShadowColorStrength ("  Cast Shadow Color Strength", Range(0,1)) = 0
 
-        [Space(10)][Header(Terminator)][Space(4)]
-        _TerminatorColor         ("Terminator Color", Color) = (1.0, 0.82, 0.72, 1)
-        // 既定 0 = 無効（T-384・利用者判断）。明暗境界の暖色は好みが分かれる
-        // 演出なので、入れる人だけが立てる。0 なら色計算は lerp で素通し。
-        _TerminatorStrength      ("  Strength", Range(0,1)) = 0
-        _TerminatorSharpness     ("  Sharpness", Range(0.1,8)) = 2.0
-        // 引きの画で線として煩くなるので距離で消す。寄り（〜20m）では従来どおり。
-        _TerminatorFadeStart     ("  Fade Start (m)", Range(0,200)) = 20
-        _TerminatorFadeEnd       ("  Fade End (m)", Range(0,200)) = 40
 
         [Space(10)][Header(Optional Ramp Override)][Space(4)]
         [Toggle] _UseRampMap ("Use Ramp Map", Float) = 0
@@ -268,6 +264,11 @@ Shader "Origuma/EasyToon_URP/Idol"
         //   `UnityPerMaterial var is not declared in shader property section (_HeadForward)`
         // と出る。**バッチングが効かないだけで絵は正しい**ので、
         // インスペクタを見ている限り気付けない（T-338）。
+        // 影フィルタ（Vogel ディスク）の回転角に使うブルーノイズ（T-390）。
+        // 既定テクスチャは .shader.meta の defaultTextures で包内の 256² を指す
+        // （Doll と同じ仕組み）。IGN（手続き）は対角の格子構造を持ち、半径が大きい
+        // と回転角の構造が**縞**として見えた。ブルーノイズなら等方な粒になる。
+        [HideInInspector][NoScaleOffset] _BlueNoiseTex ("Blue Noise (dither)", 2D) = "gray" {}
         [HideInInspector] _HeadForward ("Head Forward (script)", Vector) = (0,0,0,0)
         [HideInInspector] _HeadRight   ("Head Right (script)",   Vector) = (0,0,0,0)
 

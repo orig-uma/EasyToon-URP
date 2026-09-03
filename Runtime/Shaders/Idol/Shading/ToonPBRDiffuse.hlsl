@@ -97,47 +97,33 @@ float ToonLightResponse(float NdotL, float curvature, float shadowOffset,
     softness = max(softness, shadowAA * 0.5 * _ShadowEdgeAA);
     softness = max(softness, 1e-4);
 
-    return smoothstep(_ShadowThreshold - softness, _ShadowThreshold + softness, rawT);
+    // **下端は 0 で頭打ちにする（T-385）。** 幅を上げて 閾値 − 幅 が 0 を
+    // 下回ると、最暗面（rawT = 0）でも smoothstep が 0 を返さなくなり、
+    // **影の底が幅と連動して浮く**（利用者報告「Base Softness を上げると
+    // 影の暗さの上限が下がる」）。ぼかしたいのは境界であって影の濃さでは
+    // ないので、下端を 0 に留めて「rawT = 0 は常に完全な影色」を保証する。
+    // 暗側の遷移が [0, 閾値] に圧縮されるが、それは元々届かない領域に
+    // 窓を張るよりよい。明側のはみ出しは WarnDiffuseReach が別途警告する。
+    return smoothstep(max(0.0, _ShadowThreshold - softness),
+                      _ShadowThreshold + softness, rawT);
 }
 
-// ターミネータ帯 (境界の中心で 1)
-float ToonTerminatorBand(float rawT, float softness)
+// 境界帯（境界の中心で 1、幅は伝達関数の幅）。**皮下散乱の重みにだけ使う。**
+// 帯に色を乗せる Terminator 機能は T-392 で廃止した ── lit を入力にした色曲線は
+// Ramp Override が完全に表現でき（生成 UI で調達不要・T-388）、Ramp 使用時は
+// 上書きされて無意味になる位置に居たため。落ち方は旧 Sharpness 既定 2 と同じ 2 乗。
+float ToonScatterBand(float rawT, float softness)
 {
     float d = saturate(abs(rawT - _ShadowThreshold) / max(softness, 1e-4));
-    return pow(1.0 - d, max(_TerminatorSharpness, 0.01));
+    float f = 1.0 - d;
+    return f * f;
 }
 
-/// <summary>
-/// ターミネータの距離減衰。引きの画では境界の芯が細い線として残り、
-/// 画面上では輪郭線のように見えて煩い。カメラから遠いほど弱める。
-/// eyeDepth は ToonContext が既に持っているので追加の計算は要らない。
-/// </summary>
-float ToonTerminatorFade(float eyeDepth)
+// 拡散色 = 影色とアルベドの補間。中間の色を置きたいときは Ramp Override
+// （陰・影タブで生成できる）が後段でこれを上書きする。
+float3 ToonDiffuseColor(float3 albedo, float3 shadowCol, float lit)
 {
-    float start = _TerminatorFadeStart;
-    float end   = max(_TerminatorFadeEnd, start + 0.01);
-    return 1.0 - smoothstep(start, end, eyeDepth);
-}
-
-float3 ToonDiffuseColor(float3 albedo, float3 shadowCol, float lit, float band,
-                        float terminatorScale)
-{
-    float3 c = lerp(shadowCol, albedo, lit);
-
-    // 境界に暖色の芯を通す。実写だと散乱で必ずここが色づく。
-    //
-    // **サーフェスタイプで絞っていない。** `terminatorScale` は距離フェードだけで、
-    // 肌・布・髪・金具のすべてに同じ量が掛かる。散乱を根拠にした効果なのに、
-    // 散乱しない部位にも乗っている ── **これは意図的な様式化**で、
-    // 境界の色を全身で揃えるとキャラがひとつの絵としてまとまる。
-    //
-    // 効き（既定 Strength 0.35 / Color (1, 0.82, 0.72) の帯の芯）:
-    //   R ±0%  /  G -6.3%  /  B -9.8%
-    // 部位ごとに変えたいなら `_TerminatorStrength` をマテリアルで振る。
-    // 散乱（`_SubsurfaceStrength`）を切った構成では、
-    // **肌の温かみはここだけが担っている**（T-117 / T-118）。
-    c = lerp(c, c * _TerminatorColor.rgb, band * _TerminatorStrength * terminatorScale);
-    return c;
+    return lerp(shadowCol, albedo, lit);
 }
 
 // ----------------------------------------------------------------------------

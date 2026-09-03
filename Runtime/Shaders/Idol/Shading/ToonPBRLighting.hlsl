@@ -210,10 +210,9 @@ float3 ToonShadeLight(ToonSurface s, ToonContext c, Light light, float3 diffuseL
     rawT = lerp(rawT, faceLit, faceBlend);
 #endif
 
-    // 正面・上向きの陰を持ち上げる（FR-31）。**伝達関数の出力に掛ける** ──
-    float band = ToonTerminatorBand(rawT, softness);
-    float3 diffuse = ToonDiffuseColor(s.diffuseColor, s.shadowColor * shadowColorScale, lit, band,
-                                      ToonTerminatorFade(c.eyeDepth));
+    float3 diffuse = ToonDiffuseColor(s.diffuseColor, s.shadowColor * shadowColorScale, lit);
+    // 境界帯は皮下散乱の重みにだけ使う（Terminator の色付けは T-392 で廃止）。
+    float band = ToonScatterBand(rawT, softness);
 
 UNITY_BRANCH
 if (_UseRampMap > 0.5)

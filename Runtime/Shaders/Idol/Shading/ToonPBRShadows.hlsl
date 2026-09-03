@@ -215,6 +215,10 @@ half ToonSampleMainShadowHQ(float3 positionWS, float3 normalWS, float NdotL, flo
 
     half atten = 0.0h;
 
+    // **決定的な格子フィルタ（7×7 テント）は試して撤回した（T-394）。**
+    // 粒は消えるが、格子の形が半影に出て、Penumbra を上げると突起が並ぶ
+    // （利用者評価）。Vogel＋画素ごとの回転は「構造をノイズに散らす」ための
+    // 手法で、構造が見えるより粒の方がまし、という判断に戻った。
     float2 filterPhase = ToonDiskPhase(phi);
 
     UNITY_UNROLL

@@ -115,11 +115,6 @@ CBUFFER_START(UnityPerMaterial)
     float  _CastShadowColorStrength;
 
     // ターミネータ
-    float4 _TerminatorColor;
-    float  _TerminatorStrength;
-    float  _TerminatorSharpness;
-    float  _TerminatorFadeStart;
-    float  _TerminatorFadeEnd;
 
     // ランプ (任意)
     float  _UseRampMap;
@@ -363,6 +358,8 @@ TEXTURE2D(_NPRMap);
 
 TEXTURE2D(_RampMap);
 TEXTURE2D(_FaceSDFMap);
+// 影フィルタの回転ノイズ。サンプラは Core の GlobalSamplers（sampler_PointRepeat）。
+TEXTURE2D(_BlueNoiseTex);
 
 // 顔 SDF の 16bit デコード（R が上位・G が下位 = R×256+G）。
 // dot の係数 65280 = 255×256。bilinear 補間後の RG でも線形なので、

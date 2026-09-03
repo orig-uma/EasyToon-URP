@@ -1,6 +1,6 @@
 {
   "name": "com.origuma.easytoon-urp",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "displayName": "EasyToon for URP",
   "description": "Toon character shader for URP built for 3D live stages. The Idol shader keeps the BRDF physical (GGX, Charlie sheen, Kajiya-Kay / anisotropic GGX hair, clearcoat, iridescence, glitter) and stylizes only the diffuse transfer, so the character sits inside PBR lighting: baked 16-bit face SDF shadows, curvature-driven soft terminator, HQ self shadow (PCSS), hair see-through, rim / Peach Fuzz, fill light, light conditioning against stage lighting, black-out, dissolve, outline, and motion vectors for TAA. Maps are baked in-editor (no DCC needed) via EasyShaderCore.",
   "unity": "6000.3",

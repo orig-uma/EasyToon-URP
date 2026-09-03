@@ -150,8 +150,6 @@ Smoothness Scale        0.35
 Hue Shift              -0.04     （赤側へ）
 Saturation Scale        1.35
 Value Scale             0.80
-Terminator Color        (1.0, 0.78, 0.68)
-Terminator Strength     0.45
 Subsurface Strength     0.7      ← **既定は 0（OFF）。使うなら明示的に上げる**
 Transmission Strength   0.6      ← 同上
 ```
@@ -172,7 +170,6 @@ Energy Conservation     0        ← 1 にすると物理的に正しくなる�
 Hue Shift              +0.04     （青紫側へ。白物は寒色に転ばせる）
 Saturation Scale        1.5
 Value Scale             0.78
-Terminator Strength     0.25
 ```
 
 > **`Energy Conservation` を 1 にすると sheen が物理的に正しくなります。** 現状の 0 は
@@ -275,7 +272,7 @@ Depth Blend             0.6
 | 顔の影が反転 | Flip SDF U、または Binder の軸設定 |
 | 細かいパーツがちらつく | Spec AA Variance を 0.2〜0.3 に |
 | **ライトを回すと影がちらつく** | ステップの幅がシャドウマップの粒度より狭い。`Edge Anti-Aliasing` が 0 になっていないか確認（既定 1 で自動的に吸収する）。それでも出るなら `Realtime Shadow Softness` を 0.6 前後へ。**解像度を上げるのは対症療法** |
-| 全体が眠い | Terminator Strength を上げる。境界の芯が絵を締めます |
+| 全体が眠い | Ramp を生成（陰・影タブ > Ramp Override）して中間に暖色のキーを置く。境界の芯が絵を締めます |
 
 ---
 

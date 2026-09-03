@@ -840,8 +840,8 @@ CASES: list[Case] = [
         tool=["param_check.py", ".", "--materials", "mats"],
         edits=[("mats/pin/Pin0.mat", "    - _Shadow2Step: 0.15",
                 "    - _Shadow2Step: 0.15" + NL
-                + "    - _TerminatorFadeStart: 90" + NL
-                + "    - _TerminatorFadeEnd: 10")],
+                + "    - _PerspectiveRemovalStart: 90" + NL
+                + "    - _PerspectiveRemovalEnd: 10")],
         expect="対になった値が逆転している",
         why="**効く範囲が消えるか、常に効きっぱなしになる。** "
             "値を個別に見ても妥当に見えるので気付けない",
