@@ -5,7 +5,7 @@
 トゥーンキャラクターを **PBR ライティングのステージ（3D ライブ）に置く**ための URP 向けキャラクターシェーダーです。
 BRDF は物理ベースのまま保ち、**拡散の伝達関数だけを様式化**するので、フォトリアルな背景・反射プローブ・多灯の中でキャラが浮きません。
 BaseMap 一枚＋既定値で成立し、質感は Editor 内のマップベイクで積み増します。
-[EasyPBR](https://github.com/orig-uma/EasyPBR-URP)（Doll）の姉妹パッケージで、共通基盤 [EasyShaderCore](https://github.com/orig-uma/EasyShaderCore)（`com.origuma.easyshader-core`）の
+[EasyPBR](https://github.com/orig-uma/EasyPBR-URP)（Doll）の姉妹パッケージで、共通基盤 [EasyShaderCore](https://github.com/orig-uma/EasyShaderCore-URP)（`com.origuma.easyshader-core`）の
 HLSL ライブラリ・マップベイク・Inspector 部品を共有し、**Inspector のタブ構成は Doll と同一**（基本 / 陰・影 / ライト / スペキュラ / 質感 / 演出 / 詳細 / Baking）です。
 
 ## 特徴
@@ -38,12 +38,12 @@ https://github.com/orig-uma/EasyToon-URP.git
 https://github.com/orig-uma/EasyToon-URP.git#v0.2.3
 ```
 
-依存する共通基盤パッケージ [EasyShaderCore](https://github.com/orig-uma/EasyShaderCore)（`com.origuma.easyshader-core`）は、
+依存する共通基盤パッケージ [EasyShaderCore](https://github.com/orig-uma/EasyShaderCore-URP)（`com.origuma.easyshader-core`）は、
 インストール直後（同一エディタセッション内・再起動不要）に**自動でインストールされる**（git が必要）。自動導入に失敗した場合のみ
 手動手順つきの案内ウィンドウが表示される。手動で先に入れる場合:
 
 ```
-https://github.com/orig-uma/EasyShaderCore.git#v0.3.3
+https://github.com/orig-uma/EasyShaderCore-URP.git#v0.3.3
 ```
 
 ### Embedded
@@ -54,7 +54,7 @@ https://github.com/orig-uma/EasyShaderCore.git#v0.3.3
 
 * Unity 6 (6000.3) 以降
 * Universal RP 17.3 以降 / Forward・Forward+
-* [EasyShaderCore](https://github.com/orig-uma/EasyShaderCore) 0.3.3 以降（自動インストールされる）
+* [EasyShaderCore](https://github.com/orig-uma/EasyShaderCore-URP) 0.3.3 以降（自動インストールされる）
 * Render Graph 有効（既定）。Compatibility Mode では RendererFeature（アウトライン・前髪透過）が動作しません
 * [EasyPBR for URP](https://github.com/orig-uma/EasyPBR-URP) は**任意**（Doll からの移行変換にのみ必要。コード依存なし）
 
