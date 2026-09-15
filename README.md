@@ -13,8 +13,8 @@ HLSL ライブラリ・マップベイク・Inspector 部品を共有し、**Ins
 * **物理ベースの BRDF ＋ 様式化した拡散:** GGX（デュアルローブ・Schlick Fresnel・Smith 可視性・Specular AA）、Charlie sheen（布）、Kajiya-Kay / 異方性 GGX（髪）、クリアコート＋イリデッセンス、グリッター（スパンコール）は物理のまま。拡散だけ Half-Lambert ＋ ソフトステップの伝達関数で、影色は HSV（色相回転・彩度）で設計し、落ち影だけ別色で塗り分けられます。Ramp テクスチャによる上書きも可。
 * **サーフェスタイプ:** Default / Skin / Face / Hair / Cloth をマテリアルごとに選び、部位専用の機能（肌の皮下散乱・透過、顔 SDF、髪の異方性、布の sheen）をそのタイプにだけ出します。
 * **顔:** ベイクした **16bit 顔 SDF**（距離場ブレンド・落ち影込み）でライトに滑らかに追従する顔影。正面付近の左右クロスフェード、下向きの面（顎裏）の法線陰影への戻し、頭ボーン追従（`FaceDirectionBinder`）。ステンシルによる前髪透過（眉・目が前髪越しに透ける）。
-* **高品質セルフシャドウ:** メインライトのシャドウマップを Vogel ディスクでフィルタし、Penumbra / Receiver Normal Bias / Contact Hardening（PCSS）を調整可。落ち影（シャドウマップ）と陰（伝達関数）を分離合成します。
-* **リム / Peach Fuzz:** フレネルリム・深度リム・バックライトリムの 3 系統と、肌の産毛（Peach Fuzz）。ライトの色に光源ごとに追従します。
+* **高品質セルフシャドウ:** メインライトのシャドウマップを Vogel ディスクでフィルタし、Softness / Receiver Normal Bias を調整可。落ち影（シャドウマップ）と陰（伝達関数）を分離合成します。
+* **リム / Peach Fuzz:** フレネルリム（光が回り込んだ側だけ・落ち影で消灯）と、肌の産毛（Peach Fuzz）。ライトの色に光源ごとに追従します。
 * **ライブ運用:** ライト色整形（Light Conditioning）・白飛び防止（Anti-Blowout・追加ライトの Add / Max 合成）・フィルライト（照り返し）・暗転（Black Out。EasyShaderCore の `BlackOutController` でキャラ単位・Timeline 直キー）・Dissolve（`DissolveController`）。
 * **質感の積み増し:** MatCap、ディテールマップ（アルベド・法線）、ベント法線（間接光の向き補正）、キャビティ、曲率マップ（境界幅の場所制御）、SSS マップ（厚み＋透過方向）、シアー生地（ストッキング）。
 * **アウトライン:** 背面法線押し出し（`ToonOutlineFeature` による後段一括描画）。カメラ距離・画面幅上限、アルベドブレンドの線色、Cutout / Dissolve 同期。既定 OFF。
@@ -35,7 +35,7 @@ https://github.com/orig-uma/EasyToon-URP.git
 特定バージョンを指定する場合:
 
 ```
-https://github.com/orig-uma/EasyToon-URP.git#v0.2.2
+https://github.com/orig-uma/EasyToon-URP.git#v0.2.3
 ```
 
 依存する共通基盤パッケージ [EasyShaderCore](https://github.com/orig-uma/EasyShaderCore)（`com.origuma.easyshader-core`）は、
@@ -43,7 +43,7 @@ https://github.com/orig-uma/EasyToon-URP.git#v0.2.2
 手動手順つきの案内ウィンドウが表示される。手動で先に入れる場合:
 
 ```
-https://github.com/orig-uma/EasyShaderCore.git#v0.3.1
+https://github.com/orig-uma/EasyShaderCore.git#v0.3.3
 ```
 
 ### Embedded
@@ -54,7 +54,7 @@ https://github.com/orig-uma/EasyShaderCore.git#v0.3.1
 
 * Unity 6 (6000.3) 以降
 * Universal RP 17.3 以降 / Forward・Forward+
-* [EasyShaderCore](https://github.com/orig-uma/EasyShaderCore) 0.3.0 以降（自動インストールされる）
+* [EasyShaderCore](https://github.com/orig-uma/EasyShaderCore) 0.3.3 以降（自動インストールされる）
 * Render Graph 有効（既定）。Compatibility Mode では RendererFeature（アウトライン・前髪透過）が動作しません
 * [EasyPBR for URP](https://github.com/orig-uma/EasyPBR-URP) は**任意**（Doll からの移行変換にのみ必要。コード依存なし）
 

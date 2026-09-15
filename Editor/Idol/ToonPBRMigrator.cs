@@ -131,7 +131,6 @@ namespace ToonNPR.EditorTools
         {
             // lint:foreign-begin  ここは**移行元**のプロパティ名
             "_SpecularAA",            // → _SpecAAVariance        1.0 → 0.15
-            "_RimThickness",          // → _RimFresnelPower       0.2 → 2.5
             "_IridescenceThickness",  // → 同名                   3.0 → 1.0
             // lint:foreign-end
         };
@@ -248,34 +247,13 @@ namespace ToonNPR.EditorTools
 
             // --- リム ------------------------------------------------------
             //
-            // **移行元は「深度リム」と「フレネルリム」を別々に持っている。**
-            // 最初 `_RimThickness → _RimWidth` と当てていたが、**別物だった。**
-            //
-            //   Idol `_RimWidthPx`   深度リムの**画素幅**（0.5〜16 px）
-            //   Idol `_RimThickness` フレネルリムの**厚み**（0〜1）
-            //   Doll `_RimThickness` 同上（Doll に深度リムは無い）
-            //
-            // ToonPBR 側:
-            //   `_RimWidth`        `_RimWidth * 10 / 画面高` が画素数 ── **画面幅**
-            //   `_RimFresnelPower` `pow(1 - NdotV, power)` ── **フレネルの落ち**
-            //
-            // フレネルの厚みを画面幅に流し込んでいたので、意味が通っていなかった。
+            // 移行元の `_RimThickness`（Idol / Doll とも、フレネルリムの厚み 0〜1）は
+            // ToonPBR の `_RimFresnelThickness` と**同じ Core の写像**（lerp(12, 0.5, t)）なので素通し。
+            // 以前は深度リム側の `_RimFresnelPower`（指数）へ逆数で変換していたが、
+            // 深度リムごと撤去した（T-416）。深度リムの画素幅（Idol `_RimWidthPx`）は受け皿が無い。
             new Rule(Kind.Color, "_RimColor",     "_RimColor"),
             new Rule(Kind.Number,"_RimIntensity", "_RimIntensity"),
-
-
-            // 厚み → フレネルの指数。**厚いほど指数は小さい**（緩く落ちる）ので逆数。
-            //
-            // **既定どうしが一致する形に合わせる。** 移行元の既定 0.2 が
-            // ToonPBR の既定 2.5 に落ちるよう係数を 0.5 に取った（0.5 / 0.2 = 2.5）。
-            // 「既定のまま触っていない」マテリアルが移行で見た目を変えないことは、
-            // 変換を推測で書くときの唯一まともな足がかり。
-            //
-            // 最初 `Lerp(8, 0.5, v)` と書いて「既定 0.2 が 2.5」とコメントしたが、
-            // **実際は 6.5 だった。** 数字を書いたら必ず通して確かめること。
-            new Rule(Kind.Number,"_RimThickness", "_RimFresnelPower",
-                     v => Clamp(0.5f / Mathf.Max(v, 0.0625f), 0.1f, 8.0f),
-                     "厚みの逆数をフレネル指数へ（既定 0.2 → 2.5 で一致）"),
+            new Rule(Kind.Number,"_RimThickness", "_RimFresnelThickness"),
 
 
 

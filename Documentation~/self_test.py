@@ -202,23 +202,6 @@ CASES: list[Case] = [
     # 複製するので `root / "BACKLOG.md"` が在り、本番の入れ子では空だった。
     # 試験の世界と本番の世界が違うと、緑のまま死ぬ（T-330）。
     Case(
-        name="半影半径を既定より広げている",
-        tool=["param_check.py", ".", "--materials", "mats"],
-        # **前提も注入で作る。** この検査は接地硬化（PCSS）が ON のときだけ
-        # 走る。以前は素材の現在値（0.shita が ON）に依存していて、利用者が
-        # Unity でその値を 0 に変えただけで試験が黙って死んだ ── シーン由来の
-        # 状態を試験に焼き込む T-155 の失敗を、試験自身がやっていた形。
-        edits=[("mats/0.shita.mat",
-                r"re:- _ShadowContactHardening: [\d.]+",
-                "- _ShadowContactHardening: 1"),
-               ("mats/0.shita.mat",
-                r"re:- _HQShadowSoftness: [\d.]+",
-                "- _HQShadowSoftness: 0.8")],
-        expect="半影半径の可動域",
-        why="既定に警告を出さないよう直した検査。閾値を間違えると 46 件全部に出る（T-167）",
-        covers="check_pcss",
-    ),
-    Case(
         # **2箇所同時でなければ成立しない。** BaseMap を外すだけでは
         # `_BaseColor.a = 1.0 >= _Cutoff 0.5` で発火しない。
         name="アルファテストで1画素も描かれない",
@@ -319,12 +302,13 @@ CASES: list[Case] = [
         # **2箇所の編集で「後ろへ移す」を作る。** 消して末尾に足す。
         name="E004 依存ヘッダのインクルード順",
         tool=["shader_lint.py", ".", "--strict"],
+        # 深度テクスチャの include は T-416 で消えたので、Lighting.hlsl（SampleSH / GetMainLight の宣言元）で試す。
         edits=[("ToonPBRCommon.hlsl",
-                '#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl"' + NL,
+                '#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"' + NL,
                 ""),
                ("ToonPBRCommon.hlsl",
                 "#endif // TOON_PBR_COMMON_INCLUDED",
-                '#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl"' + NL
+                '#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Lighting.hlsl"' + NL
                 + "#endif // TOON_PBR_COMMON_INCLUDED")],
         expect="E004",
         why="HLSL は上から解析する。使用行より後で include しても手遅れ",
@@ -384,17 +368,21 @@ CASES: list[Case] = [
         covers="E006",
     ),
     Case(
-        # **DepthOnly は Screen Silhouette モードのリムの前提**（CLAUDE.md）。
-        # 消えると絵から静かにリムが落ちる。
+        # **DepthOnly は深度を読む機能の前提。** 深度リムは T-416 で撤去したので、
+        # 検査の対象（シーン深度の読み出し）は注入で作る。
         name="E007 深度を読むのに DepthOnly パスが無い",
         tool=["shader_lint.py", ".", "--strict"],
         # **`Name` ではなく LightMode タグを変える。** 最初 `Name` を書き換えて
         # 空振りした ── E007 が見ているのは LightMode で、URP が振り分けに
         # 使うのもそちらなので**検査のほうが正しい**。
         edits=[("Idol.shader", '"LightMode" = "DepthOnly"',
-                '"LightMode" = "DepthOnlyRenamed"')],
+                '"LightMode" = "DepthOnlyRenamed"'),
+               ("Shading/ToonPBRRim.hlsl",
+                "float2 ToonRimShape(ToonSurface s, ToonContext c)" + NL + "{",
+                "float2 ToonRimShape(ToonSurface s, ToonContext c)" + NL + "{" + NL
+                + "    float lintProbeDepth = SampleSceneDepth(c.screenUV);")],
         expect="E007",
-        why="_CameraDepthTexture が埋まらず、Screen Silhouette のリムが黙って効かなくなる",
+        why="_CameraDepthTexture が埋まらず、シーン深度を読む機能が黙って効かなくなる",
         covers="E007",
     ),
     Case(
@@ -418,21 +406,21 @@ CASES: list[Case] = [
     Case(
         name="W103 未参照のプロパティ",
         tool=["shader_lint.py", ".", "--strict"],
-        edits=[("Idol.shader", '        _Cutoff                  ("  Cutoff", Range(0,1)) = 0.5',
-                '        _Cutoff                  ("  Cutoff", Range(0,1)) = 0.5' + NL
+        edits=[("Idol.shader", '        _Cutoff ("  Cutoff", Range(0,1)) = 0.5',
+                '        _Cutoff ("  Cutoff", Range(0,1)) = 0.5' + NL
                 + '        _LintProbeW103           ("  probe", Range(0,1)) = 0')],
         expect="W103",
         why="誰も読まない値がインスペクタに並ぶ。消し忘れの温床",
         covers="W103",
     ),
     Case(
-        # `_ShadowPenumbraScale` は Range(0,1000)。lerp の係数に裸で渡すと
+        # `_RimIntensity` は Range(0,8)。lerp の係数に裸で渡すと
         # **外挿**になり、色が定義域の外へ飛ぶ（T-076 / T-098 と同じ形）。
         name="W106 Range 外のプロパティを lerp の係数に渡す",
         tool=["shader_lint.py", ".", "--strict"],
         edits=[("Shading/ToonPBREnv.hlsl",
                 "return lerp(1.0, comp, _EnergyCompensation);",
-                "return lerp(1.0, comp, _ShadowPenumbraScale);")],
+                "return lerp(1.0, comp, _RimIntensity);")],
         expect="W106",
         why="lerp が外挿になり色が破綻する。Range はスライダを縛るだけで実行時は縛らない",
         covers="W106",
@@ -444,8 +432,8 @@ CASES: list[Case] = [
         name="W104 ShaderGUI に出ないプロパティ",
         tool=["shader_lint.py", ".", "--strict"],
         edits=[("Idol.shader",
-                '        _Cutoff                  ("  Cutoff", Range(0,1)) = 0.5',
-                '        _Cutoff                  ("  Cutoff", Range(0,1)) = 0.5' + NL
+                '        _Cutoff ("  Cutoff", Range(0,1)) = 0.5',
+                '        _Cutoff ("  Cutoff", Range(0,1)) = 0.5' + NL
                 + '        _LintProbeW104           ("  probe", Range(0,1)) = 0'),
                ("ToonPBRCommon.hlsl", "    float  _ShadowColorMix;",
                 "    float  _ShadowColorMix;" + NL + "    float  _LintProbeW104;"),
@@ -722,25 +710,6 @@ CASES: list[Case] = [
         covers="check_menu_paths",
     ),
     Case(
-        # **シェーダーもマテリアルも正しいのに絵が出ない型**（T-281 と同じ）。
-        # 品質レベルごとに URP アセットが違うので、PC で調整した絵が
-        # 品質を落とした瞬間に別物になる。読み先が未定義でも例外は出ない。
-        name="深度を読むのにパイプラインが作らない",
-        tool=["param_check.py", ".", "--materials", "mats"],
-        # **深度の利用者も注入で作る。** T-343 でリムの既定が Fresnel になり、
-        # 深度を読むのは _RimMode = 0（Screen Silhouette）を明示した材質だけに
-        # なった。素材の現在値に頼らず、利用者そのものをここで仕立てる。
-        edits=[("../Settings/Fixture_RPAsset.asset",
-                "  m_RequireDepthTexture: 1", "  m_RequireDepthTexture: 0"),
-               ("mats/0.shita.mat",
-                r"re:- _RimIntensity: [\d.]+",
-                "- _RimMode: 0" + NL + "    - _RimIntensity: 1")],
-        expect="深度テクスチャを作らない品質レベルがある",
-        why="**リムが全面に出るか一切出ないかに倒れる。** "
-            "シェーダーもマテリアルも正しいので「値が悪い」と読めてしまう",
-        covers="check_depth_texture_required",
-    ),
-    Case(
         # **押せないのではなく項目が無い。** Add Renderer Feature の一覧に
         # 出てこないので、読んだ側は自分の見落としと解釈して探し回る。
         # メニューの案内（`check_menu_paths`）と同じ型（T-311）。
@@ -840,8 +809,8 @@ CASES: list[Case] = [
         tool=["param_check.py", ".", "--materials", "mats"],
         edits=[("mats/pin/Pin0.mat", "    - _Shadow2Step: 0.15",
                 "    - _Shadow2Step: 0.15" + NL
-                + "    - _PerspectiveRemovalStart: 90" + NL
-                + "    - _PerspectiveRemovalEnd: 10")],
+                + "    - _FaceSDFBlendNormalMax: -0.5" + NL
+                + "    - _FaceSDFBlendNormalMin: 0.5")],
         expect="対になった値が逆転している",
         why="**効く範囲が消えるか、常に効きっぱなしになる。** "
             "値を個別に見ても妥当に見えるので気付けない",
@@ -928,7 +897,10 @@ CASES: list[Case] = [
         # 例外も警告も出ないので、絵がおかしい原因が割り当て忘れだと気付けない。
         name="機能を有効にしたのにテクスチャが無い",
         tool=["param_check.py", ".", "--materials", "mats"],
-        edits=[("mats/0.shita.mat", r"re:- _UseRampMap: [\d.]+", "- _UseRampMap: 1")],
+        # **素材の現在値に頼らない。** 0.shita にはランプが割り当て済みになったので、割り当ても外す。
+        edits=[("mats/0.shita.mat", r"re:- _UseRampMap: [\d.]+", "- _UseRampMap: 1"),
+               ("mats/0.shita.mat", r"re:(- _RampMap:\s*\n\s*m_Texture: )\{fileID: \d+[^}]*\}",
+                r"\g<1>{fileID: 0}")],
         expect="_UseRampMap が 0 でないのに _RampMap が未割り当て",
         why="**陰影が消えてべた塗りになる。** 原因がテクスチャの割り当て忘れだと"
             "分かる手掛かりがどこにも出ない",
@@ -1018,8 +990,8 @@ CASES: list[Case] = [
         name="光を当てても明るくならない設定",
         tool=["param_check.py", "."],
         edits=[("Idol.shader",
-                '_DiffuseWrap             ("  Diffuse Wrap", Range(0,1)) = 0.25',
-                '_DiffuseWrap             ("  Diffuse Wrap", Range(0,1)) = 1.0')],
+                '_DiffuseWrap ("  Diffuse Wrap", Range(0,1)) = 0.25',
+                '_DiffuseWrap ("  Diffuse Wrap", Range(0,1)) = 1.0')],
         expect="明るくならない",
         why="ライトを当てても影色のまま動かない。**絵からは光源側を疑うしかなく原因に辿り着けない**",
         covers="check_diffuse_reach",

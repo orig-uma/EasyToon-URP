@@ -111,16 +111,16 @@ namespace ToonNPR.EditorTools
             Section("リムの強さ",
                 "逆光の縁。**まず「無し」と比べる**のが早い ── 有る状態だけ見ていると、" +
                 "リムが絵に効いているのか浮いているのか判断できない。" +
-                "向き（Directionality）と落ち影の反映は常に有効のまま。");
+                "向き（光が回り込んだ側だけ）と落ち影の反映は常に有効のまま。");
 
             Row(mats, "無し", "リムを完全に切る。比較の基準として",
-                RimPreset(0f, 0.7f));
+                RimPreset(0f));
             Row(mats, "控えめ", "シルエットを起こす程度。背景と馴染ませたいとき",
-                RimPreset(0.8f, 0.85f));
-            Row(mats, "標準", "Intensity 1.59 / Backlight Bias 0.70",
-                RimPreset(1.59f, 0.7f));
+                RimPreset(0.8f));
+            Row(mats, "標準", "Intensity 1.59",
+                RimPreset(1.59f));
             Row(mats, "強め", "明確な逆光を作るとき。白飛びに注意",
-                RimPreset(2.6f, 0.6f));
+                RimPreset(2.6f));
 
             EditorGUILayout.Space(12);
             Section("ちらつき対策（前髪の細い影）",
@@ -129,24 +129,13 @@ namespace ToonNPR.EditorTools
                 "**セルの硬さ（Base Softness）は変えない** ── " +
                 "ここで触るのはリアルタイム影の側だけなので、絵の様式は保たれる。");
 
-            Row(mats, "① 接地硬化を切る（まず これ）",
-                "**半影の幅を固定にする。** 接地硬化は 8 タップでブロッカー深度を推定するが、"
-                + StrandTexelPhrase()
-                + "**半径が画素ごとに 1.0〜8.4 テクセルの間で振れて「まだら」になる。**"
-                + "キャラのスケールでは真の半影が 1 テクセルに届かないので、"
-                + "**物理的に失うものは無い**（頭が床に落とす影だけは別）。触るのはこれ 1 つ",
-                FlickerPreset(hardening: false));
-            Row(mats, "② 可動域を狭める（硬化は残す）",
-                "接地硬化は残したまま Penumbra Scale を 200 → 60 へ。"
-                + "半径の振れ幅が狭まるので、まだらが減りつつ接地感は残る",
-                FlickerPreset(penumbraScale: 60f));
-            Row(mats, "③ 影の境界を柔らかくする",
+            Row(mats, "① 影の境界を柔らかくする",
                 "Realtime Shadow Softness を 0.4 → 0.55 へ。**中心は「半分遮蔽」に固定**なので"
-                + "影の大きさは変わらず柔らかさだけが変わる。①②で足りないときに足す",
+                + "影の大きさは変わらず柔らかさだけが変わる",
                 FlickerPreset(attenSoftness: 0.55f));
-            Row(mats, "④ 元に戻す",
-                "接地硬化 ON・Penumbra Scale 200・Realtime Shadow Softness 0.4",
-                FlickerPreset(hardening: true, penumbraScale: 200f, attenSoftness: 0.4f));
+            Row(mats, "② 元に戻す",
+                "Realtime Shadow Softness 0.4",
+                FlickerPreset(attenSoftness: 0.4f));
 
 
             EditorGUILayout.Space(12);
@@ -156,15 +145,13 @@ namespace ToonNPR.EditorTools
                 "46 マテリアルを手で往復するのが現実的でないから、ここに置いてある。" +
                 "戻すときは Undo か、もう一度『全部 ON』を押す。");
 
-            // **「既定の状態」ではない。** シェーダーの既定は 2 つとも 0（OFF）で、
-            // ここは「切り分けを終えて全部戻す」ための行（T-285）。
-            Row(mats, "全部 ON", "2 つとも有効にする（切り分けを終えたあとの復帰用）。"
-                + "**シェーダーの既定はどれも OFF** なので、初期状態とは違う",
-                ToggleSet(hardening: true, hq: true));
-            Row(mats, "接地硬化 OFF", "PCSS を切る。半影の幅が固定になり**揺れが止まる**。ここで止まれば原因は PCSS",
-                ToggleSet(hardening: false, hq: true));
+            // **「既定の状態」ではない。** シェーダーの既定は OFF で、
+            // ここは「切り分けを終えて戻す」ための行（T-285）。接地硬化の行は T-415 で撤去。
+            Row(mats, "自前の影 ON", "HQ 影を有効にする（切り分けを終えたあとの復帰用）。"
+                + "**シェーダーの既定は OFF** なので、初期状態とは違う",
+                ToggleSet(hq: true));
             Row(mats, "自前の影 OFF", "HQ 影ごと切って URP 標準の影に戻す。ここでも残るならシェーダー外が原因",
-                ToggleSet(hardening: false, hq: false));
+                ToggleSet(hq: false));
 
             EditorGUILayout.Space(4);
             EditorGUILayout.HelpBox(
@@ -214,28 +201,11 @@ namespace ToonNPR.EditorTools
             return $"いまの URP 設定では影マップの 1 テクセルが約 {mm:0.0#}mm。";
         }
 
-        /// <summary>毛束幅を約 4mm と置いた注記（BACKLOG の実測記録と同じ仮定）。</summary>
-        private static string StrandTexelPhrase()
-        {
-            var asset = UnityEngine.Rendering.GraphicsSettings.currentRenderPipeline
-                        as UnityEngine.Rendering.Universal.UniversalRenderPipelineAsset;
-            if (!ToonPBRSetupCheck.TryMainShadowTexel(asset, out _, out _, out float mm))
-                return "毛束は数テクセル幅しかなく推定が安定しない ── ";
-            return $"毛束（約 4mm）は約 {4f / mm:0.#} テクセル幅しかなく推定が安定しない ── ";
-        }
-        private static System.Action<Material, SurfaceType> FlickerPreset(
-            bool? hardening = null, float? penumbraScale = null, float? attenSoftness = null)
+        private static System.Action<Material, SurfaceType> FlickerPreset(float? attenSoftness = null)
         {
             return (m, st) =>
             {
-                // **渡されたものだけ触る。** 「接地硬化 OFF」と書いてあるのに
-                // コンタクトシャドウまで ON になる、という行が既にある
-                // （切り分け用に「全部 ON からの差分」で組んであるため）。
-                // ちらつき対策の側は**名前どおり 1 つだけ**動かす。
-                if (hardening.HasValue)
-                    Set(m, "_ShadowContactHardening", hardening.Value ? 1f : 0f);
-                if (penumbraScale.HasValue)
-                    Set(m, "_ShadowPenumbraScale", penumbraScale.Value);
+                // **渡されたものだけ触る。** ちらつき対策は名前どおり 1 つだけ動かす。
                 if (attenSoftness.HasValue)
                     Set(m, "_ShadowAttenSoftness", attenSoftness.Value);
             };
@@ -247,15 +217,11 @@ namespace ToonNPR.EditorTools
         /// キーワードとプロパティの両方を動かすこと。片方だけだと
         /// インスペクタの表示と実際の分岐が食い違って、余計に分からなくなる。
         /// </summary>
-        private static System.Action<Material, SurfaceType> ToggleSet(
-            bool hardening, bool hq)
+        private static System.Action<Material, SurfaceType> ToggleSet(bool hq)
         {
             return (m, st) =>
             {
                 SetToggle(m, "_HQShadowOn",      "_HQ_SHADOW_ON",      hq);
-
-                // 接地硬化はキーワードを持たない（動的分岐）。プロパティだけで足りる。
-                Set(m, "_ShadowContactHardening", hardening ? 1f : 0f);
             };
         }
 
@@ -285,17 +251,12 @@ namespace ToonNPR.EditorTools
         }
 
         /// <summary>
-        /// リムの強さと逆光への寄り。**向きと落ち影の反映（T-103）は触らない** ──
+        /// リムの強さ。**向きと落ち影の反映（T-103）は触らない** ──
         /// あれは「光源と無関係に出る」という不具合の修正であって、絵の方向の軸ではない。
         /// </summary>
-        private static System.Action<Material, SurfaceType> RimPreset(
-            float intensity, float backlightBias)
+        private static System.Action<Material, SurfaceType> RimPreset(float intensity)
         {
-            return (m, st) =>
-            {
-                Set(m, "_RimIntensity", intensity);
-                Set(m, "_RimBacklightBias", backlightBias);
-            };
+            return (m, st) => Set(m, "_RimIntensity", intensity);
         }
 
         /// <summary>

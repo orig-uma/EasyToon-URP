@@ -2,6 +2,31 @@
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-09-15
+
+### Changed (Breaking)
+
+- **Baking タブ > Face SDF の表示名を Baker の設定名に揃えた**（T-403 と同じ規則）。`Cast Shadow` → `Use Cast Shadow`、`Line Softness` → `DF Spread`、プロキシ関連は `Proxy Mode / Proxy Shape / Proxy Taper / Proxy Flatten / Proxy Detail / Proxy Detail Angle / Proxy Manual Fit / Proxy Center Transform / Proxy Center Offset / Proxy Center WS / Proxy Radii`。単位（m・texel）はツールチップへ。
+
+- **深度リム（Screen Silhouette）を撤去した**（T-416）。`Rim Mode` と、深度モードでだけ効いていた `Rim Width` / `Rim Threshold` / `Rim Softness` / `Rim Fresnel Power` / `Rim Backlight Bias` / `Rim Directionality` / `Rim Depth Blend` を削除。リムはフレネル（EasyPBR(Doll) と同じ Core の式）だけになり、Fresnel モードだった材質の見た目は変わらない（深度モードだった材質はフレネルに切り替わる）。シェーダーはシーン深度を読まなくなったので、URP Asset の Depth Texture は不要。`Rim Fresnel Thickness (PBR)` は `Rim Fresnel Thickness` に改名（プロパティ名は同じ）。移行ツールの `_RimThickness` は `_RimFresnelThickness` へ素通しに変更。
+- **接地硬化（PCSS）を撤去した**（T-415）。`Shadow Contact Hardening (PCSS)` と `Shadow Penumbra Scale` を削除し、HQ セルフシャドウは回転 Vogel 16 タップの固定半径（`HQ Shadow Softness`）だけになる。8 タップのブロッカー探索で半影の幅を変えていたが、キャラの自己遮蔽では真の半影が 1 テクセルに届かず、推定の分散が「まだら」やちらつきになっていた。シャドウマップのフェッチが最大 8 回減る。プリセット窓の「接地硬化を切る」「可動域を狭める」「接地硬化 OFF」の行も削除。材質に残った値は使われない。
+
+### Added
+
+- **顔 SDF をプロキシの法線で焼く**（T-414、Core 0.3.2）。Baking タブ > Face SDF の `Proxy Mode` で「楕円体（頭に合わせた球）」か「プロキシメッシュ」を選ぶと、顔メッシュの法線の代わりにその法線で影の遷移角を求める。ローポリの顔でポリゴンごとに折れていた等値線が滑らかになる。UV は顔メッシュのものをそのまま使うので UV 合わせは不要。既定は「自動（楕円体を顔に合わせる）」・卵型（`Proxy Taper` 0.3）・Blend 0.7 で、中心と半径は焼く頂点に最小二乗の楕円体を当てて決まる（首・口の中は外れ値として除外）。何も設定しなくても滑らかな境界になる。`Proxy Manual Fit` で中心（`Proxy Center Transform` ＋ `Proxy Center Offset`、または `Proxy Center WS`）と `Proxy Radii` を手で指定できる。**形のバリエーション**（Core 0.3.3）: `Proxy Shape` で「楕円体 / 卵型（顎を細く）/ 前を平ら（前半分だけ超楕円、後ろは丸いまま）/ 円盤（正面がほぼ平面）」を選べ、`Proxy Taper` / `Proxy Flatten` で微調整。`Proxy Detail` は「部分的にメッシュの法線」── プロキシから `Proxy Detail Angle` 度以上ずれる鼻・眉・唇だけ実際の法線に戻し、頬・額は滑らかなまま（鼻の影が戻る）。
+
+- **`Glitter Rim` / `Glitter Specular`**（T-413）: リムと鏡面（GGX・sheen・髪・映り込み）の滑らかな帯をスパンコールの円盤に分解する。円盤の中だけ通し、円盤の傾きがカメラ寄りかで明暗を付け、被覆率で割った平均 1 のマスクを掛けるので、帯の明るさはおおよそ保ったまま円盤の集まりになる。1 で完全に分解、2 以上で明るく、0 で滑らかなまま。追加光源のリムにも効く。**背景**: 細かいラメ（Sparkle、T-406〜412）を試作したが没にし、そこで作った「粒への分解」の考え方をスパンコールへ移した。
+- **ブルーノイズを材質で差し替え可能に**（T-413）: `Blue Noise Tex` を HQ シャドウの節に出し、参照を 1/256 固定からテクスチャの TexelSize にした。**粒は常に 1 画素で、テクスチャを大きくしても繰り返しの周期が伸びるだけ**（利用者の実機確認）。
+- **`Glitter Albedo Tint`**（T-407）: スパンコールの色にアルベドを掛ける割合。1 で生地と同じ色のスパンコールになる。既定の HDR 色 (2,2,2) と組むと「生地の色 × 2」。
+- **ルック用ライティング `Tools > Idol > ルック用ライティングを配置`**（T-405）。斜め上からのキー（影あり）・背面からの冷たいリム・弱いフィル・暗い青の Flat 環境光と、グローバル Volume（Bloom 0.25・ACES・コントラスト/彩度 +10。`Assets/IdolLookRig/IdolLook.volumeprofile` に保存）を 1 手で置く。同じシェーダー・同じ材質でも、正面からの弱い光と平坦な環境光では何を当てても平坦に見える ── 参考にした実機の質感の差の大半は光とポストだった（Editor から描いて確認）。既存のライトは触らない。
+- **Detail Map に乗算モード `Detail Multiply`**（T-404）。従来は「その色で置く」だけだったが、生地の陰（AO）は「元の色を暗くする」ので乗算が要る。強さは Detail Color の A。DCC で焼いた AO や生地の陰を、どのアルベドにも掛けられる。
+
+### Changed
+
+- **ライト応答を成分で返し、畳む段を 1 か所にした**（T-410）。`ToonShadeLight` は拡散 / 鏡面 / sheen / クリアコート / リムを `ToonLightTerms` で返し、新設の `ToonComposeLight` がそれを畳む。粒への分解（Glitter Specular → 鏡面と sheen、Glitter Rim → リム）、スパンコールのフラッシュ、影の床は、主光源も追加光源もここで一律に掛かる。これまで鏡面は Lighting、リムと粒は ForwardPass に散っていて、粒を足すたびに掛け忘れが出ていた（利用者「リムにも sheen にも乗らない」）。**環境反射も粒に分解する**ようにした（粒は小さな鏡なので映り込みも粒ごと。物理的にこちらが正しい）。クリアコートは粒の上に載る滑らかな薄膜なので、直接光でも映り込みでも粒にしない。粒 0 のときの絵は変わらない。
+- **ディテール法線を鋭いローブから外した**（T-401）。Detail Normal Map は影のグラデーション・sheen・リム・環境光に効き、GGX の鏡面・環境反射・MatCap・グリッターはベースの法線（法線マップまで）を見る。細かい織り目の法線が鋭いハイライトや映り込みを通ると起伏ごとに点が立って網点印刷のようになり、三角形ごとにミップ段が違うぶん「点の三角形」と「平らな三角形」が隣り合って見えていた。柔らかい拡散を通せば半影にだけ生地の目が浮く。
+- **材質 GUI と `.shader` の表示名をプロパティ名に揃えた**（T-403）。`Base Softness` → `Shadow Softness`、`Penumbra (texels)` → `HQ Shadow Softness (texels)`、`Curvature Influence` → `Curvature Softness`、`Receive Realtime Shadow` → `Receive Shadow Strength`、`Primary Shift` → `Hair Shift 1` など。表示名は内部名を語に分けたもので、単位や中身の補足「(texels)」「(RGB=color A=blend)」は末尾に残す。README_ToonPBR / SETUP / PROPERTIES の表示名も追随。節の見出し（Peach Fuzz / Rim / MatCap …）はそのまま。**理由**: 会話や文書でプロパティを指すとき、表示名と内部名が別だと毎回対応表が要る（利用者の指摘）。
+
 ## [0.2.2] - 2026-09-03
 
 ### Changed (Breaking)

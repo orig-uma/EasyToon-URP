@@ -30,11 +30,25 @@ struct ToonSurface
     float3 shadowColor;         // 影側の色。フラグメントで1回だけ求める
 };
 
+// ライト 1 灯の応答を成分ごとに持つ（T-410）。ToonShadeLight が返し、畳むのは
+// ToonComposeLight だけ。「粒に分解する対象」「影の床」「スパンコール」のように
+// 成分を選んで掛けたい処理が、ライトの種類（主・追加）に関係なく 1 か所で済む。
+// 各成分は光のエネルギー込み。足せばそのライトの色になる。
+struct ToonLightTerms
+{
+    float3 diffuse;      // 拡散 ＋ 透過（影色・ランプ込み）
+    float3 specular;     // 鏡面（GGX・第 2 ローブ・髪）── 粒の対象
+    float3 sheen;        // 布の毛羽 ── 粒の対象
+    float3 coat;         // クリアコート ── 滑らか（粒の対象外。粒の上に載る薄膜）
+    float3 rim;          // リム ── 粒の対象
+};
+
 struct ToonContext
 {
     float3 positionWS;
     float3 N;
     float3 bentN;               // 遮蔽されていない方向。未使用時は N と同じ
+    float3 specN;               // 鋭いローブ（GGX・環境反射・MatCap・グリッター）用。ディテール法線を含まない（T-401）
     float3 shadeN;              // 陰ランプ専用の平滑法線。未使用時は N と同じ
     float3 sssDir;              // 透過を曲げる方向。未使用時は N と同じ
     float3 V;
@@ -53,10 +67,11 @@ struct ToonContext
     float3 dNdx;
     float3 dNdy;
     float  specAAKernel;        // 法線の分散（alpha²）。全鏡面ローブで共有する
+    float  specGrain;           // 鏡面（GGX・sheen・髪・環境反射）をスパンコールに分解するマスク（平均 1）。未使用時 1（T-413）
+    float  rimGrain;            // リムをスパンコールに分解するマスク（平均 1）。未使用時 1（T-413）
     float  sheenAlpha;          // AA を掛けたシーンの粗さ。Cloth のみ。ライトに依存しない
     float2 hairExp;             // AA を掛けた Kajiya の指数（主/副）。Hair のみ
     float  dither;              // 画面座標の IGN。ディザが要る処理で共有する
-    float  eyeDepth;
     float2 uvDx;                // UV の画面微分。光源ループ内のサンプルはこれで _GRAD を使う
     float2 uvDy;
     float  faceSdfAA;           // 顔 SDF（16bit デコード後）の画面変化率。Face 以外では 0

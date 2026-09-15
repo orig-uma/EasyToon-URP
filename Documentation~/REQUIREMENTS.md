@@ -40,7 +40,7 @@
 | 色空間 | Linear のみ |
 | レンダーパス | Forward および Forward+ |
 | グラフィックス API | DX11 / DX12 / Vulkan / Metal |
-| 必須設定 | URP Asset の Depth Texture が ON |
+| 必須設定 | 無し（Depth Texture は T-416 で不要になった） |
 | 必須アセット | シーンを焼いた Reflection Probe |
 | 検証環境 | Unity 6000.3.8f1 / URP 17.3.0（このリポジトリで実際に動かしている構成） |
 
@@ -94,7 +94,7 @@
 | FR-52 | LOD Group のクロスフェードに対応する | `LOD_FADE_CROSSFADE`（4パス） |
 | FR-53 | URP のデカールを受ける | `ApplyDecal` / `_DBUFFER_MRT1/2/3` |
 | FR-54 | DepthNormals からレンダリングレイヤーを書き出す | `EncodeMeshRenderingLayer` / `_WRITE_RENDERING_LAYERS` |
-| FR-55 | 主光源の影を回転 Vogel PCF と PCSS で自前サンプルする | `ToonSampleMainShadowHQ` / `_HQ_SHADOW_ON` |
+| FR-55 | 主光源の影を回転 Vogel PCF で自前サンプルする（PCSS は T-415 で撤去） | `ToonSampleMainShadowHQ` / `_HQ_SHADOW_ON` |
 | ~~FR-56~~ | ~~顔 SDF を 4ch 化し、非対称な顔と上下光に対応する~~ | **T-382 で廃止**。16bit 1ch ＋ 距離場ブレンド ＋ Cast Shadow のベイクが品質で上回った。Idol の顔 SDF は 16bit 1ch（R×256+G）のみ |
 | FR-57 | アウトラインを独自 LightMode で分離し、ForwardLit のバッチを守る | `ToonOutlineFeature.cs` / LightMode `ToonOutline` |
 | FR-58 | クリアコート（二層目の鏡面）と薄膜干渉を加えられる | `ToonV_Kelemen` / `ToonIridescence` |
@@ -110,7 +110,7 @@
 | FR-69 | 中間量をデバッグ表示できる | `_DebugMode`。15 種。動的分岐でバリアント増加なし |
 | FR-70 | 落ち影だけを別の色で濃くでき、陰の階調は保つ | `_CastShadowColor` / `_CastShadowColorStrength`。既定 0 で従来どおり |
 | FR-71 | 髪の副バンドを毛束の粒に割り、縁で強める | `_HairStrandScale` / `_HairStrandSparkle` + 副バンドのフレネル |
-| FR-72 | リムが光の回り込んだ側の縁だけに出て、遮蔽された場所では消える | `_RimDirectionality` / `_RimReceiveShadow`。どちらも既定 1 |
+| FR-72 | リムが光の回り込んだ側の縁だけに出て、遮蔽された場所では消える | Core `CalculateRimLight`（`saturate(N·L × 5)`）/ `_RimReceiveShadow`（既定 1） |
 | FR-73 | 影色を albedo の彩度に依存せず任意の色相へ寄せられる（乗算では無彩色の面に色が入らない） | `_ShadowColor` / `_ShadowColorMix`。Rec.709 輝度を合わせてから lerp するので**濃さは不変**。既定 Mix 0 で従来どおり |
 | FR-74 | 間接鏡面が持ち去ったエネルギーを間接拡散から引く（合計が 1 を超えないようにする） | `ToonShadeIndirect` 内。**実際に足した量**（`envBRDF × _EnvSpecIntensity × specOcclusion`）と同じ量を引く。ノブは持たない |
 | FR-75 | 直接光の鏡面が持ち去ったエネルギーを拡散から引ける（縁の締まり） | `_SpecEnergyConservation`。**既定 0 で従来どおり。** 縁で最大 23% と見える量なのでノブにしてある |

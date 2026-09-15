@@ -273,22 +273,20 @@ namespace ToonNPR.EditorTools
                 EditorGUILayout.HelpBox(
                     _kit.Jp
                         ? "半透明は**不透明キューの外**へ出ます。深度プリパスに載らないので "
-                          + "**深度モードのリム（Rim Mode = Screen Silhouette）と SSAO が効きません**"
-                          + "（リムは Fresnel モードなら効きます）。"
+                          + "**SSAO が効きません**（リムはフレネルなので効きます）。"
                           + "ZWrite が切れるためキャラ内部の前後関係も描画順任せになります ── "
                           + "髪や睫毛のように重なる部位は Render Queue で順序を作ってください。"
                         : "Transparent leaves the opaque queue. It is not in the depth prepass, "
-                          + "so the depth-based rim (Rim Mode = Screen Silhouette) and SSAO stop "
-                          + "working (the Fresnel rim mode still works). ZWrite is off, so parts "
-                          + "that overlap inside the character sort by draw order - use the "
-                          + "Render Queue to order hair and lashes.",
+                          + "so SSAO stops working (the rim is Fresnel-based and still works). "
+                          + "ZWrite is off, so parts that overlap inside the character sort by "
+                          + "draw order - use the Render Queue to order hair and lashes.",
                     MessageType.Info);
 
                 using (new EditorGUI.IndentLevelScope())
                 {
-                    P(e, "_SrcBlend", "Source Blend", null, null);
-                    P(e, "_DstBlend", "Destination Blend", null, null);
-                    P(e, "_ZWrite", "ZWrite",
+                    P(e, "_SrcBlend", "Src Blend", null, null);
+                    P(e, "_DstBlend", "Dst Blend", null, null);
+                    P(e, "_ZWrite", "Z Write",
                         "Off is the usual choice for transparent",
                         "半透明では通常 Off のままにします");
                 }
@@ -361,12 +359,12 @@ namespace ToonNPR.EditorTools
                     DrawToggleWithTexture(e, "_NormalMapOn", "_BumpMap");
                     if (IsOn("_NormalMapOn"))
                         using (new EditorGUI.IndentLevelScope())
-                            P(e, "_BumpScale", "Normal Scale",
+                            P(e, "_BumpScale", "Bump Scale",
                                 "Strength of the tangent-space normal",
                                 "接空間ノーマルの強さ");
 
                     SubHeader("Detail Map", "ディテールマップ（タトゥーやチーク等）");
-                    P(e, "_DetailOn", "Use Detail Map",
+                    P(e, "_DetailOn", "Detail On",
                         "Overlay layer with its own tiling - tattoos, blush prints, "
                         + "fabric weave. RGB = colour, A = blend amount",
                         "独立したタイリングを持つ重ねレイヤー ── タトゥー・チークの印刷・"
@@ -375,11 +373,22 @@ namespace ToonNPR.EditorTools
                         using (new EditorGUI.IndentLevelScope())
                         {
                             P(e, "_DetailMap", "Detail Map (RGB=color A=blend)", null, null);
-                            P(e, "_DetailColor", "Detail Color", null, null);
+                            P(e, "_DetailColor", "Detail Color",
+                                "RGB tints the detail. A is the blend amount",
+                                "RGB はディテールの色。A は混ぜる量");
+                            P(e, "_DetailMultiply", "Detail Multiply",
+                                "Off = the detail colour replaces the albedo (tattoos, prints). "
+                                + "On = multiplied (fabric shading or AO baked in a DCC tool)",
+                                "OFF = ディテールの色で置き換え（タトゥー・プリント）。"
+                                + "ON = 乗算（DCC で焼いた生地の陰・AO）");
                             P(e, "_DetailNormalMap", "Detail Normal Map", null, null);
                             P(e, "_DetailNormalScale", "Detail Normal Scale",
-                                "Whiteout-blended on top of the base normal",
-                                "ベースのノーマルの上に whiteout 合成されます");
+                                "Whiteout-blended on top of the base normal. Shows in the shadow gradient, "
+                                + "sheen and rim; specular highlights and reflections keep the base normal "
+                                + "so a fine weave does not turn into dots",
+                                "ベースのノーマルの上に whiteout 合成されます。効くのは影のグラデーション・"
+                                + "sheen・リムで、ハイライトと映り込みはベースの法線のままです"
+                                + "（細かい織り目が点にならないように）");
                         }
 
                     SubHeader("Color Correction", "色調補正 (HSV)");
@@ -408,11 +417,11 @@ namespace ToonNPR.EditorTools
                         "R = Metallic / G = Occlusion / B = Thickness / A = Smoothness。");
 
                     P(e, "_MaskMap", "Mask Map", "Packed RGBA mask", "パック済みの RGBA マスク");
-                    P(e, "_Metallic", "Metallic Scale", "Scales the R channel", "R チャンネルを倍率で調整");
-                    P(e, "_Smoothness", "Smoothness Scale", "Scales the A channel", "A チャンネルを倍率で調整");
+                    P(e, "_Metallic", "Metallic", "Scales the R channel", "R チャンネルを倍率で調整");
+                    P(e, "_Smoothness", "Smoothness", "Scales the A channel", "A チャンネルを倍率で調整");
                     P(e, "_OcclusionStrength", "Occlusion Strength",
                         "How much G darkens the indirect light", "G が間接光をどれだけ落とすか");
-                    P(e, "_DirectOcclusion", "Apply AO to Direct Light",
+                    P(e, "_DirectOcclusion", "Direct Occlusion",
                         "Physically AO is for indirect only. Raise to taste",
                         "物理的には AO は間接光だけのもの。絵として要るときだけ上げる");
                     P(e, "_MicroShadow", "Micro Shadow",
@@ -436,7 +445,7 @@ namespace ToonNPR.EditorTools
                     DrawToggleWithTexture(e, "_NPRMapOn", "_NPRMap");
                     if (IsOn("_NPRMapOn"))
                         using (new EditorGUI.IndentLevelScope())
-                            P(e, "_NPRShadowOffsetStrength", "Shadow Offset Strength",
+                            P(e, "_NPRShadowOffsetStrength", "NPR Shadow Offset Strength",
                                 "How far G pushes the shadow boundary",
                                 "G が影の境界をどれだけずらすか");
                 }
@@ -491,12 +500,12 @@ namespace ToonNPR.EditorTools
                     // 依存する Softness / Wrap はこの下にあるが、ドラッグ中は
                     // LayoutFrozen が前回の箱を保つのでスライダーはずれない（T-377）。
                     WarnDiffuseReach();
-                    P(e, "_ShadowSoftness", "Base Softness",
+                    P(e, "_ShadowSoftness", "Shadow Softness",
                         "Width of the transition before curvature widens it",
                         "曲率で広げる前の、境界の基本の幅");
                     // 曲率の供給源は焼いたマップだけ（T-381）。画面微分の推定は
                     // 三角形ごとに一定で陰に面が並ぶため撤去した。
-                    P(e, "_CurvatureSoftness", "Curvature Influence",
+                    P(e, "_CurvatureSoftness", "Curvature Softness",
                         "How much curved areas widen the transition: "
                         + "width = Base Softness x (1 + curvature x Influence). "
                         + "Curvature comes from the baked Curvature Map (Effects tab > Baked Maps); "
@@ -518,17 +527,17 @@ namespace ToonNPR.EditorTools
                         + "伝達の上限が 1/(1+wrap) まで下がります（上げるほど天井が下がる）");
 
                     SubHeader("Realtime Shadow", "リアルタイム影の受け");
-                    P(e, "_ReceiveShadowStrength", "Receive Realtime Shadow",
+                    P(e, "_ReceiveShadowStrength", "Receive Shadow Strength",
                         "Applied once, at the end. HQ shadow and micro shadow are folded in "
                         + "here, so lowering it fades both together",
                         "最後に一度だけ掛かります。HQ 影とマイクロシャドウが"
                         + "ここに畳まれているので、下げるとまとめて薄くなります");
-                    P(e, "_ShadowAttenSoftness", "Realtime Shadow Softness",
+                    P(e, "_ShadowAttenSoftness", "Shadow Atten Softness",
                         "Width of the transition, centred on half-occluded. "
                         + "The centre does not move, so this changes softness and not shadow size",
                         "遷移の幅。中心は「半分遮蔽」に固定なので、"
                         + "影の大きさは変わらず柔らかさだけが変わります");
-                    P(e, "_ShadowEdgeAA", "Edge Anti-Aliasing",
+                    P(e, "_ShadowEdgeAA", "Shadow Edge AA",
                         "Widens the boundary by one pixel to hide stair-stepping",
                         "境界を 1 画素ぶん広げてジャギを隠します");
                 }
@@ -552,7 +561,7 @@ namespace ToonNPR.EditorTools
                     {
                         // ランプ（アセットを直接編集。即反映・Undo 可。T-396 / T-398）
                         DrawRampEditor(e);
-                        P(e, "_RampStrength", "Blend",
+                        P(e, "_RampStrength", "Ramp Strength",
                             "1 = the ramp alone decides the shade colour. Below 1 the HSV shade "
                             + "colour is blended in and its controls appear below",
                             "1 でランプだけが影の色を決めます。1 未満では HSV の影色が混ざり、"
@@ -605,31 +614,31 @@ namespace ToonNPR.EditorTools
         // HSV で影色を作る側（Ramp を使わないとき、または Blend < 1 のとき）。
         private void DrawShadowHsv(MaterialEditor e)
         {
-            P(e, "_ShadowHueShift", "Hue Shift",
+            P(e, "_ShadowHueShift", "Shadow Hue Shift",
                 "Rotates the shadow hue. Together with Saturation at 1 the whole "
                 + "HSV conversion is skipped, so leaving both at default costs nothing",
                 "影の色相を回します。Saturation が 1 のまま両方とも既定なら"
                 + "HSV 変換ごと飛ぶので、触らなければコストはゼロです");
-            P(e, "_ShadowSaturation", "Saturation Scale",
+            P(e, "_ShadowSaturation", "Shadow Saturation",
                 "Above 1 keeps the shadow vivid instead of muddy - the usual anime choice",
                 "1 より上げると影が濁らず鮮やかに残ります（アニメ塗りの定番）");
-            P(e, "_ShadowValue", "Value Scale",
+            P(e, "_ShadowValue", "Shadow Value",
                 "Lower for deeper shadows. Ambient in the Lighting tab also lifts them",
                 "下げると影が濃くなります。「ライト」タブの環境光も影を持ち上げます");
-            P(e, "_AddLightShadowColor", "Shadow Color from Add. Lights",
+            P(e, "_AddLightShadowColor", "Add Light Shadow Color",
                 "How much of the shadow colouring additional lights get. "
                 + "Full strength on every point light usually reads as dirty",
                 "追加光源の影にどれだけ影色を掛けるか。"
                 + "点光源すべてに全量掛けると濁って見えがちです");
-            P(e, "_ShadowTint", "Tint (multiply)",
+            P(e, "_ShadowTint", "Shadow Tint (multiply)",
                 "Multiplied onto the shadow after the HSV step",
                 "HSV の後に影へ乗算されます");
-            P(e, "_ShadowColor", "Shadow Hue (mix toward)",
+            P(e, "_ShadowColor", "Shadow Color (mix toward)",
                 "A hue to pull the shadow toward. Its brightness is normalised away, "
                 + "so only the hue is taken - picking a dark colour does not darken",
                 "影を寄せたい色相。明るさは正規化して落とすので**色相だけ**が効きます"
                 + "（暗い色を選んでも暗くはなりません）");
-            P(e, "_ShadowColorMix", "Hue Mix",
+            P(e, "_ShadowColorMix", "Shadow Color Mix",
                 "0 skips this step entirely", "0 でこの処理ごと飛びます");
         }
 
@@ -740,7 +749,7 @@ namespace ToonNPR.EditorTools
                 if (!Section("hqshadow", false, "HQ Self Shadow", "HQ セルフシャドウ")) return;
                 using (new EditorGUI.IndentLevelScope())
                 {
-                    Pv(e, "_HQShadowOn", "Enable HQ Self Shadow",
+                    Pv(e, "_HQShadowOn", "HQ Shadow On",
                         "Main light only. Costs the most texture fetches of any feature",
                         "主光源のみ。全機能の中でテクスチャフェッチが一番多い");
 
@@ -750,7 +759,16 @@ namespace ToonNPR.EditorTools
                             Note("Tune the URP Asset shadow resolution and cascades together with this.",
                                 "URP Asset のシャドウ解像度とカスケードも合わせて詰めること。");
 
-                            P(e, "_HQShadowSoftness", "Penumbra (texels)",
+                            {
+                                var bn = Prop("_BlueNoiseTex");
+                                if (bn != null)
+                                    e.TexturePropertySingleLine(
+                                        Label("Blue Noise Tex", "Per-pixel rotation noise for the shadow filter. The grain is always one "
+                                              + "pixel; a larger texture only lengthens the repeat period",
+                                              "影フィルタの画素ごとの回転ノイズ。粒は常に 1 画素で、テクスチャを大きくしても繰り返しの周期が伸びるだけです"),
+                                        bn);
+                            }
+                            P(e, "_HQShadowSoftness", "HQ Shadow Softness (texels)",
                                 "Filter radius = 1 + value x 6 shadow-map texels (not metres). "
                                 + "16 taps are fixed, so above ~1.5 the disk gets sparse and "
                                 + "dither grain starts to show - use it when you want abstraction "
@@ -761,11 +779,7 @@ namespace ToonNPR.EditorTools
                                 + "見え始めます ── きれいさより抽象化を優先したいときの領域。"
                                 + "シャドウマップの解像度を下げれば同じ値でもワールドでの半影は"
                                 + "広がります（タダで柔らかくなる）");
-                            P(e, "_ShadowPenumbraScale", "Penumbra Scale", null, null);
                             P(e, "_ReceiverNormalBias", "Receiver Normal Bias", null, null);
-                            P(e, "_ShadowContactHardening", "Contact Hardening (PCSS)",
-                                "Narrows the penumbra where the caster is close",
-                                "遮蔽物が近いところで半影を狭めます");
                         }
                 }
             }
@@ -817,7 +831,7 @@ namespace ToonNPR.EditorTools
                         + "Mask Map の G チャンネル（基本タブ）に入ります。");
 
                     SubHeader("Bent Normal", "ベント法線マップ");
-                    P(e, "_BentNormalOn", "Use Bent Normal",
+                    P(e, "_BentNormalOn", "Bent Normal On",
                         "Aims the indirect diffuse away from occluded directions",
                         "間接拡散の向きを、遮蔽されていない方向へ寄せます");
                     P(e, "_BentNormalMap", "Bent Normal Map", null, null);
@@ -848,7 +862,7 @@ namespace ToonNPR.EditorTools
                     P(e, "_SubsurfaceColor", "Subsurface Color",
                         "Bleeds into the shadow side of the transition",
                         "境界の影側へにじむ色");
-                    P(e, "_SubsurfaceStrength", "Strength", null, null);
+                    P(e, "_SubsurfaceStrength", "Subsurface Strength", null, null);
                 }
             }
         }
@@ -866,13 +880,13 @@ namespace ToonNPR.EditorTools
                     P(e, "_TransmissionColor", "Transmission Color",
                         "Multiplied by the albedo, so it tints rather than replaces",
                         "アルベドに乗算されるので、置き換えではなく色付けになります");
-                    P(e, "_TransmissionPower", "Power",
+                    P(e, "_TransmissionPower", "Transmission Power",
                         "How tightly the glow hugs the direction straight through the surface. "
                         + "Higher means you only see it looking almost into the light",
                         "光が抜けてくる向きにどれだけ絞るか。上げるほど"
                         + "ほぼ光源を覗き込む角度でしか見えなくなります");
-                    P(e, "_TransmissionStrength", "Strength", null, null);
-                    P(e, "_TransmissionDistortion", "Distortion",
+                    P(e, "_TransmissionStrength", "Transmission Strength", null, null);
+                    P(e, "_TransmissionDistortion", "Transmission Distortion",
                         "Bends the through-light by the SSS direction. If it cancels the light "
                         + "vector out, the raw light direction is used instead of a NaN",
                         "抜ける光を SSS の向きへ曲げます。ライトベクトルを打ち消したときは"
@@ -903,16 +917,16 @@ namespace ToonNPR.EditorTools
                     P(e, "_SheenRoughness", "Sheen Roughness",
                         "Independent of the base roughness. Lower makes a tighter rim",
                         "下地の粗さとは独立です。下げるほど縁が細くなります");
-                    P(e, "_SheenIntensity", "Intensity", null, null);
-                    P(e, "_SheenEnergyConservation", "Energy Conservation",
+                    P(e, "_SheenIntensity", "Sheen Intensity", null, null);
+                    P(e, "_SheenEnergyConservation", "Sheen Energy Conservation",
                         "Shrinks the base by the sheen's directional albedo before adding. "
                         + "At 0 it just adds, which can exceed the incoming light at the rim",
                         "sheen の指向性アルベドぶん下地を縮めてから足します。"
                         + "0 は足すだけなので、縁で入射より多く返ることがあります");
-                    P(e, "_ClothAnisotropy", "Anisotropy",
+                    P(e, "_ClothAnisotropy", "Cloth Anisotropy",
                         "Stretches the sheen along the weave direction",
                         "織りの方向へ光沢を伸ばします");
-                    P(e, "_ClothTangentSwap", "Use Bitangent as Weave Dir",
+                    P(e, "_ClothTangentSwap", "Cloth Tangent Swap",
                         "Flip when the sheen runs across the weave instead of along it",
                         "光沢が織りと直交して出るときに切り替えます");
                 }
@@ -946,10 +960,10 @@ namespace ToonNPR.EditorTools
                         P(e, "_StockingMask", "Stocking Mask (R)",
                             "Where the fabric sits. Paint the thigh boundary here",
                             "布のある場所。太ももの境目はここに描きます");
-                        P(e, "_StockingFrontOpacity", "Front Opacity",
+                        P(e, "_StockingFrontOpacity", "Stocking Front Opacity",
                             "How much skin shows through when facing the camera",
                             "正面を向いた面でどれだけ肌が透けるか");
-                        P(e, "_StockingPower", "Graze Power", null, null);
+                        P(e, "_StockingPower", "Stocking Power", null, null);
                     }
                 }
             }
@@ -962,27 +976,27 @@ namespace ToonNPR.EditorTools
                 if (!Section("hair", true, "Anisotropic (Hair)", "異方性ハイライト（髪）")) return;
                 using (new EditorGUI.IndentLevelScope())
                 {
-                    P(e, "_HairAnisoGGXOn", "Use Anisotropic GGX (off = Kajiya-Kay)", null, null);
+                    P(e, "_HairAnisoGGXOn", "Hair Aniso GGX On (off = Kajiya-Kay)", null, null);
                     if (IsOn("_HairAnisoGGXOn"))
                         using (new EditorGUI.IndentLevelScope())
                         {
                             // 尺度が変わるので、切り替えた直後は必ず Intensity を触ることになる。
                             Note("GGX goes through Fresnel so it reads darker than Kajiya-Kay. Retake Intensity.",
                                 "GGX は Fresnel を通すため Kajiya-Kay より暗く出ます。Intensity の取り直しが要ります。");
-                            P(e, "_HairAnisotropy", "Anisotropy", null, null);
+                            P(e, "_HairAnisotropy", "Hair Anisotropy", null, null);
                         }
 
-                    P(e, "_HairTangentSwap", "Use Bitangent as Strand Dir",
+                    P(e, "_HairTangentSwap", "Hair Tangent Swap",
                         "Flip when the highlight runs along the strand instead of across it",
                         "ハイライトが毛の流れと直交して出るときに切り替えます");
 
                     SubHeader("Flow", "流れ");
-                    P(e, "_HairShiftMap", "Shift Noise (R)",
+                    P(e, "_HairShiftMap", "Hair Shift Map (R)",
                         "Breaks up both bands. R is read as -0.5..0.5 and scaled by 0.3, "
                         + "so it nudges the shift rather than replacing it",
                         "2 本のバンドを崩します。R を -0.5〜0.5 として読み 0.3 倍するので、"
                         + "シフトを置き換えるのではなく揺らします");
-                    P(e, "_HairFlowMap", "Hair Flow (RG=dir B=conf)",
+                    P(e, "_HairFlowMap", "Hair Flow Map (RG=dir B=conf)",
                         "Overrides the mesh tangent. Double-angle encoded (R=cos2θ, G=sin2θ) "
                         + "so mirrored UVs give the same direction. B is confidence",
                         "メッシュの接線を上書きします。倍角エンコード（R=cos2θ, G=sin2θ）なので"
@@ -992,28 +1006,28 @@ namespace ToonNPR.EditorTools
                         "0 でメッシュの接線そのまま。UV ミラーで天使の輪が割れるときに上げます");
 
                     SubHeader("Highlights", "ハイライト");
-                    P(e, "_HairSpecColor1", "Primary Color",
+                    P(e, "_HairSpecColor1", "Hair Spec Color 1",
                         "The sharp inner band", "内側の細いバンド");
-                    P(e, "_HairShift1", "Primary Shift",
+                    P(e, "_HairShift1", "Hair Shift 1",
                         "Slides the band along the normal. Negative moves it toward the roots",
                         "バンドを法線方向へずらします。負で根元側へ動きます");
-                    P(e, "_HairSmoothness1", "Primary Smoothness",
+                    P(e, "_HairSmoothness1", "Hair Smoothness 1",
                         "Width of the band. Kajiya-Kay maps it to exponent 2^(10x+1)",
                         "バンドの幅。Kajiya-Kay では指数 2^(10x+1) になります");
-                    P(e, "_HairSpecColor2", "Secondary Color",
+                    P(e, "_HairSpecColor2", "Hair Spec Color 2",
                         "The wide outer band. This is the one that gets the strand grain",
                         "外側の広いバンド。束感が乗るのはこちらだけです");
-                    P(e, "_HairShift2", "Secondary Shift", null, null);
-                    P(e, "_HairSmoothness2", "Secondary Smoothness", null, null);
-                    P(e, "_HairSpecIntensity", "Intensity",
+                    P(e, "_HairShift2", "Hair Shift 2", null, null);
+                    P(e, "_HairSmoothness2", "Hair Smoothness 2", null, null);
+                    P(e, "_HairSpecIntensity", "Hair Spec Intensity",
                         "Scales both bands. Hair does not use the shared Specular Intensity",
                         "2 本まとめて倍率を掛けます。髪は共通の Specular Intensity を通りません");
-                    P(e, "_HairStrandScale", "Strand Scale",
+                    P(e, "_HairStrandScale", "Hair Strand Scale",
                         "Frequency of the strand grain along U (3 stacked sines). "
                         + "Fades out on its own once one period drops under a pixel",
                         "束の粒の U 方向の細かさ（3 オクターブのサイン）。"
                         + "画面上で 1 周期が 1 画素を切ると自動で効かなくなります");
-                    P(e, "_HairStrandSparkle", "Strand Sparkle",
+                    P(e, "_HairStrandSparkle", "Hair Strand Sparkle",
                         "How much the grain cuts into the secondary band. "
                         + "The primary band is left alone - it is a thin core and would vanish",
                         "粒が副バンドをどれだけ削るか。主バンドには掛かりません"
@@ -1052,31 +1066,31 @@ namespace ToonNPR.EditorTools
                               + "Add a Binder for anything that turns its head. See SETUP.md section 1.",
                         MessageType.Info);
 
-                    P(e, "_FaceSDFMap", "Face SDF (16-bit R*256+G)",
+                    P(e, "_FaceSDFMap", "Face SDF Map (16-bit R*256+G)",
                         "Boundary angles swept 180 degrees from the front, packed as "
                         + "R*256+G. Bake it from the Baking tab. Requires an UNCOMPRESSED, "
                         + "sRGB-off texture - BC compression breaks the RG continuity",
                         "正面から 180 度スイープした境界の角度を R×256+G に詰めたもの。"
                         + "Baking タブで焼きます。**非圧縮・sRGB OFF 必須**"
                         + "（BC 圧縮は RG の連続性を壊します）");
-                    P(e, "_FaceSDFFlipU", "Flip SDF U",
+                    P(e, "_FaceSDFFlipU", "Face SDF Flip U",
                         "Matches the left/right convention the texture was baked with",
                         "焼いたときの左右の取り決めに合わせます");
-                    P(e, "_FaceShadowOffset", "Shadow Offset",
+                    P(e, "_FaceShadowOffset", "Face Shadow Offset",
                         "Slides the whole boundary. Positive keeps the face lit further round",
                         "境界ぜんたいをずらします。正で顔がより回り込んでも明るいまま");
-                    P(e, "_FaceFlatness", "SDF Blend",
+                    P(e, "_FaceFlatness", "Face Flatness",
                         "0 uses the normal-based transfer, 1 uses the SDF alone",
                         "0 は法線による伝達、1 は SDF だけ");
-                    P(e, "_FaceSDFBlendNormalMin", "SDF Blend Normal Min",
+                    P(e, "_FaceSDFBlendNormalMin", "Face SDF Blend Normal Min",
                         "Local Y normal threshold where Face SDF influence reaches zero. Fades the SDF out on downward-facing areas like the neck or under-chin",
                         "顔の SDF の影響がゼロになるローカル Y 法線のしきい値。顎下や首など下向きの面で SDF をフェードアウトさせる");
-                    P(e, "_FaceSDFBlendNormalMax", "SDF Blend Normal Max",
+                    P(e, "_FaceSDFBlendNormalMax", "Face SDF Blend Normal Max",
                         "Local Y normal threshold where Face SDF influence is fully applied. Normals between Min and Max fade smoothly",
                         "顔の SDF の影響が 100% になるローカル Y 法線のしきい値。Min と Max の間は滑らかにフェード");
 
 
-                    P(e, "_FaceUseObjectAxis", "Fallback to Object Axis",
+                    P(e, "_FaceUseObjectAxis", "Face Use Object Axis",
                         "Used when no binder supplies the head axes",
                         "頭ボーンの向きを供給するものが無いときの代替");
                 }
@@ -1143,7 +1157,7 @@ namespace ToonNPR.EditorTools
                         "1 灯あたりの拡散光の輝度上限。**拡散と透過にだけ**掛かります"
                         + "（鏡面は強い光ほど鋭く光るのが正しいので対象外）。"
                         + "NdotL の階調は残るので、上限に当たった面がのっぺり潰れません");
-                    P(e, "_AdditionalLightBlendMode", "Additional Light Blend",
+                    P(e, "_AdditionalLightBlendMode", "Additional Light Blend Mode",
                         "Add: physical - overlapping lights blow out to white. "
                         + "Max: only the strongest light counts, so saturation survives "
                         + "(an anime-friendly lie for stages with many lights)",
@@ -1165,10 +1179,10 @@ namespace ToonNPR.EditorTools
                         "リフレクションプローブと SH。キャラと背景を繋ぐ主経路です。");
 
                     SubHeader("Ambient", "アンビエント");
-                    P(e, "_AmbientIntensity", "Ambient (SH) Intensity",
+                    P(e, "_AmbientIntensity", "Ambient Intensity",
                         "Raising this lifts the shadows too. Lower it first when shadows look washed out",
                         "上げると影も一緒に持ち上がります。影が浅いときはまずここを下げること");
-                    P(e, "_AmbientFlatten", "Flatten",
+                    P(e, "_AmbientFlatten", "Ambient Flatten",
                         "Bends the lookup direction toward straight up. "
                         + "Flattening the indirect keeps the painted-cel look",
                         "参照する向きを真上へ寄せます。間接光の方向性を潰すほど"
@@ -1177,18 +1191,18 @@ namespace ToonNPR.EditorTools
                         "Tints occlusion by the albedo instead of darkening toward grey, "
                         + "so dark areas keep their hue",
                         "遮蔽を灰色へ落とさずアルベドの色で染めます。暗部が色を保ちます");
-                    P(e, "_ShadowAmbientTint", "Tint in Shadow", null, null);
-                    P(e, "_ShadowAmbientIntensity", "Intensity in Shadow",
+                    P(e, "_ShadowAmbientTint", "Shadow Ambient Tint", null, null);
+                    P(e, "_ShadowAmbientIntensity", "Shadow Ambient Intensity",
                         "Ambient reaching the shadow side. Lower for deeper shadows",
                         "影の中に届く環境光。下げると影が濃くなります");
 
                     SubHeader("Env Specular", "環境反射（Reflection Probe）");
-                    P(e, "_EnvSpecIntensity", "Env Specular Intensity",
+                    P(e, "_EnvSpecIntensity", "Env Spec Intensity",
                         "How much of the reflection probe is added. The diffuse is shrunk by "
                         + "exactly what is added here, not by the theoretical amount",
                         "リフレクションプローブをどれだけ足すか。拡散はここで実際に足した量だけ"
                         + "縮みます（理論値ではなく）");
-                    P(e, "_EnvSpecFlatten", "Roughness Push",
+                    P(e, "_EnvSpecFlatten", "Env Spec Flatten",
                         "Pushes the sampled mip toward fully rough. Blurs the reflection without "
                         + "changing the material's actual roughness",
                         "参照する mip を粗い側へ寄せます。素材の粗さを変えずに映り込みだけ鈍らせます");
@@ -1206,62 +1220,20 @@ namespace ToonNPR.EditorTools
                     Note("There is no outline pass by default, so the rim is what separates the silhouette.",
                         "既定でアウトラインを持たないので、シルエットを抜くのはリムの仕事です。");
 
-                    // モード別に効くパラメータだけを出す（Doll の Self Shadow Mode と同じ流儀）。
-                    P(e, "_RimMode", "Rim Mode",
-                        "Screen Silhouette: depth-edge rim (anime backlight look). "
-                        + "Fresnel PBR: the same Core formula as EasyPBR's Doll - the rim scales "
-                        + "with light energy, so stage lighting colours the edge. Skips the depth read",
-                        "Screen Silhouette: 深度差の縁取り（アニメ的な逆光リム）。"
-                        + "Fresnel PBR: EasyPBR(Doll) と同じ Core の式。リムがライトのエネルギーに"
-                        + "比例し、ステージ照明の色が縁に乗ります。深度読みを飛ばすぶん軽量");
-
-                    bool pbrRim = IsOn("_RimMode");
-
                     P(e, "_RimColor", "Rim Color", null, null);
-                    P(e, "_RimIntensity", "Intensity",
-                        "Also scaled by the B channel of the NPR Map, so you can mask it per region",
-                        "NPR マップの B でも絞られるので、部位ごとにマスクできます");
-                    if (pbrRim)
-                        P(e, "_RimFresnelThickness", "Fresnel Thickness",
-                            "0 razor-thin (exponent 12), 1 broad (0.5). Same mapping as Doll",
-                            "0 で極細（指数 12）、1 で極太（0.5）。Doll と同じ写像です");
-                    if (!pbrRim) {
-                    P(e, "_RimWidth", "Width",
-                        "How far the depth probe reaches, in screen pixels at 1 m. "
-                        + "Divided by distance, so the rim keeps its world-space thickness",
-                        "深度を読みに行く距離。1m での画素数で、距離で割るので"
-                        + "遠近によらず実寸の太さが保たれます");
-                    P(e, "_RimThreshold", "Depth Threshold",
-                        "Depth gap that counts as an edge", "縁とみなす深度の差");
-                    P(e, "_RimSoftness", "Depth Softness",
-                        "Lower bound only. At a silhouette the depth jumps by metres in one pixel, "
-                        + "so the real width comes from the on-screen rate of change",
-                        "下限としてだけ効きます。シルエットでは深度が 1 画素でメートル級に飛ぶので、"
-                        + "実際の幅は画面上の変化率から決まります");
-                    P(e, "_RimFresnelPower", "Fresnel Falloff",
-                        "Higher values pull the rim tighter to the silhouette",
-                        "上げるほどリムがシルエットへ寄って細くなります");
-                    P(e, "_RimBacklightBias", "Backlight Bias",
-                        "Weights the rim by how much the light faces the camera. "
-                        + "This is a per-frame scalar - it does not vary across the screen",
-                        "ライトがカメラを向いている度合いで重み付けします。"
-                        + "画面内では一様な値です（どこでも同じ）");
-                    P(e, "_RimDirectionality", "Directionality",
-                        "Without this the rim appears all the way around the silhouette and "
-                        + "does not move when the light moves. Cuts it to the lit side",
-                        "これが無いとシルエットの全周に等しく出て、ライトを動かしても"
-                        + "リムの位置が変わりません。光が回り込んだ側だけに切ります");
-                    }
-                    P(e, "_RimReceiveShadow", "Receive Cast Shadow",
+                    P(e, "_RimIntensity", "Rim Intensity",
+                        "Also scaled by the B channel of the NPR Map, so you can mask it per region. "
+                        + "Scales with light energy (stage lighting colours the edge) and appears only on the lit side",
+                        "NPR マップの B でも絞られるので、部位ごとにマスクできます。"
+                        + "ライトのエネルギーに比例し（ステージ照明の色が縁に乗る）、光が回り込んだ側だけに出ます");
+                    P(e, "_RimFresnelThickness", "Rim Fresnel Thickness",
+                        "0 razor-thin (exponent 12), 1 broad (0.5). Same mapping as Doll",
+                        "0 で極細（指数 12）、1 で極太（0.5）。Doll と同じ写像です");
+                    P(e, "_RimReceiveShadow", "Rim Receive Shadow",
                         "Kills the rim inside cast shadows. Uses only shadow-map "
                         + "occlusion, not the NdotL shade - the rim is about light reaching there",
                         "落ち影の中でリムを消します。見るのは落ち影だけで NdotL の陰は含みません"
                         + "（リムは「そこに光が届いているか」の話なので）");
-
-                    if (!pbrRim)
-                        P(e, "_RimDepthBlend", "Depth Blend",
-                            "0 is Fresnel only (needs no depth texture), 1 gates it by the depth edge",
-                            "0 でフレネルのみ（深度テクスチャ不要）、1 で深度の縁でも絞ります");
 
                     // Doll も同じ棚（肌と縁の質感）にリムと産毛を並べている。
                     SubHeader("Peach Fuzz", "Peach Fuzz（縁の柔らかい光沢）");
@@ -1270,13 +1242,13 @@ namespace ToonNPR.EditorTools
                         + "Skin, velvet and felt.",
                         "**リムとは向きが逆**で、面が光源を**向いている**ほど強く出ます"
                         + "（細かい毛が順光で散乱するため）。肌・ベルベット・フェルト向け。");
-                    P(e, "_FuzzColor", "Peach Fuzz Color (HDR)", null, null);
-                    P(e, "_FuzzIntensity", "Peach Fuzz Intensity",
+                    P(e, "_FuzzColor", "Fuzz Color (HDR)", null, null);
+                    P(e, "_FuzzIntensity", "Fuzz Intensity",
                         "0 skips the whole feature (uniform branch - no variant)",
                         "0 で機能ごとスキップします（一様分岐・バリアント非増）");
                     if (IsPositive("_FuzzIntensity"))
                         using (new EditorGUI.IndentLevelScope())
-                            P(e, "_FuzzPower", "Peach Fuzz Width",
+                            P(e, "_FuzzPower", "Fuzz Power",
                                 "Lower = wider band that creeps toward the lit side. "
                                 + "Higher = a thin line hugging the silhouette",
                                 "小さいほど帯が広く、光の当たる側まで回り込みます。"
@@ -1295,10 +1267,10 @@ namespace ToonNPR.EditorTools
                 if (!Section("fill", true, "Fill Light (Bounce)", "フィルライト（照り返し）")) return;
                 using (new EditorGUI.IndentLevelScope())
                 {
-                    P(e, "_FillColor", "Color (HDR)",
+                    P(e, "_FillColor", "Fill Color (HDR)",
                         "Bounce light tint (e.g. warm from the floor, cool from the sky)",
                         "照り返しの色（床からの暖色、空からの寒色など）");
-                    P(e, "_FillIntensity", "Intensity (0 = Off)",
+                    P(e, "_FillIntensity", "Fill Intensity (0 = Off)",
                         "Directional bounce light poured into the shaded side (floor bounce "
                         + "is the classic use). Independent of the main light's brightness. 0 = off",
                         "陰側に注ぐ方向性のあるバウンス光（床の照り返しが典型）。"
@@ -1306,10 +1278,10 @@ namespace ToonNPR.EditorTools
                     if (IsPositive("_FillIntensity"))
                         using (new EditorGUI.IndentLevelScope())
                         {
-                            P(e, "_FillPitch", "Pitch",
+                            P(e, "_FillPitch", "Fill Pitch",
                                 "-90 = straight up from the floor", "-90 で床から真上へ");
-                            P(e, "_FillYaw", "Yaw", null, null);
-                            P(e, "_FillShadeOnly", "Shade Side Only",
+                            P(e, "_FillYaw", "Fill Yaw", null, null);
+                            P(e, "_FillShadeOnly", "Fill Shade Only",
                                 "1 limits the fill to the main light's shaded side "
                                 + "(adding it to the lit side only pushes toward blowout)",
                                 "1 で主光の陰側に限定します（照っている側まで足すと"
@@ -1326,7 +1298,7 @@ namespace ToonNPR.EditorTools
                 if (!Section("lightoverride", false, "Light Direction Override", "光源方向の上書き")) return;
                 using (new EditorGUI.IndentLevelScope())
                 {
-                    P(e, "_LightOverrideOn", "Override Light Direction", null, null);
+                    P(e, "_LightOverrideOn", "Light Override On", null, null);
                     if (IsOn("_LightOverrideOn"))
                         using (new EditorGUI.IndentLevelScope())
                         {
@@ -1337,9 +1309,9 @@ namespace ToonNPR.EditorTools
                                       + "Main light only; additional lights pass through unchanged.",
                                 MessageType.Warning);
 
-                            P(e, "_LightOverrideYaw", "Yaw (deg)", null, null);
-                            P(e, "_LightOverridePitch", "Pitch (deg)", null, null);
-                            P(e, "_LightOverrideSpecular", "Rotate Specular Too", null, null);
+                            P(e, "_LightOverrideYaw", "Light Override Yaw (deg)", null, null);
+                            P(e, "_LightOverridePitch", "Light Override Pitch (deg)", null, null);
+                            P(e, "_LightOverrideSpecular", "Light Override Specular", null, null);
                         }
                 }
             }
@@ -1360,7 +1332,7 @@ namespace ToonNPR.EditorTools
                     // （Mask Map の A チャンネル倍率）にある。「Specular タブを触っても
                     // ツヤが出ない」という迷いが実際に起きたので、同じプロパティを
                     // ここにも再掲する（実体は 1 つ。どちらで動かしても同じ値が動く）。
-                    P(e, "_Smoothness", "Smoothness Scale (= Base tab)",
+                    P(e, "_Smoothness", "Smoothness (= Base tab)",
                         "The gloss dial. Sets the width of the specular lobe: low = broad "
                         + "faint sheen, high = tight sparkle. Same property as "
                         + "Base > Mask Map > Smoothness Scale (scales the A channel)",
@@ -1378,7 +1350,7 @@ namespace ToonNPR.EditorTools
                         "強さだけを変えます ── ハイライトの締まり（ツヤ）は上の "
                         + "Smoothness 側です。髪と布はここを通りません"
                         + "（それぞれ自前の強度を持っています）");
-                    P(e, "_SpecEnergyConservation", "Energy Conservation",
+                    P(e, "_SpecEnergyConservation", "Spec Energy Conservation",
                         "Shrinks the diffuse by the fraction the specular lobe reflects "
                         + "(Fresnel x Specular Intensity, lit side only). Keeps the total "
                         + "energy from exceeding the incoming light at grazing angles. "
@@ -1387,7 +1359,7 @@ namespace ToonNPR.EditorTools
                         + "だけ拡散を縮めます。縁で拡散＋鏡面が入射光を超えないようにする保存則。"
                         + "0 で従来どおり鏡面を上乗せするだけ");
                     P(e, "_SpecularTint", "Specular Tint", null, null);
-                    P(e, "_SpecularTintStrength", "Tint Strength", null, null);
+                    P(e, "_SpecularTintStrength", "Specular Tint Strength", null, null);
                     P(e, "_EnergyCompensation", "Energy Compensation",
                         "Puts back the energy lost to single-scatter GGX on rough metal. "
                         + "At 1 a perfect mirror reflects exactly what came in (white furnace)",
@@ -1395,7 +1367,7 @@ namespace ToonNPR.EditorTools
                         + "1 のとき完全反射体は入射をちょうど全部返します（白炉試験）");
 
                     SubHeader("Secondary Lobe (Matte)", "Secondary Lobe（マット）");
-                    P(e, "_SecSpecularIntensity", "2nd Lobe Intensity",
+                    P(e, "_SecSpecularIntensity", "Sec Specular Intensity",
                         "A wide matte sheen under the sharp primary highlight - skin and "
                         + "silk read as 'lit as a surface' instead of a single dot. 0 = off",
                         "シャープな芯の下に敷く広いマットなにじみ。肌やシルクが「点」でなく"
@@ -1403,8 +1375,8 @@ namespace ToonNPR.EditorTools
                     if (IsPositive("_SecSpecularIntensity"))
                         using (new EditorGUI.IndentLevelScope())
                         {
-                            P(e, "_SecSpecularColor", "2nd Lobe Color (HDR)", null, null);
-                            P(e, "_SecSmoothness", "2nd Lobe Smoothness",
+                            P(e, "_SecSpecularColor", "Sec Specular Color (HDR)", null, null);
+                            P(e, "_SecSmoothness", "Sec Smoothness",
                                 "Keep it well below the primary smoothness",
                                 "主ローブの Smoothness よりだいぶ低くしておくのが定石です");
                         }
@@ -1413,7 +1385,7 @@ namespace ToonNPR.EditorTools
                     // 「コートとグリッター」へ（Doll と同じ棚。T-352）。
 
                     SubHeader("In Shadow / Anti-Aliasing", "影の中・アンチエイリアス");
-                    P(e, "_SpecShadowFloor", "Specular in Shadow",
+                    P(e, "_SpecShadowFloor", "Spec Shadow Floor",
                         "How much specular survives on the shadow side",
                         "影側にどれだけ鏡面を残すか");
                     P(e, "_SpecAAVariance", "Spec AA Variance",
@@ -1458,7 +1430,7 @@ namespace ToonNPR.EditorTools
                 using (new EditorGUI.IndentLevelScope())
                 {
                     SubHeader("Clearcoat", "クリアコート");
-                    P(e, "_ClearcoatStrength", "Clearcoat",
+                    P(e, "_ClearcoatStrength", "Clearcoat Strength",
                         "A second thin layer with its own roughness. IOR is fixed at 1.5 (f0 = 0.04). "
                         + "Lacquer, pearl, wet lips",
                         "別の粗さを持つ薄い層を 1 枚重ねます。IOR は 1.5 固定（f0 = 0.04）。"
@@ -1466,7 +1438,7 @@ namespace ToonNPR.EditorTools
                     P(e, "_ClearcoatSmoothness", "Clearcoat Smoothness", null, null);
 
                     SubHeader("Iridescence", "イリデッセンス");
-                    P(e, "_IridescenceIntensity", "Iridescence",
+                    P(e, "_IridescenceIntensity", "Iridescence Intensity",
                         "Thin-film tint that rotates with view angle. 0 leaves it white",
                         "見る角度で色が回る薄膜のティント。0 で白（色が付かない）");
                     P(e, "_IridescenceThickness", "Iridescence Thickness",
@@ -1489,26 +1461,38 @@ namespace ToonNPR.EditorTools
                                 Label("Glitter Mask (R)", "Where sequins appear (white = on)",
                                       "ラメを乗せる範囲（白 = 有効）"),
                                 tex, Prop("_GlitterColor"));
-                        P(e, "_GlitterScale", "Density (Scale)",
+                        P(e, "_GlitterAlbedoTint", "Glitter Albedo Tint",
+                            "Multiplies the glitter/sparkle colour by the albedo. 1 = sequins and sparkle "
+                            + "take the fabric's own colour (shared with Sparkle)",
+                            "粒の色にアルベドを掛けます。1 で生地と同じ色のラメ（Sparkle と共通）");
+                        P(e, "_GlitterScale", "Glitter Scale (Scale)",
                             "Cells per UV - higher packs more, smaller sequins",
                             "UV あたりのセル数。上げるほど細かく密に");
-                        P(e, "_GlitterSize", "Dot Size",
+                        P(e, "_GlitterSize", "Glitter Size",
                             "Radius of each sequin inside its cell",
                             "セル内の粒の半径");
-                        P(e, "_GlitterTilt", "Normal Tilt Strength",
+                        P(e, "_GlitterTilt", "Glitter Tilt",
                             "Random facet tilt - stronger flashes from more angles",
                             "粒ごとの法線の傾け。強いほど色々な角度でフラッシュします");
-                        P(e, "_GlitterSparsity", "Sparsity",
+                        P(e, "_GlitterSparsity", "Glitter Sparsity",
                             "Thins out the sequins randomly", "粒をランダムに間引きます");
-                        P(e, "_GlitterIridescence", "Iridescence Amount",
+                        P(e, "_GlitterIridescence", "Glitter Iridescence",
                             "Rainbow tint per sequin (hologram sequins)",
                             "粒ごとの虹色（ホログラムスパンコール）");
-                        P(e, "_GlitterIridescenceShift", "Iridescence Shift", null, null);
-                        P(e, "_GlitterBaseReflection", "Base Reflection",
+                        P(e, "_GlitterIridescenceShift", "Glitter Iridescence Shift", null, null);
+                        P(e, "_GlitterBaseReflection", "Glitter Base Reflection",
                             "Faint reflection on non-flashing sequins so the fabric "
                             + "still reads as sequined",
                             "光っていない粒にも残す薄い反射。生地がラメ物だと分かる下地です");
+                        P(e, "_GlitterRim", "Glitter Rim",
+                            "How much the rim light is broken into sequins. 1 = the rim band becomes sequins, "
+                            + "2+ = brighter, 0 = smooth band",
+                            "リムの帯をどれだけスパンコールに分解するか。1 で帯が円盤の集まりに、2 以上で明るく、0 で滑らかな帯");
+                        P(e, "_GlitterSpecular", "Glitter Specular",
+                            "How much the specular (GGX, sheen, hair, reflections) is broken into sequins. Same scale as Glitter Rim",
+                            "スペキュラ（GGX・sheen・髪・映り込み）をどれだけスパンコールに分解するか。Glitter Rim と同じ尺度");
                     }
+
                 }
             }
         }
@@ -1536,7 +1520,7 @@ namespace ToonNPR.EditorTools
                             e.TexturePropertySingleLine(
                                 Label("MatCap (RGB)", "View-space lit sphere", "ビュー空間のライティング球"),
                                 tex, Prop("_MatCapColor"));
-                        P(e, "_MatCapLightAlign", "Align to Light",
+                        P(e, "_MatCapLightAlign", "MatCap Light Align",
                             "Rotates the lookup toward the on-screen light direction, so the "
                             + "highlight stops being stuck to the camera",
                             "参照の向きを画面内の光の向きへ回します。"
@@ -1553,7 +1537,7 @@ namespace ToonNPR.EditorTools
                 if (!Section("dissolve", true, "Dissolve / Black Out", "ディゾルブ / 暗転")) return;
                 using (new EditorGUI.IndentLevelScope())
                 {
-                    P(e, "_DissolveAmount", "Dissolve Progress",
+                    P(e, "_DissolveAmount", "Dissolve Amount",
                         "0 fully present (skips the whole branch; keywordless, so no extra variants), "
                         + "1 fully gone. Both ends are guaranteed - "
                         + "the threshold is widened by the edge width so nothing is left over",
@@ -1568,40 +1552,40 @@ namespace ToonNPR.EditorTools
                             + "髪の落ち影・速度（TAA）・輪郭も。消えた部分に何も残りません。");
                     using (new EditorGUI.IndentLevelScope())
                     {
-                        P(e, "_DissolveInvert", "Invert",
+                        P(e, "_DissolveInvert", "Dissolve Invert",
                             "Flips the sign of the test, so it dissolves from the other end",
                             "判定の符号を反転します。反対の端から消えます");
-                        P(e, "_DissolveType", "Axis",
+                        P(e, "_DissolveType", "Dissolve Type",
                             "0 none (noise only), 1 world Y, 2 object Y. "
                             + "Object Y follows the character when it moves",
                             "0 = 使わない（ノイズだけ）/ 1 = ワールド Y / 2 = ローカル Y。"
                             + "ローカルはキャラが動いても一緒に動きます");
-                        P(e, "_DissolveStartY", "Start Y",
+                        P(e, "_DissolveStartY", "Dissolve Start Y",
                             "Height where the gradient is 0. Same value as End is safe "
                             + "(it means dissolve everything at once)",
                             "勾配が 0 になる高さ。End と同じ値でも安全です"
                             + "（「一気に消す」の意味になります）");
-                        P(e, "_DissolveEndY", "End Y", null, null);
+                        P(e, "_DissolveEndY", "Dissolve End Y", null, null);
 
                         SubHeader("Noise", "ノイズ");
-                        P(e, "_DissolveTex", "Noise (R)",
+                        P(e, "_DissolveTex", "Dissolve Tex (R)",
                             "Sampled by UV only - no triplanar. This shader assumes clean character UVs",
                             "UV だけで引きます（三平面投影はしません）。キャラの UV が整っている前提です");
-                        P(e, "_DissolveNoiseScale", "Noise Scale", null, null);
-                        P(e, "_DissolveNoiseStrength", "Noise Strength",
+                        P(e, "_DissolveNoiseScale", "Dissolve Noise Scale", null, null);
+                        P(e, "_DissolveNoiseStrength", "Dissolve Noise Strength",
                             "How much the noise breaks up the height boundary. "
                             + "0 gives a clean horizontal line",
                             "高さの境界をノイズがどれだけ崩すか。0 で水平な直線になります");
 
                         SubHeader("Edge", "縁");
-                        P(e, "_DissolveEdgeColor", "Edge Glow (HDR)",
+                        P(e, "_DissolveEdgeColor", "Dissolve Edge Color (HDR)",
                             "Added as emission on the inner part of the edge band",
                             "縁の帯の内側に発光として足されます");
-                        P(e, "_DissolveEdgeColor2", "Edge Char Color (HDR)",
+                        P(e, "_DissolveEdgeColor2", "Dissolve Edge Color 2 (HDR)",
                             "Replaces the albedo across the whole edge band (the scorched look)",
                             "縁の帯ぜんたいでアルベドを置き換えます（焦げの表現）");
-                        P(e, "_DissolveEdgeWidth", "Edge Width", null, null);
-                        P(e, "_DissolveEdgeStep", "Step Edge (toon)",
+                        P(e, "_DissolveEdgeWidth", "Dissolve Edge Width", null, null);
+                        P(e, "_DissolveEdgeStep", "Dissolve Edge Step (toon)",
                             "Quantises the edge to 2 steps and makes the glow a hard cut "
                             + "instead of a gradient",
                             "縁を 2 段に量子化し、発光もグラデーションでなく硬く切ります");
@@ -1615,7 +1599,7 @@ namespace ToonNPR.EditorTools
                         + "（Add Component > Origuma > EasyShaderCore）を使います"
                         + "（ここのスライダーはこのマテリアル 1 枚ぶんだけ）。"
                         + "Timeline の Animation Track から amount に直接キーを打てます。");
-                    P(e, "_BlackOut", "Black Out Amount",
+                    P(e, "_BlackOut", "Black Out",
                         "Fades the final colour to black - emission included, and the outline "
                         + "goes with it. Alpha is untouched, so the character sinks into black "
                         + "rather than disappearing (use Dissolve to remove it)",
@@ -1633,7 +1617,7 @@ namespace ToonNPR.EditorTools
                 if (!Section("outline", true, "Outline", "アウトライン")) return;
                 using (new EditorGUI.IndentLevelScope())
                 {
-                    Pv(e, "_OutlineOn", "Enable Outline",
+                    Pv(e, "_OutlineOn", "Outline On",
                         "Back-face extrusion pass on a separate LightMode. Off by default: the "
                         + "reference art has no outlines and separates the silhouette with "
                         + "backlit rim and value contrast instead",
@@ -1643,22 +1627,22 @@ namespace ToonNPR.EditorTools
                     if (IsOn("_OutlineOn"))
                         using (new EditorGUI.IndentLevelScope())
                         {
-                            P(e, "_UseSmoothNormal", "Use Baked Smooth Normal",
+                            P(e, "_UseSmoothNormal", "Use Smooth Normal",
                                 "Needs SmoothNormalBaker to have run on the mesh",
                                 "SmoothNormalBaker をメッシュに通してあることが前提");
-                            P(e, "_UseVertexWidth", "Width Mask from vertex color A",
+                            P(e, "_UseVertexWidth", "Use Vertex Width",
                                 "Lets you thin the line per-vertex (eyelashes, thin straps)",
                                 "頂点ごとに線を細くできます（睫毛や細いベルトなど）");
-                            P(e, "_OutlineColor", "Color", null, null);
-                            P(e, "_OutlineAlbedoBlend", "Blend with Albedo",
+                            P(e, "_OutlineColor", "Outline Color", null, null);
+                            P(e, "_OutlineAlbedoBlend", "Outline Albedo Blend",
                                 "1 tints the line by the surface colour instead of one flat colour",
                                 "1 で線を単色でなく表面の色で染めます");
-                            P(e, "_OutlineAlbedoDarken", "Albedo Darken", null, null);
-                            P(e, "_OutlineWidth", "Width", null, null);
-                            P(e, "_OutlineZOffset", "Z Offset",
+                            P(e, "_OutlineAlbedoDarken", "Outline Albedo Darken", null, null);
+                            P(e, "_OutlineWidth", "Outline Width", null, null);
+                            P(e, "_OutlineZOffset", "Outline Z Offset",
                                 "Pushes the line away from the camera so it does not poke through",
                                 "線をカメラから遠ざけて、本体を突き抜けないようにします");
-                            P(e, "_OutlineMaxDistance", "Fade Distance",
+                            P(e, "_OutlineMaxDistance", "Outline Max Distance",
                                 "Where the line stops widening in screen space. "
                                 + "Matters for pulled-back live shots",
                                 "画面上での太りを止める距離。引きの画で効きます");
@@ -1719,7 +1703,7 @@ namespace ToonNPR.EditorTools
 
                     // **前は「専用の髪影パスが引き続き焼く」と案内していた。**
                     // そのパスは T-344 で廃止済みで、今 ON にすると影が単に消える。
-                    P(e, "_ShadowCasterOff", "Exclude from Shadow Map",
+                    P(e, "_ShadowCasterOff", "Shadow Caster Off",
                         "This material stops casting shadows entirely. Useful for eyes and "
                         + "lashes that would otherwise self-shadow the face, but hair set to "
                         + "this no longer drops any shadow onto the face or body",
@@ -1779,20 +1763,20 @@ namespace ToonNPR.EditorTools
                                                CompareFunction.LessEqual, -1);
                     }
 
-                    P(e, "_StencilRef", "Ref",
+                    P(e, "_StencilRef", "Stencil Ref",
                         "The value written (with Replace) or compared against (with Equal)",
                         "Replace なら書き込む値、Equal なら比べる値");
-                    P(e, "_StencilComp", "Comp",
+                    P(e, "_StencilComp", "Stencil Comp",
                         "Never draws nothing at all, with no warning from Unity",
                         "Never にすると Unity は何も言わずに 1 画素も描きません");
-                    P(e, "_StencilPass", "Pass Op",
+                    P(e, "_StencilPass", "Stencil Pass",
                         "Replace with a Write Mask of 0 writes nothing - "
                         + "anything relying on it silently stops working",
                         "Replace でも Write Mask が 0 だと**何も書きません**。"
                         + "それを当てにしている材質が黙って成立しなくなります");
-                    P(e, "_StencilReadMask", "Read Mask",
+                    P(e, "_StencilReadMask", "Stencil Read Mask",
                         "Which bits the comparison looks at", "比較で見るビット");
-                    P(e, "_StencilWriteMask", "Write Mask",
+                    P(e, "_StencilWriteMask", "Stencil Write Mask",
                         "Which bits may be written", "書き込んでよいビット");
 
                     SubHeader("Hair See-Through", "前髪透過");
@@ -1835,7 +1819,7 @@ namespace ToonNPR.EditorTools
                             ApplyHairSeeThrough();
                     }
 
-                    P(e, "_HairSeeThroughAlpha", "See-Through Alpha",
+                    P(e, "_HairSeeThroughAlpha", "Hair See Through Alpha",
                         "Opacity of the hair over the brow and eyes",
                         "眉・目の上にかかる髪の不透明度");
                 }

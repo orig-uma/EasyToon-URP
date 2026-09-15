@@ -13,162 +13,169 @@ Shader "Origuma/EasyToon_URP/Idol"
         [KeywordEnum(Default, Skin, Face, Hair, Cloth)] _SurfaceType ("Surface Type", Float) = 0
 
         [Space(10)][Header(Base)][Space(4)]
-        [MainTexture] _BaseMap   ("Base Map", 2D) = "white" {}
+        [MainTexture] _BaseMap ("Base Map", 2D) = "white" {}
         [MainColor]   _BaseColor ("Base Color", Color) = (1,1,1,1)
-        [Toggle] _NormalMapOn ("Use Normal Map", Float) = 0
-        [Normal] _BumpMap        ("  Normal Map", 2D) = "bump" {}
-        _BumpScale               ("  Normal Scale", Range(0,2)) = 1
+        [Toggle] _NormalMapOn ("Normal Map On", Float) = 0
+        [Normal] _BumpMap ("  Bump Map", 2D) = "bump" {}
+        _BumpScale ("  Bump Scale", Range(0,2)) = 1
         // ディテールマップ（T-368。Doll と同名）: タトゥー・チーク等を A の
         // 合成率でベースへ重ねる。ベースと独立したタイリング（ST）を持つ。
-        [Toggle] _DetailOn       ("Use Detail Map", Float) = 0
-        _DetailMap               ("  Detail Map (RGB=color A=blend)", 2D) = "black" {}
-        _DetailColor             ("  Detail Color", Color) = (1,1,1,1)
+        [Toggle] _DetailOn ("Detail On", Float) = 0
+        _DetailMap ("  Detail Map (RGB=color A=blend)", 2D) = "black" {}
+        _DetailColor ("  Detail Color", Color) = (1,1,1,1)
+        // 0 = 置き換え（タトゥー・チーク: その色で置く）/ 1 = 乗算（生地の陰・AO: 元の色を暗くする）。
+        // DCC で焼いた生地の陰・AO を乗算で受ける（T-404）。強さは Detail Color の A。
+        [Toggle] _DetailMultiply ("  Detail Multiply", Float) = 0
         [NoScaleOffset][Normal] _DetailNormalMap ("  Detail Normal Map", 2D) = "bump" {}
-        _DetailNormalScale       ("  Detail Normal Scale", Range(0,2)) = 1
+        _DetailNormalScale ("  Detail Normal Scale", Range(0,2)) = 1
         // **Render Mode（GUI）が設定する派生状態。** 直接いじる入口は持たない
         // ── カットアウトはブレンド・キュー・RenderType とセットで決まるので、
         // トグル単独で切ると食い違う（T-358）。
-        [HideInInspector][Toggle(_ALPHATEST_ON)] _AlphaClipOn ("Alpha Clip", Float) = 0
-        _Cutoff                  ("  Cutoff", Range(0,1)) = 0.5
+        [HideInInspector][Toggle(_ALPHATEST_ON)] _AlphaClipOn ("Alpha Clip On", Float) = 0
+        _Cutoff ("  Cutoff", Range(0,1)) = 0.5
 
         // テクスチャを描き直さずに色を振るための補正。既定は無変化。
         // 影側の Shadow Color HSV とは別で、こちらは**素の色**を動かす。
-        _AlbedoHueShift          ("Albedo Hue Shift", Range(-0.5,0.5)) = 0
-        _AlbedoSaturation        ("  Albedo Saturation", Range(0,2)) = 1
-        _AlbedoValue             ("  Albedo Value", Range(0,2)) = 1
+        _AlbedoHueShift ("Albedo Hue Shift", Range(-0.5,0.5)) = 0
+        _AlbedoSaturation ("  Albedo Saturation", Range(0,2)) = 1
+        _AlbedoValue ("  Albedo Value", Range(0,2)) = 1
 
         [Space(10)][Header(Mask Map    R Metallic    G Occlusion    B Thickness    A Smoothness)][Space(4)]
-        _MaskMap                 ("Mask Map", 2D) = "white" {}
+        _MaskMap ("Mask Map", 2D) = "white" {}
         // 高精細から焼いた微細遮蔽（窪み）。法線マップが無いモデルでは
         // これが唯一のディテール源になる。R チャンネルのみ。
-        _CavityMap               ("  Cavity Map (R)", 2D) = "white" {}
-        _CavityStrength          ("  Cavity Strength", Range(0,1)) = 0
-        _Metallic                ("  Metallic Scale", Range(0,1)) = 0
-        _Smoothness              ("  Smoothness Scale", Range(0,1)) = 0.25
-        _OcclusionStrength       ("  Occlusion Strength", Range(0,1)) = 1
-        _DirectOcclusion         ("  Apply AO to Direct Light", Range(0,1)) = 0.3
+        _CavityMap ("  Cavity Map (R)", 2D) = "white" {}
+        _CavityStrength ("  Cavity Strength", Range(0,1)) = 0
+        _Metallic ("  Metallic", Range(0,1)) = 0
+        _Smoothness ("  Smoothness", Range(0,1)) = 0.25
+        _OcclusionStrength ("  Occlusion Strength", Range(0,1)) = 1
+        _DirectOcclusion ("  Direct Occlusion", Range(0,1)) = 0.3
         // AO と入射角から細かい凹凸の自己遮蔽を作る。AO が無ければ何も起きない。
-        _MicroShadow             ("  Micro Shadow", Range(0,1)) = 1
+        _MicroShadow ("  Micro Shadow", Range(0,1)) = 1
 
         [Space(10)][Header(NPR Map    R SpecMask    G ShadowOffset    B RimMask    A RampIndex)][Space(4)]
         // 未使用時は中立値を使う。白テクスチャは G=1（＝影オフセット最大）で
         // 中立ではないため、既定テクスチャに頼れない。
-        [Toggle] _NPRMapOn       ("Use NPR Map", Float) = 0
-        _NPRMap                  ("  NPR Map", 2D) = "white" {}
-        _NPRShadowOffsetStrength ("  Shadow Offset Strength", Range(0,1)) = 0.4
+        [Toggle] _NPRMapOn ("NPR Map On", Float) = 0
+        _NPRMap ("  NPR Map", 2D) = "white" {}
+        _NPRShadowOffsetStrength ("  NPR Shadow Offset Strength", Range(0,1)) = 0.4
 
         [Space(10)][Header(Diffuse Transfer)][Space(4)]
-        _ShadowThreshold         ("Shadow Threshold", Range(0,1)) = 0.5
-        _ShadowSoftness          ("  Base Softness", Range(0.001,0.5)) = 0.12
+        _ShadowThreshold ("Shadow Threshold", Range(0,1)) = 0.5
+        _ShadowSoftness ("  Shadow Softness", Range(0.001,0.5)) = 0.12
         // 曲率の供給源は焼いた Curvature Map だけ（T-381）。画面微分の推定は
         // 三角形ごとに一定で陰に面が並ぶため撤去した。0.5 が平坦＝無変化。
-        _CurvatureSoftness       ("  Curvature Influence", Range(0,4)) = 0
-        _CurvatureMap            ("  Curvature Map (R)", 2D) = "gray" {}
+        _CurvatureSoftness ("  Curvature Softness", Range(0,4)) = 0
+        _CurvatureMap ("  Curvature Map (R)", 2D) = "gray" {}
         // 陰ランプ専用の平滑法線。鏡面やリムには影響しない。
         [Normal] _ShadeNormalMap ("  Shade Normal Map", 2D) = "bump" {}
-        _ShadeNormalStrength     ("  Shade Normal Strength", Range(0,1)) = 0
-        _DiffuseWrap             ("  Diffuse Wrap", Range(0,1)) = 0.25
-        _ReceiveShadowStrength   ("  Receive Realtime Shadow", Range(0,1)) = 0.7
-        _ShadowAttenSoftness     ("  Realtime Shadow Softness", Range(0.001,1)) = 0.35
+        _ShadeNormalStrength ("  Shade Normal Strength", Range(0,1)) = 0
+        _DiffuseWrap ("  Diffuse Wrap", Range(0,1)) = 0.25
+        _ReceiveShadowStrength ("  Receive Shadow Strength", Range(0,1)) = 0.7
+        _ShadowAttenSoftness ("  Shadow Atten Softness", Range(0.001,1)) = 0.35
         // 硬いセル設定で境界が 1px を切ったときのジャギ止め。0 で従来どおり。
-        _ShadowEdgeAA            ("  Edge Anti-Aliasing", Range(0,2)) = 1
+        _ShadowEdgeAA ("  Shadow Edge AA", Range(0,2)) = 1
 
         [Space(10)][Header(High Quality Self Shadow    main light only)][Space(4)]
         // これだけキーワード。全経路コンパイルで occupancy が落ちるため。
-        [Toggle(_HQ_SHADOW_ON)] _HQShadowOn ("Enable HQ Self Shadow", Float) = 0
+        [Toggle(_HQ_SHADOW_ON)] _HQShadowOn ("HQ Shadow On", Float) = 0
         // 可動域を 1 → 3 に広げた（T-389）。半径 = 1 + 値 × 6 テクセル（1 で 7、
         // 3 で 19）。タップは 16 固定なので 1.5（半径 10）あたりから 1 タップが
         // 受け持つ面積が増えて粒（ディザのノイズ）が見え始める。それより上は
         // 「粒を許容してでも抽象化したい」用途。単位がテクセルなので、シャドウ
         // マップの解像度を下げれば同じ値でもワールドでの半影は広がる。
-        _HQShadowSoftness        ("  Penumbra (texels)", Range(0,3)) = 0.3
-        // 半影の広がり方。深度差（＝遮蔽物までの距離）に掛ける倍率。
-        // 上げるほど「離れた影ほど柔らかい」が強く出る。
-        _ShadowPenumbraScale     ("  Penumbra Scale", Range(0,1000)) = 200
-        _ReceiverNormalBias      ("  Receiver Normal Bias", Range(0,4)) = 1
-        [Toggle] _ShadowContactHardening ("  Contact Hardening (PCSS)", Float) = 0
+        _HQShadowSoftness ("  HQ Shadow Softness (texels)", Range(0,3)) = 0.3
+        _ReceiverNormalBias ("  Receiver Normal Bias", Range(0,4)) = 1
 
         [Space(10)][Header(Shadow Color   HSV)][Space(4)]
-        _ShadowHueShift          ("Hue Shift", Range(-0.2,0.2)) = -0.03
-        _ShadowSaturation        ("Saturation Scale", Range(0,3)) = 1.3
-        _ShadowValue             ("Value Scale", Range(0,1)) = 0.75
-        _AddLightShadowColor     ("  Shadow Color from Add. Lights", Range(0,1)) = 1
-        _ShadowTint              ("Tint (multiply)", Color) = (1,1,1,1)
+        _ShadowHueShift ("Shadow Hue Shift", Range(-0.2,0.2)) = -0.03
+        _ShadowSaturation ("Shadow Saturation", Range(0,3)) = 1.3
+        _ShadowValue ("Shadow Value", Range(0,1)) = 0.75
+        _AddLightShadowColor ("  Add Light Shadow Color", Range(0,1)) = 1
+        _ShadowTint ("Shadow Tint (multiply)", Color) = (1,1,1,1)
         // 影色を「掛ける」のではなく、その色相へ**寄せる**ための組。
         // 掛け算は減法混色なので、色を持つ Tint を掛けると2つの色相が
         // 打ち消し合って彩度が落ち、影が濁る（「濡れた色紙」に見える）。
         // さらに元の色が無彩色に近い面（白い布・銀髪）は Saturation Scale が
         // 効かないため、掛け算だけでは**影に色を入れる手段が無い**。
         // 寄せる方式なら albedo の彩度に関係なくこの色相が出る。既定 0 で従来どおり。
-        _ShadowColor             ("Shadow Hue (mix toward)", Color) = (0.50, 0.32, 0.62, 1)
-        _ShadowColorMix          ("  Hue Mix", Range(0,1)) = 0
+        _ShadowColor ("Shadow Color (mix toward)", Color) = (0.50, 0.32, 0.62, 1)
+        _ShadowColorMix ("  Shadow Color Mix", Range(0,1)) = 0
         // 落ち影（シャドウマップ・前髪由来）だけを別の色で濃くする ── **影の色の話**で、影が落ちるかどうかは変えない
         // （それは Receive Realtime Shadow）。
         // NdotL 由来のターミネータには掛からない。既定 0 で従来どおり。
-        _CastShadowColor         ("Cast Shadow Color", Color) = (0.5, 0.45, 0.5, 1)
+        _CastShadowColor ("Cast Shadow Color", Color) = (0.5, 0.45, 0.5, 1)
         _CastShadowColorStrength ("  Cast Shadow Color Strength", Range(0,1)) = 0
 
 
         [Space(10)][Header(Optional Ramp Override)][Space(4)]
         [Toggle] _UseRampMap ("Use Ramp Map", Float) = 0
-        _RampMap                 ("  Ramp Map", 2D) = "white" {}
-        _RampRowCount            ("  Ramp Row Count", Float) = 8
-        _RampIndexOverride       ("  Ramp Index Override (-1 = use NPR.a)", Float) = -1
-        _RampStrength            ("  Blend", Range(0,1)) = 1
+        _RampMap ("  Ramp Map", 2D) = "white" {}
+        _RampRowCount ("  Ramp Row Count", Float) = 8
+        _RampIndexOverride ("  Ramp Index Override (-1 = use NPR.a)", Float) = -1
+        _RampStrength ("  Ramp Strength", Range(0,1)) = 1
 
         [Space(10)][Header(Specular)][Space(4)]
         // 直接光の鏡面の倍率。移植元（EasyToon の Idol）と同名・同意味。
         // 既定 0 = 無効（T-384・利用者判断）。トゥーンの既定はハイライト無しで、
         // ツヤは入れる人だけが立てる（環境反射・グリッタ等は別ノブのまま）。
-        _SpecularIntensity       ("Specular Intensity", Range(0,4)) = 0
+        _SpecularIntensity ("Specular Intensity", Range(0,4)) = 0
         // 金属部（Mask Map R × Metallic）だけ倍率を上書きする（T-383）。
         // 肌向けに Intensity を絞ると金具まで死ぬ／逆だと肌がテカる問題の分離。
         // ローブは増やさない ── マスクはほぼ二値なので、パラメータを metallic で
         // lerp すれば結果を混ぜるのと同じ絵になり、境界は自然なフェードになる。
         // 既定 1 = 従来と完全一致。
-        _MetalSpecularBoost      ("  Metal Specular Boost", Range(0,4)) = 1
-        _MetalEnvBoost           ("  Metal Env Boost", Range(0,4)) = 1
+        _MetalSpecularBoost ("  Metal Specular Boost", Range(0,4)) = 1
+        _MetalEnvBoost ("  Metal Env Boost", Range(0,4)) = 1
         // 鏡面が持ち去ったエネルギーを拡散から引く。**既定 0（従来どおり）。**
         // 間接光側（FR-74）は影響が 1% 未満なので常時入れているが、
         // 直接光は縁で最大 23% と**見える量**なので、入れるかどうかは絵の判断。
         // 1 にすると縁の拡散が締まり、リムとの重なりが物理的に正しくなる。
-        _SpecEnergyConservation  ("  Energy Conservation", Range(0,1)) = 0
-        _SpecularTint            ("Specular Tint", Color) = (1,1,1,1)
-        _SpecularTintStrength    ("  Tint Strength", Range(0,1)) = 0
+        _SpecEnergyConservation ("  Spec Energy Conservation", Range(0,1)) = 0
+        _SpecularTint ("Specular Tint", Color) = (1,1,1,1)
+        _SpecularTintStrength ("  Specular Tint Strength", Range(0,1)) = 0
         // 多重散乱の補償。1 が物理的に正しい。0 にすると従来（単散乱のみ）に戻る。
-        _EnergyCompensation      ("  Energy Compensation", Range(0,1)) = 1
+        _EnergyCompensation ("  Energy Compensation", Range(0,1)) = 1
         // 2 ローブ目（T-369。Doll のデュアルローブから輸入・同名）。シャープな
         // 芯の下に広いマットなにじみを敷く、肌・シルクの定番。0 で分岐ごとスキップ。
-        [HDR] _SecSpecularColor  ("  2nd Lobe Color (HDR)", Color) = (1,1,1,1)
-        _SecSpecularIntensity    ("  2nd Lobe Intensity", Range(0,2)) = 0
-        _SecSmoothness           ("  2nd Lobe Smoothness", Range(0.01,1)) = 0.2
+        [HDR] _SecSpecularColor ("  Sec Specular Color (HDR)", Color) = (1,1,1,1)
+        _SecSpecularIntensity ("  Sec Specular Intensity", Range(0,2)) = 0
+        _SecSmoothness ("  Sec Smoothness", Range(0.01,1)) = 0.2
         // クリアコート（二層目の鏡面）。0 で分岐ごとスキップされる。
-        _ClearcoatStrength       ("  Clearcoat", Range(0,1)) = 0
-        _ClearcoatSmoothness     ("  Clearcoat Smoothness", Range(0,1)) = 0.9
+        _ClearcoatStrength ("  Clearcoat Strength", Range(0,1)) = 0
+        _ClearcoatSmoothness ("  Clearcoat Smoothness", Range(0,1)) = 0.9
         // 薄膜干渉。真珠・玉虫塗り。0 で色が付かない。
-        _IridescenceIntensity    ("  Iridescence", Range(0,1)) = 0
-        _IridescenceThickness    ("  Iridescence Thickness", Range(0,4)) = 1
-        _IridescenceShift        ("  Iridescence Shift", Range(0,1)) = 0
+        _IridescenceIntensity ("  Iridescence Intensity", Range(0,1)) = 0
+        _IridescenceThickness ("  Iridescence Thickness", Range(0,4)) = 1
+        _IridescenceShift ("  Iridescence Shift", Range(0,1)) = 0
         // 影の中に残す鏡面。**既定 0.1 は従来の焼き込み値**なので、
         // 触らなければ絵は変わらない。0 で影の中の鏡面が完全に消える。
-        _SpecShadowFloor         ("  Specular in Shadow", Range(0,1)) = 0.1
-        _SpecAAVariance          ("  Spec AA Variance", Range(0,1)) = 0.15
-        _SpecAAThreshold         ("  Spec AA Threshold", Range(0,1)) = 0.2
+        _SpecShadowFloor ("  Spec Shadow Floor", Range(0,1)) = 0.1
+        _SpecAAVariance ("  Spec AA Variance", Range(0,1)) = 0.15
+        _SpecAAThreshold ("  Spec AA Threshold", Range(0,1)) = 0.2
 
         [Space(10)][Header(Glitter)][Space(4)]
         // ラメ・スパンコール（T-348）。プロパティ群は Doll と同名・実装は
         // Core の BRDF_Glitter を共有。Intensity 0 で UNITY_BRANCH により
         // マスクのフェッチごとスキップ＝キーワード不要でバリアント非増。
         [NoScaleOffset] _GlitterMask ("Glitter Mask (R)", 2D) = "white" {}
-        [HDR] _GlitterColor      ("  Glitter Color (HDR)", Color) = (2,2,2,1)
-        _GlitterIntensity        ("  Glitter Intensity", Range(0,50)) = 0
-        _GlitterScale            ("  Glitter Density (Scale)", Range(10,1000)) = 100
-        _GlitterSize             ("  Dot Size", Range(0.0005,0.05)) = 0.005
-        _GlitterTilt             ("  Normal Tilt Strength", Range(0,2)) = 0.8
-        _GlitterSparsity         ("  Sparsity", Range(0,1)) = 0.5
-        _GlitterIridescence      ("  Iridescence Amount", Range(0,1)) = 0.5
-        _GlitterIridescenceShift ("  Iridescence Shift", Range(0,1)) = 0.5
-        _GlitterBaseReflection   ("  Base Reflection", Range(0,0.5)) = 0.05
+        [HDR] _GlitterColor ("  Glitter Color (HDR)", Color) = (2,2,2,1)
+        // 粒の色にアルベドを掛ける割合（Glitter と Sparkle 共通）。1 で生地と同じ色のラメ糸。
+        _GlitterAlbedoTint ("  Glitter Albedo Tint", Range(0,1)) = 0
+        // リム / スペキュラの滑らかな帯を粒に分解する割合（Sparkle 有効時）。1 で完全に粒の集まり、
+        // 2 以上で粒を明るく、0 で滑らかなまま。ラメ生地では艶や縁の光も粒として見えるべき。
+        // リム / 鏡面の滑らかな帯をスパンコールの円盤に分解する割合（T-413）。1 で帯が円盤の
+        // 集まりに、2 以上で円盤を明るく、0 で滑らかなまま。ラメ物では艶や縁の光も粒に見えるべき。
+        _GlitterRim ("  Glitter Rim", Range(0,4)) = 1
+        _GlitterSpecular ("  Glitter Specular", Range(0,4)) = 1
+        _GlitterIntensity ("  Glitter Intensity", Range(0,50)) = 0
+        _GlitterScale ("  Glitter Scale (Scale)", Range(10,1000)) = 100
+        _GlitterSize ("  Glitter Size", Range(0.0005,0.05)) = 0.005
+        _GlitterTilt ("  Glitter Tilt", Range(0,2)) = 0.8
+        _GlitterSparsity ("  Glitter Sparsity", Range(0,1)) = 0.5
+        _GlitterIridescence ("  Glitter Iridescence", Range(0,1)) = 0.5
+        _GlitterIridescenceShift ("  Glitter Iridescence Shift", Range(0,1)) = 0.5
+        _GlitterBaseReflection ("  Glitter Base Reflection", Range(0,0.5)) = 0.05
 
         // シアー生地（ストッキング・タイツ）。布を別メッシュで重ねずに、
         // **視角依存の不透明度**で肌の上へ手続き的に乗せる。既定 OFF。
@@ -178,43 +185,43 @@ Shader "Origuma/EasyToon_URP/Idol"
         // 物理ベースの Charlie sheen（下の Sheen）を持っており、
         // ライト非依存の加算光沢を重ねると二重になる。布の光沢はそちらで出すこと。
         [Space(10)][Header(Sheer Fabric    stockings and tights)][Space(4)]
-        _StockingIntensity       ("Stocking Intensity", Range(0,1)) = 0
-        _StockingColor           ("  Stocking Color", Color) = (0.76, 0.65, 0.55, 1)
+        _StockingIntensity ("Stocking Intensity", Range(0,1)) = 0
+        _StockingColor ("  Stocking Color", Color) = (0.76, 0.65, 0.55, 1)
         [NoScaleOffset] _StockingMask ("  Stocking Mask (R)", 2D) = "white" {}
-        _StockingFrontOpacity    ("  Front Opacity", Range(0,1)) = 0.25
-        _StockingPower           ("  Graze Power", Range(0.5,8)) = 1.5
+        _StockingFrontOpacity ("  Stocking Front Opacity", Range(0,1)) = 0.25
+        _StockingPower ("  Stocking Power", Range(0.5,8)) = 1.5
 
         // 散乱は既定 OFF。**必要な部位で明示的に上げる**運用にする。
         // 既定で乗っていると肌以外にも回り込み、蝋のような質感になりやすい。
         // 色と Power / Distortion は残してあるので、Strength を上げれば以前の値で出る。
         [Space(10)][Header(Skin    only when SurfaceType is Skin)][Space(4)]
-        _SubsurfaceColor         ("Subsurface Color", Color) = (1.0, 0.55, 0.45, 1)
-        _SubsurfaceStrength      ("  Strength", Range(0,2)) = 0
-        _TransmissionColor       ("Transmission Color", Color) = (1.0, 0.35, 0.25, 1)
-        _TransmissionPower       ("  Power", Range(1,16)) = 4
-        _TransmissionStrength    ("  Strength", Range(0,4)) = 0
+        _SubsurfaceColor ("Subsurface Color", Color) = (1.0, 0.55, 0.45, 1)
+        _SubsurfaceStrength ("  Subsurface Strength", Range(0,2)) = 0
+        _TransmissionColor ("Transmission Color", Color) = (1.0, 0.35, 0.25, 1)
+        _TransmissionPower ("  Transmission Power", Range(1,16)) = 4
+        _TransmissionStrength ("  Transmission Strength", Range(0,4)) = 0
         // 光を法線方向へ曲げてから裏面成分を取る。0 だと透過が均一になる。
-        _TransmissionDistortion  ("  Distortion", Range(0,1)) = 0.2
+        _TransmissionDistortion ("  Transmission Distortion", Range(0,1)) = 0.2
         // ベイクした SSS。RGB=透過方向（接線空間） A=厚み。0 で MaskMap の B を使う。
-        _SSSMap                  ("  SSS Map (RGB=dir A=thickness)", 2D) = "bump" {}
-        _SSSMapStrength          ("  SSS Map Strength", Range(0,1)) = 0
+        _SSSMap ("  SSS Map (RGB=dir A=thickness)", 2D) = "bump" {}
+        _SSSMapStrength ("  SSS Map Strength", Range(0,1)) = 0
 
         [Space(10)][Header(Cloth Sheen    only when SurfaceType is Cloth)][Space(4)]
-        _SheenColor              ("Sheen Color", Color) = (1,1,1,1)
-        _SheenRoughness          ("  Sheen Roughness", Range(0.02,1)) = 0.3
-        _SheenIntensity          ("  Intensity", Range(0,4)) = 0.6
-        _SheenEnergyConservation ("  Energy Conservation", Range(0,1)) = 0
+        _SheenColor ("Sheen Color", Color) = (1,1,1,1)
+        _SheenRoughness ("  Sheen Roughness", Range(0.02,1)) = 0.3
+        _SheenIntensity ("  Sheen Intensity", Range(0,4)) = 0.6
+        _SheenEnergyConservation ("  Sheen Energy Conservation", Range(0,1)) = 0
         // 0.9 止まりなのは、1.0 だとハーフベクトルが織り方向と一致したとき
         // 縮めた結果が 0 ベクトルになって normalize が壊れるため。
-        _ClothAnisotropy         ("  Anisotropy", Range(0,0.9)) = 0
-        [Toggle] _ClothTangentSwap ("  Use Bitangent as Weave Dir", Float) = 0
+        _ClothAnisotropy ("  Cloth Anisotropy", Range(0,0.9)) = 0
+        [Toggle] _ClothTangentSwap ("  Cloth Tangent Swap", Float) = 0
 
         [Space(10)][Header(Hair    only when SurfaceType is Hair)][Space(4)]
-        [Toggle] _HairTangentSwap ("Use Bitangent as Strand Dir", Float) = 1
-        [Toggle] _HairAnisoGGXOn ("  Use Anisotropic GGX (off = Kajiya-Kay)", Float) = 0
+        [Toggle] _HairTangentSwap ("Hair Tangent Swap", Float) = 1
+        [Toggle] _HairAnisoGGXOn ("  Hair Aniso GGX On (off = Kajiya-Kay)", Float) = 0
         // **符号で伸びる向きが逆。** 負 = 毛を横切る帯（天使の輪）／正 = 毛に沿った縦の筋。
-        _HairAnisotropy          ("  Anisotropy", Range(-1,1)) = 0.8
-        _HairShiftMap            ("  Shift Noise (R)", 2D) = "gray" {}
+        _HairAnisotropy ("  Hair Anisotropy", Range(-1,1)) = 0.8
+        _HairShiftMap ("  Hair Shift Map (R)", 2D) = "gray" {}
         // 毛流れ（倍角エンコード R=cos2t G=sin2t B=信頼度）。UV ミラーで接線が
         // 反転する髪でもエンジェルリングが割れなくなる。0 で接線をそのまま使う。
         // 未割り当ての既定は **black**。B は信頼度なので 0 =「データが無い」で、
@@ -222,38 +229,38 @@ Shader "Origuma/EasyToon_URP/Idol"
         // **"white" だった。** それだと RG=(1,1) が信頼度 1 で渡り、
         // マップを割り当てないまま強度を上げると**ハイライトが 22.5 度回る**。
         // 何も割り当てていないのに向きが変わるので、原因に辿り着けない。
-        _HairFlowMap             ("  Hair Flow (RG=dir B=conf)", 2D) = "black" {}
+        _HairFlowMap ("  Hair Flow Map (RG=dir B=conf)", 2D) = "black" {}
         // 混合率は saturate(信頼度 × 強度)。焼いた信頼度が低いマップでも
         // 試せるよう上限を 1 より上に取る（信頼度 0.07 なら 1 では 7% しか効かない）。
-        _HairFlowStrength        ("  Hair Flow Strength", Range(0,8)) = 0
-        _HairSpecColor1          ("  Primary Color", Color) = (1,1,1,1)
-        _HairShift1              ("  Primary Shift", Range(-1,1)) = 0.08
-        _HairSmoothness1         ("  Primary Smoothness", Range(0,1)) = 0.7
-        _HairSpecColor2          ("  Secondary Color", Color) = (0.75,0.85,0.8,1)
-        _HairShift2              ("  Secondary Shift", Range(-1,1)) = -0.12
-        _HairSmoothness2         ("  Secondary Smoothness", Range(0,1)) = 0.35
-        _HairSpecIntensity       ("  Intensity", Range(0,4)) = 1.0
+        _HairFlowStrength ("  Hair Flow Strength", Range(0,8)) = 0
+        _HairSpecColor1 ("  Hair Spec Color 1", Color) = (1,1,1,1)
+        _HairShift1 ("  Hair Shift 1", Range(-1,1)) = 0.08
+        _HairSmoothness1 ("  Hair Smoothness 1", Range(0,1)) = 0.7
+        _HairSpecColor2 ("  Hair Spec Color 2", Color) = (0.75,0.85,0.8,1)
+        _HairShift2 ("  Hair Shift 2", Range(-1,1)) = -0.12
+        _HairSmoothness2 ("  Hair Smoothness 2", Range(0,1)) = 0.35
+        _HairSpecIntensity ("  Hair Spec Intensity", Range(0,4)) = 1.0
         // 毛束の粒。副バンドを UV 方向のノイズで割る。0 で従来どおり滑らかな帯。
-        _HairStrandScale         ("  Strand Scale", Range(0,200)) = 50
-        _HairStrandSparkle       ("  Strand Sparkle", Range(0,1)) = 0
+        _HairStrandScale ("  Hair Strand Scale", Range(0,200)) = 50
+        _HairStrandSparkle ("  Hair Strand Sparkle", Range(0,1)) = 0
 
         [Space(10)][Header(Face SDF    only when SurfaceType is Face)][Space(4)]
         // 16bit 1ch（R×256+G）の一方式だけ（T-382）。Baking タブが焼く形式そのもの。
         // 8bit の R だけだと閾値が約 0.7 度刻みの階段になり、ライトを回すと
         // 影の線がカクつく。**非圧縮テクスチャ必須**（BC 圧縮は RG の連続性を壊す）。
         // 既定 white = R,G とも 1 → 1.0 = 最後まで照らされる（SDF 無しと同じ絵）。
-        _FaceSDFMap              ("Face SDF (16-bit R*256+G)", 2D) = "white" {}
-        [Toggle] _FaceSDFFlipU   ("  Flip SDF U", Float) = 0
-        _FaceShadowOffset        ("  Shadow Offset", Range(-0.5,0.5)) = 0
-        _FaceFlatness            ("  SDF Blend", Range(0,1)) = 1
+        _FaceSDFMap ("Face SDF Map (16-bit R*256+G)", 2D) = "white" {}
+        [Toggle] _FaceSDFFlipU ("  Face SDF Flip U", Float) = 0
+        _FaceShadowOffset ("  Face Shadow Offset", Range(-0.5,0.5)) = 0
+        _FaceFlatness ("  Face Flatness", Range(0,1)) = 1
         // 下向きの面（顎の裏・首）は SDF を切って法線の陰影へ戻す（T-376）。
         // SDF のスイープは水平面内なので光の仰角を知らず、顎裏を「照らされる」と
         // 焼いてしまう。隣の首は N·L で正しく陰るため、つなぎ目で段差になる。
-        _FaceSDFBlendNormalMin   ("  SDF Blend Normal Min", Range(-1.5,1)) = -1
-        _FaceSDFBlendNormalMax   ("  SDF Blend Normal Max", Range(-1,1.5)) = 0
+        _FaceSDFBlendNormalMin ("  Face SDF Blend Normal Min", Range(-1.5,1)) = -1
+        _FaceSDFBlendNormalMax ("  Face SDF Blend Normal Max", Range(-1,1.5)) = 0
         // FaceDirectionBinder が無いときにオブジェクトの軸（+Z 正面 / +X 右）で代用する。
         // 頭の回転には追従しないので、首を振る演出では Binder を付けること。
-        [Toggle] _FaceUseObjectAxis ("Fallback to Object Axis", Float) = 1
+        [Toggle] _FaceUseObjectAxis ("Face Use Object Axis", Float) = 1
 
         // **SRP Batcher は「なぜ無いか」を聞かない。**
         // `FaceDirectionBinder` が毎フレーム書く値なので Properties に出す
@@ -268,75 +275,65 @@ Shader "Origuma/EasyToon_URP/Idol"
         // 既定テクスチャは .shader.meta の defaultTextures で包内の 256² を指す
         // （Doll と同じ仕組み）。IGN（手続き）は対角の格子構造を持ち、半径が大きい
         // と回転角の構造が**縞**として見えた。ブルーノイズなら等方な粒になる。
-        [HideInInspector][NoScaleOffset] _BlueNoiseTex ("Blue Noise (dither)", 2D) = "gray" {}
+        [NoScaleOffset] _BlueNoiseTex ("Blue Noise Tex (dither)", 2D) = "gray" {}
         [HideInInspector] _HeadForward ("Head Forward (script)", Vector) = (0,0,0,0)
-        [HideInInspector] _HeadRight   ("Head Right (script)",   Vector) = (0,0,0,0)
+        [HideInInspector] _HeadRight ("Head Right (script)",   Vector) = (0,0,0,0)
 
         [Space(10)][Header(Rim Light)][Space(4)]
-        // Fresnel (PBR)（**既定**）は EasyPBR(Doll) と同じ Core の式（T-343）。リムが
-        // ライトのエネルギーに比例し、ステージ照明の色・強度がそのまま縁に乗る。
-        // 深度差方式（Screen Silhouette）は背後が近い・画面端・遮蔽で消える弱点が
-        // あり（利用者実測）、既定を Fresnel にした。縁取り線が要る材質だけ 0 へ。
-        [Enum(Screen Silhouette,0,Fresnel PBR,1)] _RimMode ("Rim Mode", Float) = 1
-        [HDR] _RimColor          ("Rim Color", Color) = (1.0, 0.75, 0.5, 1)
-        _RimIntensity            ("  Intensity", Range(0,8)) = 1.5
-        _RimWidth                ("  Width", Range(0,10)) = 1.5
-        _RimThreshold            ("  Depth Threshold", Range(0,0.5)) = 0.02
-        _RimSoftness             ("  Depth Softness", Range(0.001,0.5)) = 0.05
-        _RimFresnelPower         ("  Fresnel Falloff", Range(0.1,8)) = 2.5
-        _RimBacklightBias        ("  Backlight Bias", Range(0,1)) = 0.7
-        // 光が回り込んだ側の縁だけに出す。0 だとシルエット全周に等しく出る。
-        _RimDirectionality       ("  Directionality", Range(0,1)) = 1
+        // フレネルリム。EasyPBR(Doll) と同じ Core の式（T-343）で、ライトのエネルギーに比例し、
+        // ステージ照明の色・強度がそのまま縁に乗る。深度差方式（Screen Silhouette）は
+        // 背後が近い・画面端・遮蔽で消える弱点があり、T-416 で撤去した。
+        [HDR] _RimColor ("Rim Color", Color) = (1.0, 0.75, 0.5, 1)
+        _RimIntensity ("  Rim Intensity", Range(0,8)) = 1.5
+        // 0 = 極細（指数 12）/ 1 = 極太（指数 0.5）。Doll と同じ写像。
+        _RimFresnelThickness ("  Rim Fresnel Thickness", Range(0,1)) = 0.3
         // 落ち影の中ではリムを消す。0 だと遮蔽物の影の中でもシルエットが光る。
-        _RimReceiveShadow        ("  Receive Cast Shadow", Range(0,1)) = 1
+        _RimReceiveShadow ("  Rim Receive Shadow", Range(0,1)) = 1
 
         [Space(6)]
         // 産毛（ピーチファズ）。リムと同じ「縁の光沢」だが、リムが**光が回り込んだ
         // 縁**に出るのに対し、こちらは**面が光源を向いているほど**出る（産毛が
         // 順光で白く光る現象）。Doll と同名・同値域なので値をそのまま持ち込める。
-        [HDR] _FuzzColor         ("Peach Fuzz Color (HDR)", Color) = (1.0, 0.95, 0.9, 1.0)
-        _FuzzIntensity           ("  Peach Fuzz Intensity", Range(0,5)) = 0
-        _FuzzPower               ("  Peach Fuzz Width", Range(0.1,10)) = 4
-        _RimDepthBlend           ("  Depth Blend", Range(0,1)) = 0.6
-        // Fresnel (PBR) モードの太さ。Doll と同じ写像（0 = 極細・指数 12 / 1 = 極太・指数 0.5）。
-        _RimFresnelThickness     ("  Fresnel Thickness (PBR)", Range(0,1)) = 0.3
+        [HDR] _FuzzColor ("Fuzz Color (HDR)", Color) = (1.0, 0.95, 0.9, 1.0)
+        _FuzzIntensity ("  Fuzz Intensity", Range(0,5)) = 0
+        _FuzzPower ("  Fuzz Power", Range(0.1,10)) = 4
 
         [Space(10)][Header(Bent Normal    unoccluded direction for indirect light)][Space(4)]
-        [Toggle] _BentNormalOn ("Use Bent Normal", Float) = 0
-        [Normal] _BentNormalMap  ("  Bent Normal Map", 2D) = "bump" {}
+        [Toggle] _BentNormalOn ("Bent Normal On", Float) = 0
+        [Normal] _BentNormalMap ("  Bent Normal Map", 2D) = "bump" {}
 
         [Space(10)][Header(Environment)][Space(4)]
-        _AmbientIntensity        ("Ambient (SH) Intensity", Range(0,2)) = 0.5
-        _AmbientFlatten          ("  Flatten", Range(0,1)) = 0.4
+        _AmbientIntensity ("Ambient Intensity", Range(0,2)) = 0.5
+        _AmbientFlatten ("  Ambient Flatten", Range(0,1)) = 0.4
         // 1 で暗部がアルベドの色を保つ。0 で従来どおり素の AO を掛ける。
-        _AOMultiBounce           ("  AO Multi Bounce", Range(0,1)) = 1
-        _ShadowAmbientTint       ("  Tint in Shadow", Color) = (1,1,1,1)
-        _ShadowAmbientIntensity  ("  Intensity in Shadow", Range(0,2)) = 1
-        _EnvSpecIntensity        ("Env Specular Intensity", Range(0,2)) = 0.35
-        _EnvSpecFlatten          ("  Roughness Push", Range(0,1)) = 0.1
+        _AOMultiBounce ("  AO Multi Bounce", Range(0,1)) = 1
+        _ShadowAmbientTint ("  Shadow Ambient Tint", Color) = (1,1,1,1)
+        _ShadowAmbientIntensity ("  Shadow Ambient Intensity", Range(0,2)) = 1
+        _EnvSpecIntensity ("Env Spec Intensity", Range(0,2)) = 0.35
+        _EnvSpecFlatten ("  Env Spec Flatten", Range(0,1)) = 0.1
 
         [Space(10)][Header(Light Direction Override    intentionally non physical)][Space(4)]
-        [Toggle] _LightOverrideOn ("Override Light Direction", Float) = 0
-        _LightOverrideYaw        ("  Yaw (deg)", Range(-180,180)) = 0
-        _LightOverridePitch      ("  Pitch (deg)", Range(-89,89)) = 30
+        [Toggle] _LightOverrideOn ("Light Override On", Float) = 0
+        _LightOverrideYaw ("  Light Override Yaw (deg)", Range(-180,180)) = 0
+        _LightOverridePitch ("  Light Override Pitch (deg)", Range(-89,89)) = 30
         // 拡散だけ回すと金具のハイライトと影の向きが割れるので、既定は鏡面も回す。
-        [Toggle] _LightOverrideSpecular ("  Rotate Specular Too", Float) = 1
+        [Toggle] _LightOverrideSpecular ("  Light Override Specular", Float) = 1
 
         [Space(10)][Header(Emission)][Space(4)]
-        [Toggle] _EmissionOn ("Enable Emission", Float) = 0
-        _EmissionMap             ("  Emission Map", 2D) = "white" {}
-        [HDR] _EmissionColor     ("  Emission Color", Color) = (0,0,0,1)
+        [Toggle] _EmissionOn ("Emission On", Float) = 0
+        _EmissionMap ("  Emission Map", 2D) = "white" {}
+        [HDR] _EmissionColor ("  Emission Color", Color) = (0,0,0,1)
 
         [Space(10)][Header(Outline    reference look uses none)][Space(4)]
-        [Toggle(_OUTLINE_ON)] _OutlineOn ("Enable Outline", Float) = 0
-        [Toggle] _UseSmoothNormal ("  Use Baked Smooth Normal", Float) = 0
-        [Toggle]  _UseVertexWidth  ("  Width Mask from vertex color A", Float) = 0
-        _OutlineColor            ("  Color", Color) = (0.2,0.15,0.18,1)
-        _OutlineAlbedoBlend      ("  Blend with Albedo", Range(0,1)) = 0.5
-        _OutlineAlbedoDarken     ("  Albedo Darken", Range(0,1)) = 0.45
-        _OutlineWidth            ("  Width", Range(0,10)) = 0.8
-        _OutlineZOffset          ("  Z Offset", Range(0,1)) = 0
-        _OutlineMaxDistance      ("  Fade Distance", Range(1,100)) = 25
+        [Toggle(_OUTLINE_ON)] _OutlineOn ("Outline On", Float) = 0
+        [Toggle] _UseSmoothNormal ("  Use Smooth Normal", Float) = 0
+        [Toggle]  _UseVertexWidth ("  Use Vertex Width", Float) = 0
+        _OutlineColor ("  Outline Color", Color) = (0.2,0.15,0.18,1)
+        _OutlineAlbedoBlend ("  Outline Albedo Blend", Range(0,1)) = 0.5
+        _OutlineAlbedoDarken ("  Outline Albedo Darken", Range(0,1)) = 0.45
+        _OutlineWidth ("  Outline Width", Range(0,10)) = 0.8
+        _OutlineZOffset ("  Outline Z Offset", Range(0,1)) = 0
+        _OutlineMaxDistance ("  Outline Max Distance", Range(1,100)) = 25
 
         // デバッグ表示。絵から逆算しにくい量を直接見る。動的分岐なのでバリアントは増えない。
         // **[Enum] ドロワーを付けないこと（T-375）。** Unity の Enum ドロワーは名前/値の対を
@@ -344,7 +341,7 @@ Shader "Origuma/EasyToon_URP/Idol"
         // ドロワー適用のたび（Inspector 表示・描画時のカリング）にスタックトレース付きで
         // 吐いて Inspector が引っかかる。選択肢は GUI（ToonPBRShaderGUI.DrawDebug）が
         // 自前の Popup で出す。値の対応表もそちらが唯一の出所。
-        _DebugMode               ("Debug View", Float) = 0
+        _DebugMode ("Debug Mode", Float) = 0
 
         // ディゾルブ（消失演出）。**キーワードを持たない** ── 既に 270 万
         // バリアントあり、ここへ足すとシェーダー全体が倍になる。
@@ -358,53 +355,53 @@ Shader "Origuma/EasyToon_URP/Idol"
         // 陰側に注ぐ方向付きのバウンス光（T-370。Doll と同名）。床の照り返しが
         // 典型。旧「陰の持ち上げ」（_FrontLift* 系）はこの輸入と同時に廃止した
         // ── 用途（顔の自己陰の消去）は SDF が受け持ち、実使用も 0 件だった。
-        [HDR] _FillColor         ("Fill Light Color (HDR)", Color) = (0.4, 0.45, 0.6, 1)
-        _FillIntensity           ("  Fill Light Intensity", Range(0,2)) = 0
-        _FillPitch               ("  Fill Light Pitch", Range(-90,90)) = -60
-        _FillYaw                 ("  Fill Light Yaw", Range(-180,180)) = 0
-        _FillShadeOnly           ("  Fill Shade Side Only", Range(0,1)) = 1
+        [HDR] _FillColor ("Fill Color (HDR)", Color) = (0.4, 0.45, 0.6, 1)
+        _FillIntensity ("  Fill Intensity", Range(0,2)) = 0
+        _FillPitch ("  Fill Pitch", Range(-90,90)) = -60
+        _FillYaw ("  Fill Yaw", Range(-180,180)) = 0
+        _FillShadeOnly ("  Fill Shade Only", Range(0,1)) = 1
 
         // MatCap。**加算のアクセントに限る** ── 乗算は環境の主経路
         // （プローブ + SH）を上書きできてしまうので持たない。既定 OFF。
         // Light Align を上げると画面内の光の向きへ回り、「カメラに貼り付いて
         // 見える」MatCap 特有の弱点が減る。
         [Space(10)][Header(MatCap    additive accent only)][Space(4)]
-        _MatCapIntensity         ("MatCap Intensity", Range(0,5)) = 0
-        [NoScaleOffset] _MatCapTex ("  MatCap (RGB)", 2D) = "black" {}
-        [HDR] _MatCapColor       ("  Tint (HDR)", Color) = (1,1,1,1)
-        _MatCapLightAlign        ("  Align to Light", Range(0,1)) = 0
+        _MatCapIntensity ("MatCap Intensity", Range(0,5)) = 0
+        [NoScaleOffset] _MatCapTex ("  MatCap Tex (RGB)", 2D) = "black" {}
+        [HDR] _MatCapColor ("  MatCap Color (HDR)", Color) = (1,1,1,1)
+        _MatCapLightAlign ("  MatCap Light Align", Range(0,1)) = 0
 
         [Space(10)][Header(Dissolve)][Space(4)]
-        _DissolveAmount          ("Dissolve Progress", Range(0,1)) = 0
-        [Toggle] _DissolveInvert ("  Invert", Float) = 0
-        [Enum(None,0,WorldY,1,LocalY,2)] _DissolveType ("  Axis", Float) = 1
-        _DissolveStartY          ("  Start Y", Float) = 0
-        _DissolveEndY            ("  End Y", Float) = 2
-        [NoScaleOffset] _DissolveTex ("  Noise (R)", 2D) = "white" {}
-        _DissolveNoiseScale      ("  Noise Scale", Float) = 1
-        _DissolveNoiseStrength   ("  Noise Strength", Range(0,1)) = 0.5
-        [HDR] _DissolveEdgeColor ("  Edge Glow (HDR)", Color) = (1, 0.6, 0, 1)
-        [HDR] _DissolveEdgeColor2("  Edge Char Color (HDR)", Color) = (1, 0, 0, 1)
-        _DissolveEdgeWidth       ("  Edge Width", Range(0.001,0.5)) = 0.05
-        [Toggle] _DissolveEdgeStep ("  Step Edge (toon)", Float) = 0
+        _DissolveAmount ("Dissolve Amount", Range(0,1)) = 0
+        [Toggle] _DissolveInvert ("  Dissolve Invert", Float) = 0
+        [Enum(None,0,WorldY,1,LocalY,2)] _DissolveType ("  Dissolve Type", Float) = 1
+        _DissolveStartY ("  Dissolve Start Y", Float) = 0
+        _DissolveEndY ("  Dissolve End Y", Float) = 2
+        [NoScaleOffset] _DissolveTex ("  Dissolve Tex (R)", 2D) = "white" {}
+        _DissolveNoiseScale ("  Dissolve Noise Scale", Float) = 1
+        _DissolveNoiseStrength ("  Dissolve Noise Strength", Range(0,1)) = 0.5
+        [HDR] _DissolveEdgeColor ("  Dissolve Edge Color (HDR)", Color) = (1, 0.6, 0, 1)
+        [HDR] _DissolveEdgeColor2 ("  Dissolve Edge Color 2 (HDR)", Color) = (1, 0, 0, 1)
+        _DissolveEdgeWidth ("  Dissolve Edge Width", Range(0.001,0.5)) = 0.05
+        [Toggle] _DissolveEdgeStep ("  Dissolve Edge Step (toon)", Float) = 0
 
         // 暗転（T-361）。最終色を黒へ寄せる。輪郭パスにも同じ値が掛かる。
         // **アルファは触らない** ── 消えるのではなく「黒く沈む」演出。
-        _BlackOut                ("Black Out", Range(0,1)) = 0
+        _BlackOut ("Black Out", Range(0,1)) = 0
 
         [Space(10)][Header(Light Conditioning and Anti Blowout)][Space(4)]
         // ステージ照明からキャラの可読性を守る防御層（Doll から輸入・T-350）。
         // **既定はすべて素通し**（influence 1 / satLimit 1 / minBright 0 / limit 0）。
         // Doll の既定（limit 1.0・Blend Max）とは違うが、既存マテリアルの絵を
         // 変えないためにこちらは「無効」から始める。
-        _LightColorInfluence     ("Light Color Influence", Range(0,1)) = 1
-        _LightSaturationLimit    ("  Light Saturation Limit", Range(0,1)) = 1
-        _LightMinBrightness      ("  Light Min Brightness", Range(0,1)) = 0
+        _LightColorInfluence ("Light Color Influence", Range(0,1)) = 1
+        _LightSaturationLimit ("  Light Saturation Limit", Range(0,1)) = 1
+        _LightMinBrightness ("  Light Min Brightness", Range(0,1)) = 0
         // 1 灯あたりの拡散光の輝度上限。**0 = OFF**（分岐ごとスキップ）。
-        _DiffuseLightLimit       ("Diffuse Light Limit (0 = Off)", Range(0,5)) = 0
+        _DiffuseLightLimit ("Diffuse Light Limit (0 = Off)", Range(0,5)) = 0
         // 追加光源の合成。Add = 物理的（重なると白飛びする）/ Max = アニメ向け
         // （最も強い 1 灯だけが効くので彩度が残る）。既定は従来どおり Add。
-        [Enum(Add, 0, Max, 1)] _AdditionalLightBlendMode ("Additional Light Blend", Float) = 0
+        [Enum(Add, 0, Max, 1)] _AdditionalLightBlendMode ("Additional Light Blend Mode", Float) = 0
 
         [Space(10)][Header(Render State)][Space(4)]
         // 描画モード（不透明 / カットアウト / 半透明。T-358）。
@@ -412,35 +409,35 @@ Shader "Origuma/EasyToon_URP/Idol"
         // _AlphaClipOn・renderQueue・RenderType タグをまとめて設定する。
         // 半透明は不透明キューの外へ出るので深度プリパスに載らない
         //（＝深度モードのリム・SSAO の対象から外れる）。
-        [HideInInspector] _SurfaceTransparent ("Alpha Blend (Transparent)", Float) = 0
-        [Enum(UnityEngine.Rendering.BlendMode)] _SrcBlend ("Source Blend", Float) = 1
-        [Enum(UnityEngine.Rendering.BlendMode)] _DstBlend ("Destination Blend", Float) = 0
-        [Enum(Off, 0, On, 1)] _ZWrite ("ZWrite", Float) = 1
+        [HideInInspector] _SurfaceTransparent ("Surface Transparent (Transparent)", Float) = 0
+        [Enum(UnityEngine.Rendering.BlendMode)] _SrcBlend ("Src Blend", Float) = 1
+        [Enum(UnityEngine.Rendering.BlendMode)] _DstBlend ("Dst Blend", Float) = 0
+        [Enum(Off, 0, On, 1)] _ZWrite ("Z Write", Float) = 1
         [Enum(UnityEngine.Rendering.CullMode)] _Cull ("Cull", Float) = 2
         [Enum(UnityEngine.Rendering.CompareFunction)] _ZTest ("Z Test", Float) = 4
         // 深度オフセット（lilToon の Offset Factor / Units 相当。T-348）。
         // 眉・睫毛を顔面のわずかに手前に浮かせる用途（負で手前・正で奥）。
         // 本体・前髪透過・深度・法線パスに同じ値を掛けて深度の食い違いを防ぐ。
         // ShadowCaster には掛けない ── 影の自己遮蔽はシャドウバイアスの管轄。
-        _OffsetFactor            ("Offset Factor", Float) = 0
-        _OffsetUnits             ("Offset Units", Float) = 0
-        [Toggle] _ShadowCasterOff ("Exclude from Shadow Map", Float) = 0
+        _OffsetFactor ("Offset Factor", Float) = 0
+        _OffsetUnits ("Offset Units", Float) = 0
+        [Toggle] _ShadowCasterOff ("Shadow Caster Off", Float) = 0
 
         // 瞳を前髪より手前に出すための Stencil（FR-22）。
         // 既定値は「何もしない」状態。値域は REQUIREMENTS.md §6 を見ること。
         [Space(6)][Header(Stencil    see REQUIREMENTS section 6 for the bit range)][Space(4)]
-        _StencilRef              ("Ref", Range(0,15)) = 0
-        [Enum(UnityEngine.Rendering.CompareFunction)] _StencilComp ("Comp", Float) = 8
-        [Enum(UnityEngine.Rendering.StencilOp)] _StencilPass ("Pass Op", Float) = 0
-        _StencilReadMask         ("Read Mask", Range(0,255)) = 15
-        _StencilWriteMask        ("Write Mask", Range(0,255)) = 15
+        _StencilRef ("Stencil Ref", Range(0,15)) = 0
+        [Enum(UnityEngine.Rendering.CompareFunction)] _StencilComp ("Stencil Comp", Float) = 8
+        [Enum(UnityEngine.Rendering.StencilOp)] _StencilPass ("Stencil Pass", Float) = 0
+        _StencilReadMask ("Stencil Read Mask", Range(0,255)) = 15
+        _StencilWriteMask ("Stencil Write Mask", Range(0,255)) = 15
 
         // 前髪透過（FR-27）。眉・目がステンシルに書いた画素の上へ、髪を半透明で
         // 重ね描きする。**ゲートはステンシルそのもの**で、キーワードは持たない
         // ── 眉と目がビットを書いていなければ 1 画素も描かれない。
         // 眉／目／髪の3つを揃えて初めて成立する。部位プリセットが一括で設定する。
         [Space(6)][Header(Hair See Through    set all three parts via the presets)][Space(4)]
-        _HairSeeThroughAlpha     ("See-Through Alpha", Range(0,1)) = 0.6
+        _HairSeeThroughAlpha ("Hair See Through Alpha", Range(0,1)) = 0.6
     }
 
     SubShader

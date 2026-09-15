@@ -199,12 +199,6 @@ namespace ToonNPR.EditorTools
                     "URP Asset の Shadows > Main Light を ON にすること。" +
                     "リアルタイム影が一切出ないので、影の設定を触っても何も変わらない。", asset);
 
-            // リムライトとコンタクトシャドウは深度テクスチャが前提（FR-43 / リム）。
-            if (!asset.supportsCameraDepthTexture)
-                Add(Level.Warning, "Depth Texture が無効",
-                    "リムライトとコンタクトシャドウが動かない。URP Asset の Depth Texture を ON に。",
-                    asset);
-
             if (asset.shadowDistance > 60f)
                 Add(Level.Warning, $"Shadow Distance が長い ({asset.shadowDistance:0} m)",
                     "シャドウマップの1テクセルが太くなり、キャラの自己影が潰れる。" +

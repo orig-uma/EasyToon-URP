@@ -50,7 +50,7 @@ Packages/com.origuma.easytoon-urp/
       ForwardPass.hlsl        ForwardLit（前髪透過が同じものを define 違いで使う）
       OutlinePass.hlsl        輪郭（LightMode = IdolOutline）
       ShadowPass.hlsl         ShadowCaster
-      DepthOnlyPass.hlsl      Screen Silhouette モードのリムの前提
+      DepthOnlyPass.hlsl      深度プリパス（URP の深度テクスチャ・SSAO）
       DepthNormalsPass.hlsl   SSAO の前提
       MotionVectorsPass.hlsl  TAA の前提
 
