@@ -199,12 +199,6 @@ namespace ToonNPR.EditorTools
                     "URP Asset の Shadows > Main Light を ON にすること。" +
                     "リアルタイム影が一切出ないので、影の設定を触っても何も変わらない。", asset);
 
-            // リムライトとコンタクトシャドウは深度テクスチャが前提（FR-43 / リム）。
-            if (!asset.supportsCameraDepthTexture)
-                Add(Level.Warning, "Depth Texture が無効",
-                    "リムライトとコンタクトシャドウが動かない。URP Asset の Depth Texture を ON に。",
-                    asset);
-
             if (asset.shadowDistance > 60f)
                 Add(Level.Warning, $"Shadow Distance が長い ({asset.shadowDistance:0} m)",
                     "シャドウマップの1テクセルが太くなり、キャラの自己影が潰れる。" +
@@ -604,6 +598,22 @@ namespace ToonNPR.EditorTools
                     + $" {note}。",
                     hit[0]);
             }
+
+            // **ブルーノイズが欠けている / 小さすぎる。** 影フィルタの回転角に使う
+            // ので（T-390）、無いと gray = 一定角 → 画面全体が同時にテクセル境界を
+            // 踏んで**明滅**する（T-124 の症状）。既定は .shader.meta が包内の 256²
+            // を指すが、他パッケージのテクスチャを参照したまま消えた材質を拾う。
+            var badNoise = mats.Where(m =>
+                {
+                    if (!m.HasTexture("_BlueNoiseTex")) return false;
+                    var t = m.GetTexture("_BlueNoiseTex");
+                    return t != null && (t.width < 64 || t.height < 64);
+                }).ToArray();
+            if (badNoise.Length > 0)
+                Add(Level.Warning, $"ブルーノイズが小さすぎる: {badNoise.Length} 件",
+                    "_BlueNoiseTex に 64px 未満のテクスチャが入っている。影フィルタの"
+                    + "回転角が偏り、縞や明滅になる。空にすればシェーダー既定（包内の 256²）に戻る。",
+                    badNoise[0]);
 
             // **サーフェスタイプは設定されているのに、そのタイプの機能が全部 0。**
             //

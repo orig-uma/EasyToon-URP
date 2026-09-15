@@ -2,6 +2,56 @@
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-09-15
+
+### Changed (Breaking)
+
+- **Baking タブ > Face SDF の表示名を Baker の設定名に揃えた**（T-403 と同じ規則）。`Cast Shadow` → `Use Cast Shadow`、`Line Softness` → `DF Spread`、プロキシ関連は `Proxy Mode / Proxy Shape / Proxy Taper / Proxy Flatten / Proxy Detail / Proxy Detail Angle / Proxy Manual Fit / Proxy Center Transform / Proxy Center Offset / Proxy Center WS / Proxy Radii`。単位（m・texel）はツールチップへ。
+
+- **深度リム（Screen Silhouette）を撤去した**（T-416）。`Rim Mode` と、深度モードでだけ効いていた `Rim Width` / `Rim Threshold` / `Rim Softness` / `Rim Fresnel Power` / `Rim Backlight Bias` / `Rim Directionality` / `Rim Depth Blend` を削除。リムはフレネル（EasyPBR(Doll) と同じ Core の式）だけになり、Fresnel モードだった材質の見た目は変わらない（深度モードだった材質はフレネルに切り替わる）。シェーダーはシーン深度を読まなくなったので、URP Asset の Depth Texture は不要。`Rim Fresnel Thickness (PBR)` は `Rim Fresnel Thickness` に改名（プロパティ名は同じ）。移行ツールの `_RimThickness` は `_RimFresnelThickness` へ素通しに変更。
+- **接地硬化（PCSS）を撤去した**（T-415）。`Shadow Contact Hardening (PCSS)` と `Shadow Penumbra Scale` を削除し、HQ セルフシャドウは回転 Vogel 16 タップの固定半径（`HQ Shadow Softness`）だけになる。8 タップのブロッカー探索で半影の幅を変えていたが、キャラの自己遮蔽では真の半影が 1 テクセルに届かず、推定の分散が「まだら」やちらつきになっていた。シャドウマップのフェッチが最大 8 回減る。プリセット窓の「接地硬化を切る」「可動域を狭める」「接地硬化 OFF」の行も削除。材質に残った値は使われない。
+
+### Added
+
+- **顔 SDF をプロキシの法線で焼く**（T-414、Core 0.3.2）。Baking タブ > Face SDF の `Proxy Mode` で「楕円体（頭に合わせた球）」か「プロキシメッシュ」を選ぶと、顔メッシュの法線の代わりにその法線で影の遷移角を求める。ローポリの顔でポリゴンごとに折れていた等値線が滑らかになる。UV は顔メッシュのものをそのまま使うので UV 合わせは不要。既定は「自動（楕円体を顔に合わせる）」・卵型（`Proxy Taper` 0.3）・Blend 0.7 で、中心と半径は焼く頂点に最小二乗の楕円体を当てて決まる（首・口の中は外れ値として除外）。何も設定しなくても滑らかな境界になる。`Proxy Manual Fit` で中心（`Proxy Center Transform` ＋ `Proxy Center Offset`、または `Proxy Center WS`）と `Proxy Radii` を手で指定できる。**形のバリエーション**（Core 0.3.3）: `Proxy Shape` で「楕円体 / 卵型（顎を細く）/ 前を平ら（前半分だけ超楕円、後ろは丸いまま）/ 円盤（正面がほぼ平面）」を選べ、`Proxy Taper` / `Proxy Flatten` で微調整。`Proxy Detail` は「部分的にメッシュの法線」── プロキシから `Proxy Detail Angle` 度以上ずれる鼻・眉・唇だけ実際の法線に戻し、頬・額は滑らかなまま（鼻の影が戻る）。
+
+- **`Glitter Rim` / `Glitter Specular`**（T-413）: リムと鏡面（GGX・sheen・髪・映り込み）の滑らかな帯をスパンコールの円盤に分解する。円盤の中だけ通し、円盤の傾きがカメラ寄りかで明暗を付け、被覆率で割った平均 1 のマスクを掛けるので、帯の明るさはおおよそ保ったまま円盤の集まりになる。1 で完全に分解、2 以上で明るく、0 で滑らかなまま。追加光源のリムにも効く。**背景**: 細かいラメ（Sparkle、T-406〜412）を試作したが没にし、そこで作った「粒への分解」の考え方をスパンコールへ移した。
+- **ブルーノイズを材質で差し替え可能に**（T-413）: `Blue Noise Tex` を HQ シャドウの節に出し、参照を 1/256 固定からテクスチャの TexelSize にした。**粒は常に 1 画素で、テクスチャを大きくしても繰り返しの周期が伸びるだけ**（利用者の実機確認）。
+- **`Glitter Albedo Tint`**（T-407）: スパンコールの色にアルベドを掛ける割合。1 で生地と同じ色のスパンコールになる。既定の HDR 色 (2,2,2) と組むと「生地の色 × 2」。
+- **ルック用ライティング `Tools > Idol > ルック用ライティングを配置`**（T-405）。斜め上からのキー（影あり）・背面からの冷たいリム・弱いフィル・暗い青の Flat 環境光と、グローバル Volume（Bloom 0.25・ACES・コントラスト/彩度 +10。`Assets/IdolLookRig/IdolLook.volumeprofile` に保存）を 1 手で置く。同じシェーダー・同じ材質でも、正面からの弱い光と平坦な環境光では何を当てても平坦に見える ── 参考にした実機の質感の差の大半は光とポストだった（Editor から描いて確認）。既存のライトは触らない。
+- **Detail Map に乗算モード `Detail Multiply`**（T-404）。従来は「その色で置く」だけだったが、生地の陰（AO）は「元の色を暗くする」ので乗算が要る。強さは Detail Color の A。DCC で焼いた AO や生地の陰を、どのアルベドにも掛けられる。
+
+### Changed
+
+- **ライト応答を成分で返し、畳む段を 1 か所にした**（T-410）。`ToonShadeLight` は拡散 / 鏡面 / sheen / クリアコート / リムを `ToonLightTerms` で返し、新設の `ToonComposeLight` がそれを畳む。粒への分解（Glitter Specular → 鏡面と sheen、Glitter Rim → リム）、スパンコールのフラッシュ、影の床は、主光源も追加光源もここで一律に掛かる。これまで鏡面は Lighting、リムと粒は ForwardPass に散っていて、粒を足すたびに掛け忘れが出ていた（利用者「リムにも sheen にも乗らない」）。**環境反射も粒に分解する**ようにした（粒は小さな鏡なので映り込みも粒ごと。物理的にこちらが正しい）。クリアコートは粒の上に載る滑らかな薄膜なので、直接光でも映り込みでも粒にしない。粒 0 のときの絵は変わらない。
+- **ディテール法線を鋭いローブから外した**（T-401）。Detail Normal Map は影のグラデーション・sheen・リム・環境光に効き、GGX の鏡面・環境反射・MatCap・グリッターはベースの法線（法線マップまで）を見る。細かい織り目の法線が鋭いハイライトや映り込みを通ると起伏ごとに点が立って網点印刷のようになり、三角形ごとにミップ段が違うぶん「点の三角形」と「平らな三角形」が隣り合って見えていた。柔らかい拡散を通せば半影にだけ生地の目が浮く。
+- **材質 GUI と `.shader` の表示名をプロパティ名に揃えた**（T-403）。`Base Softness` → `Shadow Softness`、`Penumbra (texels)` → `HQ Shadow Softness (texels)`、`Curvature Influence` → `Curvature Softness`、`Receive Realtime Shadow` → `Receive Shadow Strength`、`Primary Shift` → `Hair Shift 1` など。表示名は内部名を語に分けたもので、単位や中身の補足「(texels)」「(RGB=color A=blend)」は末尾に残す。README_ToonPBR / SETUP / PROPERTIES の表示名も追随。節の見出し（Peach Fuzz / Rim / MatCap …）はそのまま。**理由**: 会話や文書でプロパティを指すとき、表示名と内部名が別だと毎回対応表が要る（利用者の指摘）。
+
+## [0.2.2] - 2026-09-03
+
+### Changed (Breaking)
+
+- **Terminator（明暗境界の色付け）を廃止**（T-392・利用者判断）。撤去: `_TerminatorColor` / `_TerminatorStrength` / `_TerminatorSharpness` / `_TerminatorFadeStart` / `_TerminatorFadeEnd`・GUI 節・Doll からの移行規則（Skin Scatter → Terminator）。理由: 帯に乗せる色は「lit を入力にした色曲線」で Ramp Override が完全に表現でき、ランプ生成（陰・影タブ）で調達も不要になった。実装順の都合で Ramp 使用時には上書きされて無意味になる位置にあり、既定も 0（T-384）で存在理由が消えていた。境界帯の計算は皮下散乱の重みとして `ToonScatterBand`（落ち方は旧 Sharpness 既定と同じ 2 乗）に残る。**既存マテリアルの影響**: 旧既定 0.35 が保存されている材質は、うっすら乗っていた暖色の線が消える。代替は Ramp 生成で中央に暖色キーを置く。FR-03 / FR-32 は廃止扱い。
+
+### Added
+
+- **ランプのプリセット 8 種**（T-397。Ramp Override 節、Gradient の上のボタン）: セピア / 中立 / 寒色（屋外）/ 暖色（肌）/ 紫影 / 広い階調 / セル（1 段・Fixed）/ 2影（2 段・Fixed）。押した瞬間に差し替わる（アセットなら即反映）。
+- **ランプテクスチャを Inspector の Gradient エディタから生成できるようにした**（陰・影タブ > Ramp Override、T-388）。遷移帯（Softness の勾配）の色を指定できるのは Ramp Override だけだったが、テクスチャを外部で描く必要があった。Gradient を編集して 1 ボタンで 256×1 の PNG をベイク産と同じ `Baked/` フォルダに保存・自動アサイン（非圧縮・Clamp・ミップ無し・`Use Ramp Map` 自動 ON・1 行運用・同名上書きで GUID 維持）。**複数選択では 1 枚を生成して全員で共有**（ファイル名 `Ramp_Shared_<ハッシュ>` ── 選択マテリアル名のソート済みハッシュなので、同じグループなら選択順に依らず同じファイルへ上書き・別グループとは衝突しない）。個別に変えたい材質は単独選択で生成し直せば独自の 1 枚に分岐する。**グラデーションはテクスチャの importer に保存され、開き直しても再編集できる。** キーを Fixed にすれば 2影風の段、ブレンドにすれば柔らかい中間影（T-362 で 2影を見送った際の「Ramp が上位互換」を実運用に落とした形）。シェーダーは 1 行も変えておらず、ランタイムコスト不変。
+
+### Changed
+
+- **ランプを「アセット」にして、編集がその場でシーンに反映され Undo も効くようにした**（T-396）。`ToonRampAsset`（Gradient ＋ 埋め込み 256×1 テクスチャ）を `Baked/` に作り、マテリアルは埋め込みテクスチャを参照する。Gradient を触るたびに画素を焼き直すのでファイルもインポートも介在せず、ドラッグ中も追従する。PNG は交換フォーマットに格下げ: 「PNG に書き出す」（他ツール・他プロジェクトへ。userData に Gradient も残す）と、既存の PNG ランプ（T-388 の生成物・配布物・手描き）を開いたときの**取り込み**（userData があれば復元、無ければ画素から Gradient を推定。段は Fixed として検出）。複数選択は 1 アセットを共有、「複製して分岐」で選択中だけ独自化。シェーダーは不変（`_RampMap` にテクスチャが刺さっていれば何でも読む）。
+- **「影の色 (HSV)」と「Ramp Override」を「影の色」1 節に統合**（T-399・利用者判断）。先頭の `Use Ramp Map` で分岐: ON ならランプ（アセット編集）＋ Blend、OFF なら HSV。Blend が 1 未満のときだけ HSV が「混ざるぶん」として下に出る。多段ランプの Row Count / Index Override は外部テクスチャを挿したときだけ表示。落ち影の色はどちらでも出る（Ramp の後段で掛かる）。合わせて**利用者に関係ない設計理由の Note を 3 つ除去**（「参考にしている絵では…」「BRDF のうち様式化しているのは…」「物理ベースのまま…」）。
+- **Ramp Override 節の並びを「アセット → 新規 / 複製して分岐 → プリセット → Gradient」に**（T-398・利用者判断）。「PNG に書き出す」は材質側から外し、ランプアセット自身の Inspector（`ToonRampAssetEditor`: プリセット・Gradient・書き出し）にだけ置いた。**Ramp が有効で Blend が 1 のときは「影の色 (HSV)」節を隠す**（ランプが影色を丸ごと決めるので 1 画素にも効かない ── 動かしても変わらないノブを並べない）。
+- **ランプの既定を弱セピアに**（利用者確認済み）。旧既定は暖色の芯を挟んだ肌向けで、服・髪にも同じ既定が出て「肌色すぎ」た。影側 (0.66, 0.60, 0.57) → 白 @0.5。
+- **`Penumbra (texels)` の可動域を 0–1 → 0–3 に拡張**（T-389）。半径 = 1 + 値 × 6 テクセルで、1 では最大 7 テクセルまでしか広げられず「もっと柔らかくしたい」に届かなかった。タップ数は 16 固定のため 1.5（半径 10）あたりから粒が見え始める旨を tooltip に明記。既定 0.3 と既存値は不変。
+- **ForwardLit フラグメントを Doll と同じ 4 段の関数構成へ整理**（T-386・内部リファクタ・絵は不変）。約 300 行のベタ書きを `ToonGatherSurface`（サーフェス収集）→ `ToonBuildContext`（ライト非依存の前計算）→ `ToonShadeLights`（主光源＋フィル＋グリッタ＋追加光源）→ `ToonApplyEnvironmentAndPost`（間接光＋MatCap＋暗転＋フォグ）に分け、`ToonFrag` は流れだけを書く。fxc の実測（全 4 プログラム）で**命令数・一時レジスタが完全一致**（F+ 1,966 / 42・Forward 1,504 / 31 ほか）。同時に T-344 で廃止した前髪影の残骸（迷子の `UNITY_BRANCH` と陳腐化コメント）を除去。
+
+### Fixed
+
+- **Penumbra を上げたときの影のノイズが縞状になるのを修正**（T-390）。Vogel ディスクの回転角に使っていた IGN（手続きノイズ）は対角の格子構造を持ち、半径が大きいほどその構造が縞として見えていた。Doll と同じくブルーノイズテクスチャ（包内 `Runtime/Textures/BlueNoise_RGB_256.png`・`.shader.meta` の既定テクスチャで自動適用）を画面座標で点サンプルする方式に変更。同じタップ数でも等方な粒になる。`_BlueNoiseTex` は `[HideInInspector]`（Inspector には出ない）。セットアップ診断に「ブルーノイズが小さすぎる」を追加。
+- **Base Softness を上げると影の底が浮いていく問題を修正**（T-385）。伝達関数の窓 `smoothstep(閾値 − 幅, 閾値 + 幅)` の下端が 0 を下回ると、最暗面（rawT = 0）でも 0 を返さなくなり、境界をぼかすほど影の濃さの上限が下がっていた。下端を 0 で頭打ちにし、「最暗面は常に完全な影色」を保証。閾値 > 幅 の材質（既定値を含む）は 1 画素も変わらない。**単純に影の暗さだけを変えたいときは** 陰・影タブ > 影の色 (HSV) > `Value Scale`（明度スケール）が既存のダイヤル。
+
 ## [0.2.1] - 2026-08-25
 
 ### Changed

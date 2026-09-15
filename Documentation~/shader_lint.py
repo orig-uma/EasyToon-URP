@@ -573,6 +573,9 @@ def lint_shader(shader_path: Path, issues: list[Issue]) -> None:
             continue
         if name.endswith("_ST") and name[:-3] in props:
             continue
+        # _TexelSize も _ST と同じく Unity がテクスチャプロパティから自動で埋める（T-413）
+        if name.endswith("_TexelSize") and name[:-len("_TexelSize")] in props:
+            continue
         if "lint:script-set" in raw_line:
             # **印だけで信用しないこと。** この印は警告を黙らせるので、
             # 付けたのに**誰も設定していない**と、実行時 0 のまま動く状態を

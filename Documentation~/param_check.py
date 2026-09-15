@@ -65,7 +65,7 @@ def read_defines(hlsl_path: Path) -> dict[str, int]:
         found.update({m.group(1): int(m.group(2))
                       for m in DEFINE_RE.finditer(f.read_text(encoding="utf-8", errors="replace"))})
 
-    required = ["TOON_SHADOW_TAPS", "TOON_BLOCKER_TAPS",
+    required = ["TOON_SHADOW_TAPS",
                 ]
     missing = [k for k in required if k not in found]
     if missing:
@@ -245,10 +245,13 @@ def check_light_loop(root: Path, known_ok: set[str] | None = None) -> list[Findi
     text = read_all_hlsl(root)
     if not text:
         return out
-    if "float3 ToonShadeLight(" not in text:
+    # **戻り値の型を決め打ちしない。** T-410 で float3 → ToonLightTerms に変わり、
+    # `"float3 ToonShadeLight("` を探していたこの検査が黙って空振りした（自己診断が捕まえた）。
+    m0 = re.search(r"\b\w+\s+ToonShadeLight\s*\(", text)
+    if not m0:
         return out
 
-    i = text.index("float3 ToonShadeLight(")
+    i = m0.start()
     depth = 0
     j = text.index("{", i)
     for k in range(j, len(text)):
@@ -362,8 +365,6 @@ def fetch_count(v: dict[str, float], kw: set[str],
         ("_HairFlowMap", 1 if (st == 3 and on("_HairFlowStrength", 0.0)) else 0),
         ("環境反射（プローブ）", 2),
         ("影フィルタ", defines["TOON_SHADOW_TAPS"] if hq else 1),
-        ("ブロッカー探索",
-         defines["TOON_BLOCKER_TAPS"] if (hq and on("_ShadowContactHardening")) else 0),
     ]
     return rows
 
@@ -3156,77 +3157,6 @@ def check_menu_paths(root: Path) -> list[Finding]:
     return out
 
 
-def check_depth_texture_required(root: Path, materials_dir: Path | None) -> list[Finding]:
-    """**深度テクスチャを読む機能があるのに、パイプラインが作らない**（T-291）。
-
-    このシェーダーは 1 か所で `SampleSceneDepth` を読む:
-
-      リムのシルエット検出   `ToonPBRRim.hlsl` ── 法線方向にずらした点の
-                             深度差でシルエットを見つける。**Screen Silhouette
-                             モードのときだけ**通る（T-343 で既定は Fresnel）
-
-    URP が深度テクスチャを作らない設定だと、**読み先が未定義**になる。
-    例外は出ず、深度差が常に一定になるので**リムが全面に出る／一切出ない**の
-    どちらかに倒れる。「リムの値が悪い」と読めてしまい、原因に辿り着けない。
-
-    **品質レベルごとに URP アセットが違う**のが厄介なところ。
-    実際このプロジェクトは PC 側が 1 で Mobile 側が 0 だった ──
-    PC で調整した絵が、品質を落とした瞬間に別物になる。
-    `ToonOutlineFeature` の未導入（T-281）と同じ型で、
-    **シェーダーもマテリアルも正しいのに絵が出ない**。
-    """
-    out: list[Finding] = []
-    if materials_dir is None or not materials_dir.is_dir():
-        return out
-
-    # 深度を読む機能が実際に使われているか
-    users: dict[str, int] = {}
-    for mat in find_materials(materials_dir):
-        t = mat.read_text(encoding="utf-8", errors="replace")
-        # 深度を読むのは Screen Silhouette モードのリムだけ。
-        # _RimMode 未保存のマテリアルは既定 1 (Fresnel) なので深度を読まない
-        # （T-343 で既定を反転済み）。
-        mm = re.search(r"^[ \t]*- _RimMode: ([-\d.eE+]+)[ \t]*$", t, re.M)
-        ri = re.search(r"^[ \t]*- _RimIntensity: ([-\d.eE+]+)[ \t]*$", t, re.M)
-        if (mm and float(mm.group(1)) < 0.5
-                and ri and float(ri.group(1)) > 0.0):
-            users["リム(Screen Silhouette)"] = users.get("リム(Screen Silhouette)", 0) + 1
-    if not users:
-        return out
-
-    here = root.resolve()
-    project = next((p for p in [here, *here.parents]
-                    if (p / "Assets").is_dir() and (p / "Packages").is_dir()), None)
-    if project is None:
-        return out
-
-    off: list[str] = []
-    for rp in sorted((project / "Assets").rglob("*.asset")):
-        try:
-            t = rp.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            continue
-        if "m_RequireDepthTexture" not in t:
-            continue
-        m = re.search(r"m_RequireDepthTexture: ([-\d]+)", t)
-        if m and int(m.group(1)) == 0:
-            off.append(rp.name)
-    if not off:
-        return out
-
-    used = " / ".join(f"{k} {v} 件" for k, v in sorted(users.items()))
-    out.append(Finding(
-        "warning", " / ".join(off), "深度テクスチャを作らない品質レベルがある",
-        f"{used} が `SampleSceneDepth` を読むのに、"
-        f"この URP アセットは Depth Texture を作らない。"
-        f" **読み先が未定義**になり、例外も出ないまま深度差が一定に潰れて"
-        f"**リムが全面に出る／一切出ない**のどちらかに倒れる。"
-        f" シェーダーもマテリアルも正しいので「リムの値が悪い」と読めてしまう。"
-        f" その品質レベルを使わないなら問題ないが、"
-        f"**PC で調整した絵が品質を落とした瞬間に別物になる**ことは知っておくこと。"))
-    return out
-
-
 def check_pinned_to_max(root: Path, materials_dir: Path | None) -> list[Finding]:
     """**全マテリアルが値域の上限に張り付いている**ものを見つける（T-298）。
 
@@ -3629,11 +3559,9 @@ def check_shadow_flicker(root: Path, materials_dir: Path | None) -> list[Finding
 
     # --- マテリアル側の条件 -----------------------------------------------
     #
-    # **増幅の経路は 1 つではない。** 最初は「HQ が OFF」だけを見ていたが、
-    # 利用者が HQ を ON にした途端に検査が黙った ── ちらつきは続いていたのに。
-    # ON にすると接地硬化（PCSS）が付いてきて、**別の経路で同じ症状**が出る。
-    # どちらの経路も拾う。
-    hq_off = hard = pcss = 0
+    # HQ セルフシャドウが OFF（URP 標準の数タップ）だと、遮蔽量の揺れが硬い境界で増幅される。
+    # 接地硬化（PCSS）経由の経路もあったが、機能ごと撤去した（T-415）。
+    hq_off = hard = 0
     mats = find_materials(materials_dir)
     for f in mats:
         t = f.read_text(encoding="utf-8", errors="replace")
@@ -3652,28 +3580,15 @@ def check_shadow_flicker(root: Path, materials_dir: Path | None) -> list[Finding
             hard += 1
         if not hq:
             hq_off += 1
-        # 経路2: 8 タップのブロッカー推定 → 半径が画素ごとにばらつく
-        elif (g("_ShadowContactHardening") or 0.0) > 0.5 \
-                and (g("_ShadowPenumbraScale") or 0.0) >= 100.0:
-            pcss += 1
 
-    if not mats or hard == 0 or (hq_off == 0 and pcss == 0):
+    if not mats or hard == 0 or hq_off == 0:
         return out
 
-    if pcss:
-        cause = (f"その上、接地硬化が入ったものが {pcss} 件"
-                 f"（Penumbra Scale 100 以上）。**8 タップのブロッカー推定は"
-                 f"ブロッカーがテクセル数個ぶんしか無いと当たらず、"
-                 f"半径が画素ごとに 1.0〜8.4 テクセルの間で振れて「まだら」になる。**"
-                 f" `Tools > Idol > プリセットを適用` の「ちらつき対策 ①」で"
-                 f"接地硬化だけを切れる ── このスケールでは真の半影が"
-                 f"1 テクセルに届かないので、**物理的に失うものは無い**。")
-    else:
-        cause = (f"その上 HQ セルフシャドウが OFF のものが {hq_off} 件で、"
-                 f"URP 標準の数タップに任せている。"
-                 f"**遮蔽量の揺れが硬い境界でそのまま on/off に増幅される。**"
-                 f" `Tools > Idol > プリセットを適用` の「ちらつき対策」で"
-                 f"リアルタイム影の側だけを緩められる（セルの硬さは変えない）。")
+    cause = (f"その上 HQ セルフシャドウが OFF のものが {hq_off} 件で、"
+             f"URP 標準の数タップに任せている。"
+             f"**遮蔽量の揺れが硬い境界でそのまま on/off に増幅される。**"
+             f" `Tools > Idol > プリセットを適用` の「ちらつき対策」で"
+             f"リアルタイム影の側だけを緩められる（セルの硬さは変えない）。")
 
     # **細い造形が影マップで何テクセルになるか。**
     #
@@ -3978,65 +3893,6 @@ def check_render_settings(root: Path, materials_dir: Path | None) -> list[Findin
     return out
 
 
-def check_pcss(v: dict[str, float], where: str, enabled: bool,
-               defaults: dict[str, float]) -> list[Finding]:
-    """PCSS の半影半径がどれだけ振れるかを見る。"""
-    out: list[Finding] = []
-    if not enabled:
-        return out
-    if v.get("_ShadowContactHardening", 0.0) <= 0.5:
-        return out
-
-    soft = v.get("_HQShadowSoftness")
-    if soft is None:
-        return out
-
-    # **出荷時の既定値には警告を出さない。**
-    # 以前はしきい値を絶対値（8 テクセル）で書いていて、既定 0.3 が 8.4 になり
-    # **46 マテリアル全部に出ていた。** 100% に出る警告は何も切り分けない
-    # ── CLAUDE.md が名指しで禁じている形（「誤検出の出る検査は無いより悪い」）。
-    #
-    # 見るべきは「既定より広げたか」。広げたのはユーザーの判断なので、
-    # そのとき何を引き換えにしているかを示すのがこの検査の仕事。
-    # 既定値はシェーダーから読む。**ここに数字を書かない**（書くと古くなる）。
-    base = defaults.get("_HQShadowSoftness")
-    if base is None or soft <= base + 1e-6:
-        return out
-
-    r0 = 1.0 + soft * 6.0
-    lo, hi = 1.0, r0 * 3.0
-    hi_base = (1.0 + base * 6.0) * 3.0
-
-    out.append(Finding(
-        "warning", where, "半影半径の可動域を既定より広げている",
-        f"_HQShadowSoftness = {soft}（既定 {base}）。"
-        f" radius が {lo:.1f}〜{hi:.1f} テクセルまで振れる"
-        f"（既定なら {hi_base:.1f} まで）。"
-        f" 半影の推定は 8 タップのブロッカー探索なので、"
-        f" **その分散がそのままフィルタ幅の揺れになる。**"
-        # **判断材料として物理値を出す。** 「揺れる」だけでは
-        # 切るべきか演出として残すべきかを決められない。
-        f" なお平行光源（太陽・視直径 0.53 度）の真の半影は"
-        f" 遮蔽物までの距離 × 0.00925 で、キャラの自己遮蔽では"
-        f" 顎→首 10cm でも **0.93mm** にしかならない。"
-        f" シャドウマップ 1 テクセルがそれより太いなら、"
-        f" 接地硬化が作っている変化は物理ではなく演出。"
-        # **テクセル寸法をここに書かない。** URP アセットの設定で変わるので、
-        # 書き写すと古くなる ── 実際「約 4.9mm / 顔 31 テクセル」と書いていたが、
-        # ユーザーがカスケードの分割を 0.125 → 0.075 に変えており、
-        # 実際は 2.93mm / 51 テクセルになっていた（T-155）。
-        # **同じことをこの関数自身がやっていた**（「顔は約 30 テクセル」を
-        # 焼き込んでいた。上のコメントで戒めている当の間違い）── T-167。
-        # カスケード球の半径は URP 内部の式で決まるので Python では再現しない。
-        # 正確な値は Unity 側の診断（テクセル密度）が設定から計算して出す。
-        f" 顔が何テクセルになるかは URP アセットの設定で変わるので、"
-        f" Unity 側の診断（テクセル密度）で実測を見ること。"
-        f" ちらつくなら _ShadowPenumbraScale を下げるか接地硬化を切ること"
-        f" ── 物理的に失うものは無い。"))
-
-    return out
-
-
 def run(root: Path, materials_dir: Path | None) -> list[Finding]:
     shader = (find_main_shader(root) or root / '_missing_.shader')
 
@@ -4084,7 +3940,6 @@ def run(root: Path, materials_dir: Path | None) -> list[Finding]:
     # 既定値そのものを検算する。**マテリアルが無い環境でも意味を持つ。**
     findings += check_shadow_band(defaults, "既定値")
     findings += check_diffuse_reach(defaults, "既定値", defaults)
-    findings += check_pcss(defaults, "既定値", enabled=True, defaults=defaults)
     findings += check_ranges(defaults, ranges, "既定値")
 
     findings += check_sheen_fit(root)
@@ -4108,7 +3963,6 @@ def run(root: Path, materials_dir: Path | None) -> list[Finding]:
     findings += check_cs_property_names(root)
     findings += check_doc_feature_names(root)
     findings += check_menu_paths(root)
-    findings += check_depth_texture_required(root, materials_dir)
     findings += check_pinned_to_max(root, materials_dir)
     findings += check_unused_pass_cost(root, materials_dir)
     findings += check_motionvectors_disabled(root, materials_dir)
@@ -4137,7 +3991,6 @@ def run(root: Path, materials_dir: Path | None) -> list[Finding]:
         findings += check_face_sdf_reachable(values, name, kw)
         findings += check_shadow_contrast(values, name)
         findings += check_diffuse_reach(values, name, defaults)
-        findings += check_pcss(values, name, "_HQ_SHADOW_ON" in kw, defaults)
         findings += check_alpha_clip(path, kw, values, name)
         findings += check_maskmap_packing(materials_dir, values, name, maskmap_index)
 

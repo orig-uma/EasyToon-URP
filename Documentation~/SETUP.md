@@ -62,9 +62,9 @@ Hierarchy でキャラを選ぶと `Source Root` に自動で入ります。
 | **Shade Normal** | 顔の陰から鼻・眉の凹凸を落とす | 強度まで自動で入る |
 | **Hair Flow** | UV ミラーで天使の輪が割れるのを直す | 強度まで自動で入る |
 | **Cavity** | 窪みの微細遮蔽 | 強度まで自動で入る |
-| **Face SDF** | 顔の影境界（Surface Type = Face の本命）| `SDF Blend` を 1 にする |
-| **Bent Normal** | 壁際・脇の下で間接光が回り込むのを防ぐ | `Use Bent Normal` を ON にする |
-| **Curvature** | 曲率で境界幅を変える唯一の供給源（**任意**）| `Curvature Influence` が 0 なら 1 にする |
+| **Face SDF** | 顔の影境界（Surface Type = Face の本命）| `Face Flatness` を 1 にする |
+| **Bent Normal** | 壁際・脇の下で間接光が回り込むのを防ぐ | `Bent Normal On` を ON にする |
+| **Curvature** | 曲率で境界幅を変える唯一の供給源（**任意**）| `Curvature Softness` が 0 なら 1 にする |
 | **SSS** | 散乱の向きと厚み（透過が使う）| `SSS Map Strength` を 1 にする |
 | **AO** | 遮蔽 | **手で合成が要る** ── 下記 |
 
@@ -94,7 +94,7 @@ Idol の Baking タブで焼き直してください。テクスチャは**非�
 
 ### 陰の質感で最初に触るもの
 
-**`Curvature Influence` は既定 0 です。** 曲率の供給源は Baking タブで焼く
+**`Curvature Softness` は既定 0 です。** 曲率の供給源は Baking タブで焼く
 **Curvature Map** だけなので（画面微分の推定は T-381 で撤去）、焼かずに上げても
 何も起きません。焼くと Influence が 0 なら 1 に立ちます。
 
@@ -109,12 +109,12 @@ Idol の Baking タブで焼き直してください。テクスチャは**非�
 | スクリプト | いつ要るか | 使い方 |
 |---|---|---|
 | `Runtime/FaceDirectionBinder.cs` | **Surface Type = Face を使うなら必須** | キャラのルートに追加する。Humanoid なら頭ボーンは Animator から自動で拾う |
-| `Editor/SmoothNormalBaker.cs` | アウトラインで Use Baked Smooth Normal を使うとき | メッシュを選んで `Tools > Idol > Bake Smooth Normals` |
+| `Editor/SmoothNormalBaker.cs` | アウトラインで Use Smooth Normal を使うとき | メッシュを選んで `Tools > Idol > Bake Smooth Normals` |
 | `Runtime/HairSeeThroughFeature.cs` | **前髪透過を使うなら必須**（T-341 で Feature 化） | `Window > Origuma > Idol Setup` で Renderer に追加 |
 | `Editor/ToonPBRSetupCheck.cs` | **常に。組む前も、おかしいと思ったときも** | §0 |
 | `verify_variants.py` | シェーダーを編集したとき（開発者向け） | `python verify_variants.py --unity "<Unity.exe>"` |
 
-**FaceDirectionBinder が無いときはオブジェクトの軸（+Z 正面 / +X 右）で代用される**（`Fallback to Object Axis`、既定 ON）。立ちポーズならこれで成立するが、**頭の回転には追従しない**。首を振る演出では Binder を付けること。両方無効なら通常の法線陰影に落ちる（壊れはしない）。
+**FaceDirectionBinder が無いときはオブジェクトの軸（+Z 正面 / +X 右）で代用される**（`Face Use Object Axis`、既定 ON）。立ちポーズならこれで成立するが、**頭の回転には追従しない**。首を振る演出では Binder を付けること。両方無効なら通常の法線陰影に落ちる（壊れはしない）。
 
 頭ボーンのローカル軸はモデルによって違う。顔の影が横にずれる・反転する場合は `Forward Axis` / `Right Axis` を変えて合わせる。
 
@@ -126,7 +126,7 @@ Idol の Baking タブで焼き直してください。テクスチャは**非�
 
 | 項目 | 値 | 理由 |
 |---|---|---|
-| Depth Texture | **ON** | リムが深度差を読む。OFF だとリムが出ない |
+| Depth Texture | 不要 | シェーダーは深度を読まない（深度リムは T-416 で撤去） |
 | Opaque Texture | OFF | 使っていない |
 | HDR | ON | リムとエミッシブが HDR 前提の強度 |
 | Rendering Path | Forward / Forward+ どちらでも | NFR-05 のため**両方で確認する** |
@@ -163,7 +163,7 @@ Color Space は Linear（Project Settings > Player）。Gamma では影色の HS
 
 - 方位角: カメラの正面から見て 160〜200°（真後ろ ±20°）
 - 仰角: 15〜30°。高すぎると頭頂だけ光って輪郭が抜けない
-- `Backlight Bias` が 0.7 前後だと、光源側の輪郭だけが光る
+- リムは光が回り込んだ側の輪郭だけに出る（Core の式が N·L で絞る）
 
 ### Reflection Probe
 
@@ -184,7 +184,7 @@ Post Processing を ON。Rendering path は URP Asset 側の設定に従う。
 1. **髪マテリアル**のインスペクタ → Advanced → Stencil → **「髪 (書き込む)」**
 2. **瞳マテリアル**（ハイライトを持つもの）→ 同じ場所で **「瞳 (前髪を抜く)」**
 
-ボタンは Ref・Comp・マスク・Z Test・Render Queue を一括で設定する。手で入れると必ずどれかを落とすため。値の意味と、なぜ Read Mask を絞る必要があるかは `REQUIREMENTS.md` §6 を参照。
+ボタンは Ref・Comp・マスク・Z Test・Render Queue を一括で設定する。手で入れると必ずどれかを落とすため。値の意味と、なぜ Stencil Read Mask を絞る必要があるかは `REQUIREMENTS.md` §6 を参照。
 
 **同じシーンに複数のキャラが居る場合は注意。** bit 0 を共有するので、キャラ A の髪とキャラ B の瞳が画面上で重なると B の瞳が A の髪を貫く。避けるならキャラごとに bit 1〜3 を割り当てる。
 
@@ -193,7 +193,7 @@ Post Processing を ON。Rendering path は URP Asset 側の設定に従う。
 鼻や眉が顔に落とす影は、SDF で引いた境界を汚すだけで絵として使い道がない。
 
 - **顔が独立した Renderer なら** — その Renderer の `Cast Shadows` を Off。これが最短
-- **顔が体と同じ SkinnedMeshRenderer のサブメッシュなら** — 顔マテリアルの Advanced → `Exclude from Shadow Map` を ON。Renderer 単位の設定では体まで影が消えるため
+- **顔が体と同じ SkinnedMeshRenderer のサブメッシュなら** — 顔マテリアルの Advanced → `Shadow Caster Off` を ON。Renderer 単位の設定では体まで影が消えるため
 
 どちらでも**首と顎の落ち影も一緒に消える。** 必要なら NPRMap の G（影オフセット）に描く。README §3 が「首の下」を挙げているのはこのため。
 
@@ -205,13 +205,13 @@ Post Processing を ON。Rendering path は URP Asset 側の設定に従う。
 
 URP の SSAO（Renderer Feature）を入れると、このシェーダーも AO を受け取ります。DepthNormals パスを持っているのはそのためです。
 
-**SSAO 側の「Direct Lighting Strength」は効きません。** このシェーダーは AO を遮蔽値として一度受け取り、そこから直接光へどれだけ効かせるかを**マテリアルの `Apply AO to Direct Light`** で決めています。両方を掛けると二重になるため、URP 側の直接光係数は意図的に捨てています。
+**SSAO 側の「Direct Lighting Strength」は効きません。** このシェーダーは AO を遮蔽値として一度受け取り、そこから直接光へどれだけ効かせるかを**マテリアルの `Direct Occlusion`** で決めています。両方を掛けると二重になるため、URP 側の直接光係数は意図的に捨てています。
 
 直接光への効き方を変えたいときは、SSAO の設定ではなくマテリアル側を触ってください。
 
 ## 3.9.5 アウトラインを使う場合
 
-**`Enable Outline` を ON にしただけでは描画されません。** Renderer Data に **`Toon Outline Feature`** を追加してください。
+**`Outline On` を ON にしただけでは描画されません。** Renderer Data に **`Toon Outline Feature`** を追加してください。
 
 理由は性能です。URP は不透明の描画で `UniversalForward` と `SRPDefaultUnlit` を同じパスにまとめるため、アウトラインをそこに置くと本体と輪郭が交互に描かれ、**ForwardLit の SRP Batcher が分断されます。** しかもこれはアウトラインを使っていないマテリアルにも波及します（パスが存在するだけで起きる）。
 
@@ -231,8 +231,7 @@ URP の SSAO（Renderer Feature）を入れると、このシェーダーも AO 
 | 鏡面遮蔽 | 脇の下・襟の内側の映り込み | AO が濃くても映り込みが残る | 消えるなら MaskMap の G を確認 |
 | AO 多重バウンス | **白い衣装**の暗部 | 灰色でなく白いまま暗くなる | `AO Multi Bounce` を 0 にして差を見る |
 | マイクロシャドウ | AO を焼いた布の皺 | 浅い角度の光で谷が締まる | AO 未設定なら効かない（仕様） |
-| 影境界の AA | `Base Softness` を 0.03 にしてカメラを回す | 境界がちらつかない | ちらつくなら `Edge Anti-Aliasing` を確認 |
-| ターミネータ距離減衰 | カメラを 40m まで引く | 境界の芯が消えている | 寄りで弱いなら Fade Start が近すぎる |
+| 影境界の AA | `Shadow Softness` を 0.03 にしてカメラを回す | 境界がちらつかない | ちらつくなら `Shadow Edge AA` を確認 |
 | シャドウ距離フェード | Shadow Distance の境目 | 影が滑らかに消える | ぷつりと切れるなら URP Asset 側の設定 |
 
 ### 第2段階: URP 側の設定が要るもの
@@ -247,7 +246,7 @@ URP の SSAO（Renderer Feature）を入れると、このシェーダーも AO 
 
 | Feature | 何が動くか | マテリアル側 | 入れないと |
 |---|---|---|---|
-| `Toon Outline Feature` | 輪郭（独自 LightMode `IdolOutline`） | `Enable Outline` | **線が 1 本も出ない。** 実行時のコストも無いので、`Enable Outline` を 1 のままにしておいても害は無い |
+| `Toon Outline Feature` | 輪郭（独自 LightMode `IdolOutline`） | `Outline On` | **線が 1 本も出ない。** 実行時のコストも無いので、`Outline On` を 1 のままにしておいても害は無い |
 
 **どの Renderer Data に入れるか。** URP Asset が参照している
 `Universal Renderer Data` に入れる。品質レベルごとに URP Asset が
@@ -275,12 +274,12 @@ URP の SSAO（Renderer Feature）を入れると、このシェーダーも AO 
 |---|---|---|
 | 異方性 GGX（髪） | Hair > Use Anisotropic GGX | **環境反射が筋状に伸びる**。Intensity の取り直しが要る |
 | 布の異方性 sheen | Cloth > Anisotropy を 0.5 | 織り方向に光沢が伸びる |
-| ベントノーマル | Environment > Use Bent Normal + マップ | 壁際で間接光の入り方が変わる |
+| ベントノーマル | Environment > Bent Normal On + マップ | 壁際で間接光の入り方が変わる |
 | ライト方向上書き | Light Direction Override | 背景と影の向きが意図的にずれる |
 | 瞳の描画順 | §3.6 参照 | 前髪越しにハイライトが出る |
 | 顔のシャドウキャスタ除外 | §3.7 参照 | 鼻の自己影が消える |
 | Cavity（窪みの微細遮蔽） | Mask Map > Cavity Map + Strength | 縫い目・ベルト・靴の皺が締まり、そこの鏡面が引く |
-| 布の sheen のエネルギー保存 | Cloth > Energy Conservation を 1 | 縁の明るさは残り、その下の下地が沈む |
+| 布の sheen のエネルギー保存 | Cloth > Sheen Energy Conservation を 1 | 縁の明るさは残り、その下の下地が沈む |
 | 追加光源の影色 | Shadow Color > from Add. Lights を 0 | リム光の色が正面の影に被らなくなる |
 
 ### 記録しておくこと
@@ -313,7 +312,6 @@ Tonemapping だけ注意。**Neutral を使う。** ACES は影の階調を潰�
 | 環境反射 | 金具・ビーズに Probe 由来のハイライトが乗るか。真っ黒なら Probe 未 Bake | FR-12 |
 | 曲率による軟らかさ | 頬・肩など曲率の高い面で影の境界が広く、太ももの平らな面で狭くなっているか | FR-01 |
 | 影色 | 影の中をスポイトで拾い、明度が下がるだけでなく色相が回っているか | FR-02 |
-| ターミネータ | 境界帯にだけ色が乗っているか。全体に乗っていたら Sharpness が低すぎる | FR-03 |
 | Forward / Forward+ | URP Asset で切り替え、追加光源の当たり方が変わらないか | NFR-05 |
 | バッチング | Frame Debugger で SRP Batch にまとまっているか | NFR-01 |
 
@@ -326,7 +324,7 @@ Tonemapping だけ注意。**Neutral を使う。** ACES は影の階調を潰�
 | 症状 | 原因 |
 |---|---|
 | 顔だけ黒い／ちらつく | `FaceDirectionBinder` が無く `_HeadForward` が未設定（§1 参照）。付いているのに壊れる場合は `Forward / Right Axis` が真上／真下を向いている（コンソールに警告が出る） |
-| リムが出ない | URP Asset の Depth Texture が OFF |
+| リムが出ない | 主光源が被写体の向こう側に無い（リムは光が回り込んだ側だけに出る）／`Rim Intensity` が 0／NPR Map の B が 0 |
 | 金属が真っ黒 | Reflection Probe が無い／背景を置く前に Bake した |
 | キャラだけ浮く | ライト2灯の向きが揃っていない |
 | 影が階段状 | Shadow Distance が長すぎる |

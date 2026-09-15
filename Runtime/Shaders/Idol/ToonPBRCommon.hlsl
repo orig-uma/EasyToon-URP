@@ -30,10 +30,6 @@
     #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/LODCrossFade.hlsl"
 #endif
 
-// ToonRimLight が SampleSceneDepth を使うので、ここで宣言を取り込んでおく。
-// 各パス側でインクルードすると順序を間違えたときに未宣言エラーになる。
-#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DeclareDepthTexture.hlsl"
-
 // EasyShaderCore の純粋関数レイヤ（設計ルール 3: Core と共有するのは純粋関数のみ）。
 // 実装が同値の純関数だけを取り、Toon* 側は前方転送で残す（T-340）。
 // VogelDisk（回転版）と HSV は Idol の改良実装を **Core 側へ逆輸入して**同値に
@@ -63,6 +59,7 @@ CBUFFER_START(UnityPerMaterial)
     float  _DetailOn;
     float4 _DetailMap_ST;
     float4 _DetailColor;
+    float  _DetailMultiply;
     float  _DetailNormalScale;
     float  _NormalMapOn;
 
@@ -100,8 +97,6 @@ CBUFFER_START(UnityPerMaterial)
     // 高品質セルフシャドウ（主光源専用）
     float  _HQShadowSoftness;
     float  _ReceiverNormalBias;
-    float  _ShadowContactHardening;
-    float  _ShadowPenumbraScale;
 
     // 影色 (HSV)
     float  _ShadowHueShift;
@@ -115,11 +110,6 @@ CBUFFER_START(UnityPerMaterial)
     float  _CastShadowColorStrength;
 
     // ターミネータ
-    float4 _TerminatorColor;
-    float  _TerminatorStrength;
-    float  _TerminatorSharpness;
-    float  _TerminatorFadeStart;
-    float  _TerminatorFadeEnd;
 
     // ランプ (任意)
     float  _UseRampMap;
@@ -175,21 +165,13 @@ CBUFFER_START(UnityPerMaterial)
     float  _HairFlowStrength;
 
     // リム
-    float  _RimMode;
     float  _RimFresnelThickness;
     float4 _RimColor;
     float  _RimIntensity;
-    float  _RimWidth;
-    float  _RimThreshold;
-    float  _RimSoftness;
-    float  _RimFresnelPower;
-    float  _RimBacklightBias;
-    float  _RimDirectionality;
     float  _RimReceiveShadow;
     float4 _FuzzColor;
     float  _FuzzIntensity;
     float  _FuzzPower;
-    float  _RimDepthBlend;
 
     // 環境
     float  _AmbientIntensity;
@@ -229,6 +211,10 @@ CBUFFER_START(UnityPerMaterial)
 
     // グリッタ（ラメ・スパンコール。T-348。Doll と同名）
     float4 _GlitterColor;
+    float4 _BlueNoiseTex_TexelSize;   // ブルーノイズの解像度を材質側で差し替えられるように（T-413）
+    float  _GlitterAlbedoTint;
+    float  _GlitterRim;
+    float  _GlitterSpecular;
     float  _GlitterIntensity;
     float  _GlitterScale;
     float  _GlitterSize;
@@ -363,6 +349,8 @@ TEXTURE2D(_NPRMap);
 
 TEXTURE2D(_RampMap);
 TEXTURE2D(_FaceSDFMap);
+// 影フィルタの回転ノイズ。サンプラは Core の GlobalSamplers（sampler_PointRepeat）。
+TEXTURE2D(_BlueNoiseTex);
 
 // 顔 SDF の 16bit デコード（R が上位・G が下位 = R×256+G）。
 // dot の係数 65280 = 255×256。bilinear 補間後の RG でも線形なので、
@@ -392,7 +380,10 @@ TEXTURE2D(_MatCapTex);
 #include "Shading/ToonPBRSpecular.hlsl"
 #include "Shading/ToonPBREnv.hlsl"
 #include "Shading/ToonPBRShadows.hlsl"
-#include "Shading/ToonPBRLighting.hlsl"
+// Rim は Lighting より前（ToonShadeLight がリムを成分として返す）。Compose はライト応答の
+// 成分を 1 か所で畳む。どちらも T-410。
 #include "Shading/ToonPBRRim.hlsl"
+#include "Shading/ToonPBRLighting.hlsl"
+#include "Shading/ToonPBRCompose.hlsl"
 
 #endif // TOON_PBR_COMMON_INCLUDED

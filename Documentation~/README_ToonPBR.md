@@ -37,10 +37,10 @@ Shade Normal / Hair Flow / Face SDF / Bent Normal / Curvature / SSS / Cavity / A
 
 ## 1. 最初にやること
 
-1. **URP Asset > Depth Texture を ON**（リムが深度を読みます）
+1. **URP Asset > Depth Texture は不要**（リムはフレネルで、深度を読みません）
 2. **URP Asset > Opaque Texture は不要**
 3. シーンに **Reflection Probe** を置いて Bake
-   これが無いと `Env Specular Intensity` が効かず、キャラだけ背景から浮きます。ここが v2 で一番重要な準備です
+   これが無いと `Env Spec Intensity` が効かず、キャラだけ背景から浮きます。ここが v2 で一番重要な準備です
 4. マテリアルを部位ごとに分けて `Surface Type` を設定
 
 ---
@@ -98,24 +98,24 @@ Shade Normal / Hair Flow / Face SDF / Bent Normal / Curvature / SSS / Cavity / A
 
 ```
 Shadow Threshold        0.50
-Base Softness           0.14      ← 硬いセルにしたいなら 0.03
-Curvature Influence     1.0       ← これが「境界の柔らかさが場所で変わる」の正体
+Shadow Softness           0.14      ← 硬いセルにしたいなら 0.03
+Curvature Softness     1.0       ← これが「境界の柔らかさが場所で変わる」の正体
 Diffuse Wrap            0.30
-Receive Realtime Shadow 0.65
-Realtime Shadow Softness 0.40
+Receive Shadow Strength 0.65
+Shadow Atten Softness 0.40
 
 Ambient Intensity       0.55
 Ambient Flatten         0.40
-Env Specular Intensity  0.35
+Env Spec Intensity  0.35
 Specular Intensity      0.2       ← 直接光の鏡面。0 で完全に消える
-Smoothness Scale        0.25
+Smoothness        0.25
 
-Value Scale (Shadow)    0.62      ← 影色の明度。影／光の比を決める主因のひとつ
-Intensity in Shadow     0.45      ← 影の中の環境光。**影を濃くする副作用の少ないノブ**
+Shadow Value    0.62      ← 影色の明度。影／光の比を決める主因のひとつ
+Shadow Ambient Intensity     0.45      ← 影の中の環境光。**影を濃くする副作用の少ないノブ**
 Cast Shadow Strength    0.45      ← 落ち影だけを別色で濃くする
 ```
 
-**影の濃さは3つの値の合成で決まる**ので、単体で見ても判断できません（`Value Scale` を
+**影の濃さは3つの値の合成で決まる**ので、単体で見ても判断できません（`Shadow Value` を
 下げても環境光が強ければ影は薄いまま）。上の3つはプリセットの「標準」の値で、
 影／光の比がおよそ 0.54 になります。診断がこの比を計算して出します。
 
@@ -123,7 +123,7 @@ Cast Shadow Strength    0.45      ← 落ち影だけを別色で濃くする
 > 常時フル出力だったため（BACKLOG T-087）、Metallic が 0 でも金属的に見えていました。
 > **「金属っぽさ」の主因は Smoothness と環境鏡面**で、Metallic ではありません。
 > まだ光るなら `Specular Intensity` を 0 に。環境の映り込みだけ残したいときは
-> `Env Specular Intensity` を別に調整してください（0 にするとキャラだけ背景から浮きます）。
+> `Env Spec Intensity` を別に調整してください（0 にするとキャラだけ背景から浮きます）。
 
 > **環境鏡面の明るさは 2026-08-02 に変わりました。** DFG 近似へ渡す粗さの単位を直した
 > ためで（BACKLOG T-026）、**肌や布のような誘電体の「縁」が暗くなります**。逆光で白く
@@ -146,12 +146,10 @@ Cast Shadow Strength    0.6                  ← 0 で従来どおり
 ### 肌（Surface Type = Skin）
 
 ```
-Smoothness Scale        0.35
-Hue Shift              -0.04     （赤側へ）
-Saturation Scale        1.35
-Value Scale             0.80
-Terminator Color        (1.0, 0.78, 0.68)
-Terminator Strength     0.45
+Smoothness        0.35
+Shadow Hue Shift              -0.04     （赤側へ）
+Shadow Saturation        1.35
+Shadow Value             0.80
 Subsurface Strength     0.7      ← **既定は 0（OFF）。使うなら明示的に上げる**
 Transmission Strength   0.6      ← 同上
 ```
@@ -165,45 +163,44 @@ Strength を上げれば上の値がそのまま出ます。**耳や鼻翼を透
 ### 白いドレス（Surface Type = Cloth）
 
 ```
-Smoothness Scale        0.25
+Smoothness        0.25
 Sheen Roughness         0.30
 Sheen Intensity         0.7      ← 縁のふわっとした明るさ
-Energy Conservation     0        ← 1 にすると物理的に正しくなる（下記）
-Hue Shift              +0.04     （青紫側へ。白物は寒色に転ばせる）
-Saturation Scale        1.5
-Value Scale             0.78
-Terminator Strength     0.25
+Sheen Energy Conservation     0        ← 1 にすると物理的に正しくなる（下記）
+Shadow Hue Shift              +0.04     （青紫側へ。白物は寒色に転ばせる）
+Shadow Saturation        1.5
+Shadow Value             0.78
 ```
 
-> **`Energy Conservation` を 1 にすると sheen が物理的に正しくなります。** 現状の 0 は
+> **`Sheen Energy Conservation` を 1 にすると sheen が物理的に正しくなります。** 現状の 0 は
 > sheen を下地に足すだけなので、**縁でエネルギーが増えています**（この設定だと 43%）。
 > 1 にすると sheen が反射するぶん下地を縮めます（glTF KHR_materials_sheen と同じ）。
 > **縁の明るさ自体は残り**、その下が沈んで「光っているのは布の毛羽立ち」と読めるようになります。
 > 既定を 0 にしてあるのは、これがバグではなく**足りていないモデル項**で、絵としてどちらを
 > 採るかの判断が要るためです。設計思想に沿うのは 1 の方です。
 
-白い布は元の彩度がほぼ0なので、`Saturation Scale` を上げても効きが薄いです。`Shadow Tint` に薄い青紫を直接入れる方が確実です。
+白い布は元の彩度がほぼ0なので、`Shadow Saturation` を上げても効きが薄いです。`Shadow Tint` に薄い青紫を直接入れる方が確実です。
 
 ### 髪（Surface Type = Hair）
 
 ```
-Primary Shift           0.06
-Primary Smoothness      0.72
-Secondary Shift        -0.14
-Secondary Smoothness    0.35
+Hair Shift 1           0.06
+Hair Smoothness 1      0.72
+Hair Shift 2        -0.14
+Hair Smoothness 2    0.35
 Hair Spec Intensity     0.9
-Hue Shift              -0.02
-Value Scale             0.72
+Shadow Hue Shift              -0.02
+Shadow Value             0.72
 ```
 
 ### 金属パーツ・アーマー（Surface Type = Default）
 
 ```
-Metallic Scale          1.0
-Smoothness Scale        0.75
+Metallic          1.0
+Smoothness        0.75
 Spec AA Variance        0.2      ← ビーズや細かい金具のちらつき対策
-Base Softness           0.05     ← 硬い物は境界も硬く
-Curvature Influence     0.3
+Shadow Softness           0.05     ← 硬い物は境界も硬く
+Curvature Softness     0.3
 ```
 
 ### リム（逆光を作る）
@@ -213,19 +210,15 @@ Curvature Influence     0.3
 ```
 Rim Color               (1.0, 0.72, 0.45)  HDR強度 1.5〜2.5
 Rim Intensity           1.8
-Rim Width               1.5
-Fresnel Falloff         2.5
-Backlight Bias          0.75     ← 逆光のときだけ強く出す（画面全体に一様）
-Directionality          1.0      ← 光が回り込んだ側の縁だけに出す（0 で全周）
-Receive Cast Shadow     1.0      ← 落ち影の中では消す（NdotL の陰では消さない）
-Depth Blend             0.6
+Rim Fresnel Thickness   0.3      ← 0 で極細・1 で極太
+Rim Receive Shadow     1.0      ← 落ち影の中では消す（NdotL の陰では消さない）
 ```
 
 ### 輪郭線
 
-スクショには**入っていません**。`Enable Outline` は OFF のままで。
+スクショには**入っていません**。`Outline On` は OFF のままで。
 
-どうしても入れるなら `Width 0.5` / `Blend with Albedo 0.7` くらいの、色が付いた極細の線に留めてください。黒い線を足した瞬間に十年前の絵になります。
+どうしても入れるなら `Outline Width 0.5` / `Outline Albedo Blend 0.7` くらいの、色が付いた極細の線に留めてください。黒い線を足した瞬間に十年前の絵になります。
 
 ---
 
@@ -257,7 +250,7 @@ Depth Blend             0.6
 
 **Ambient Flatten を 0 にしない。** 環境光の方向性がそのまま乗るとキャラの陰影が濁ります。0.3〜0.5 が目安。
 
-**影が環境光で持ち上がって濁るなら `Intensity in Shadow` を下げる。** 環境光は影の内外に一律で乗るのが既定なので、屋外の明るい環境では影が浅くなります。`Tint in Shadow` に寒色を入れて影だけ転ばせる使い方もできます。
+**影が環境光で持ち上がって濁るなら `Shadow Ambient Intensity` を下げる。** 環境光は影の内外に一律で乗るのが既定なので、屋外の明るい環境では影が浅くなります。`Shadow Ambient Tint` に寒色を入れて影だけ転ばせる使い方もできます。
 
 **Shadow Distance を詰める。** URP Asset の Shadow Distance が長いと影のテクセルが粗くなり、キャラの自己影がガタつきます。MMD的な近景カットなら 20〜30m で十分です。
 
@@ -268,14 +261,14 @@ Depth Blend             0.6
 | 症状 | 原因 |
 |---|---|
 | 金属が真っ黒 | Reflection Probe が無い／未 Bake |
-| リムが出ない | URP Asset の Depth Texture が OFF |
-| 影の境界が全部同じ硬さ | Curvature Influence が 0、または Curvature Map を焼いていない |
-| **影がまったく出ない・のっぺり平ら** | `Ambient (SH) Intensity` が高すぎる。環境光は影の中にも一律で乗るので、主光源と同量まで上げると影が埋まる。**`Intensity in Shadow` を 0.5 前後に下げる**のが正攻法（全体の明るさを保ったまま影だけ沈む） |
-| 影色が濁る | Saturation Scale を上げすぎ。1.2〜1.5 が実用域 |
-| 顔の影が反転 | Flip SDF U、または Binder の軸設定 |
+| リムが出ない | 主光源が被写体の向こう側に無い（リムは光が回り込んだ側だけに出る）／`Rim Intensity` が 0／NPR Map の B が 0 |
+| 影の境界が全部同じ硬さ | Curvature Softness が 0、または Curvature Map を焼いていない |
+| **影がまったく出ない・のっぺり平ら** | `Ambient Intensity` が高すぎる。環境光は影の中にも一律で乗るので、主光源と同量まで上げると影が埋まる。**`Shadow Ambient Intensity` を 0.5 前後に下げる**のが正攻法（全体の明るさを保ったまま影だけ沈む） |
+| 影色が濁る | Shadow Saturation を上げすぎ。1.2〜1.5 が実用域 |
+| 顔の影が反転 | Face SDF Flip U、または Binder の軸設定 |
 | 細かいパーツがちらつく | Spec AA Variance を 0.2〜0.3 に |
-| **ライトを回すと影がちらつく** | ステップの幅がシャドウマップの粒度より狭い。`Edge Anti-Aliasing` が 0 になっていないか確認（既定 1 で自動的に吸収する）。それでも出るなら `Realtime Shadow Softness` を 0.6 前後へ。**解像度を上げるのは対症療法** |
-| 全体が眠い | Terminator Strength を上げる。境界の芯が絵を締めます |
+| **ライトを回すと影がちらつく** | ステップの幅がシャドウマップの粒度より狭い。`Shadow Edge AA` が 0 になっていないか確認（既定 1 で自動的に吸収する）。それでも出るなら `Shadow Atten Softness` を 0.6 前後へ。**解像度を上げるのは対症療法** |
+| 全体が眠い | Ramp を生成（陰・影タブ > Ramp Override）して中間に暖色のキーを置く。境界の芯が絵を締めます |
 
 ---
 
@@ -306,7 +299,7 @@ Depth Blend             0.6
 ```
 眉のマテリアル    「眉 (bit 2 を書く)」    Queue 2000
 目のマテリアル    「目 (bit 4 を書く)」    Queue 2000
-髪のマテリアル    「髪 (透過を有効化)」    Queue 2010 / See-Through Alpha 0.6
+髪のマテリアル    「髪 (透過を有効化)」    Queue 2010 / Hair See Through Alpha 0.6
 ```
 
 **髪の Queue を眉・目より後ろにすること。** 先にビットが書かれていないと抜けません。
@@ -314,7 +307,7 @@ Depth Blend             0.6
 動かすと眉が髪より後になり、仕掛けが壊れます。
 
 > 斜めから見て睫毛が濃く見えるときは、透過ではなく**眉のアウトライン**が髪を
-> 突き抜けています。Outline Width を 0 にするか Z Offset を上げてください。
+> 突き抜けています。Outline Width を 0 にするか Outline Z Offset を上げてください。
 > ZTest / ZWrite で直そうとしないこと（移植元で検証済み）。
 
 ### シアー生地（ストッキング・タイツ）
@@ -325,8 +318,8 @@ Surface Type が Skin か Cloth のとき「Sheer Fabric」に出ます。
 ```
 Stocking Intensity      0.8
 Stocking Color          (0.76, 0.65, 0.55)
-Front Opacity           0.25     ← 正面。低いほど肌が透ける
-Graze Power             1.5      ← 大きいほど縁だけが密になる
+Stocking Front Opacity           0.25     ← 正面。低いほど肌が透ける
+Stocking Power             1.5      ← 大きいほど縁だけが密になる
 ```
 
 **光沢は Cloth - Sheen（物理ベースの Charlie sheen）で出してください。**
@@ -367,22 +360,22 @@ Falloff                 2.0
 ```
 MatCap Intensity        0.5
 MatCap (RGB)            球状のライティングを焼いた画像
-Align to Light          0.5      ← 画面内の光の向きへ回す
+MatCap Light Align          0.5      ← 画面内の光の向きへ回す
 ```
 
 **加算だけです。** 乗算は環境光の主経路を上書きできてしまうので持ちません。
-`Align to Light` を上げると、MatCap 特有の「カメラに貼り付いて見える」弱点が
+`MatCap Light Align` を上げると、MatCap 特有の「カメラに貼り付いて見える」弱点が
 減ります（光源が動くとハイライトも動く）。0 で従来どおり固定です。
 
 ### ディゾルブ（消失演出）
 
 ```
-Dissolve Progress       0 → 1    ← ここを動かす
+Dissolve Amount       0 → 1    ← ここを動かす
 Axis                    WorldY
-Start Y / End Y         0 / 2    （ワールド座標のメートル）
-Noise (R)               ノイズテクスチャ
-Edge Width              0.05
-Edge Glow (HDR)         (1, 0.6, 0) × 3 くらい
+Dissolve Start Y / Dissolve End Y         0 / 2    （ワールド座標のメートル）
+Dissolve Tex (R)               ノイズテクスチャ
+Dissolve Edge Width              0.05
+Dissolve Edge Color (HDR)         (1, 0.6, 0) × 3 くらい
 ```
 
 **影・深度・法線のパスでも同じ場所が切れます。** ここを省くと消えたはずの部分の
@@ -392,7 +385,7 @@ Edge Glow (HDR)         (1, 0.6, 0) × 3 くらい
 ### 影の中に残す鏡面
 
 ```
-Specular in Shadow      0.1      ← 既定。従来の焼き込み値そのもの
+Spec Shadow Floor      0.1      ← 既定。従来の焼き込み値そのもの
 ```
 
 0 にすると影の中の鏡面が完全に消えます。移植元の 184 マテリアル中 92 が

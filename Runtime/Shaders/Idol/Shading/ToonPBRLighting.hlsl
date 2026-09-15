@@ -67,24 +67,27 @@ float3 ToonDiffuseEnergy(float3 lightEnergy)
     return e;
 }
 
-float3 ToonShadeLight(ToonSurface s, ToonContext c, Light light, float3 diffuseL,
-                      float shadowColorScale, float attenAA,
-                      out float litOut, out float castOut)
+// 返り値は成分ごと（ToonLightTerms）。畳むのは ToonComposeLight（T-410）。
+// rimShape: ToonRimShape の結果（視線だけで決まるのでフラグメントで 1 回）。
+ToonLightTerms ToonShadeLight(ToonSurface s, ToonContext c, Light light, float3 diffuseL,
+                              float shadowColorScale, float attenAA, float2 rimShape,
+                              out float litOut, out float castOut)
 {
     float3 L = light.direction;   // 鏡面・透過に使う実際の向き
     float3 Ld = diffuseL;         // 拡散と顔 SDF に使う向き
-    float3 N = c.N;
+    float3 N  = c.N;       // ベース ＋ ディテール。拡散・sheen・リムが見る
+    float3 Ns = c.specN;   // ベースのみ。GGX の鏡面が見る（T-401: 織り目で点が立たないように）
     float3 V = c.V;
     float3 H = SafeNormalize(L + V);
 
     // 拡散の伝達関数だけ平滑法線を使う。シワやファセットが陰のグラデーションに
-    // 入り込んで境界が汚く割れるのを防ぐ。鏡面・リム・透過はディテール法線のまま
-    // なので質感は失われない（未使用時は shadeN == N）。
+    // 入り込んで境界が汚く割れるのを防ぐ（未使用時は shadeN == N）。
     float NdotL  = dot(c.shadeN, Ld);       // 拡散の伝達関数用
-    float NdotLs = saturate(dot(N, L));     // 鏡面の幾何項用（上書きの影響を受けない）
-    float NdotH = saturate(dot(N, H));
-    float VdotH = saturate(dot(V, H));
-    float NdotV = c.NdotV;
+    float NdotLs = saturate(dot(Ns, L));    // 鏡面の幾何項用（上書きの影響を受けない）
+    float NdotH  = saturate(dot(Ns, H));
+    float VdotH  = saturate(dot(V, H));
+    float NdotV  = c.NdotV;
+    float NdotVs = max(saturate(dot(Ns, V)), 1e-4);   // 鏡面の可視項用
 
     // --- 拡散 ---------------------------------------------------------------
     // 細かい凹凸の自己遮蔽。伝達関数に入る前に掛ける。
@@ -210,10 +213,9 @@ float3 ToonShadeLight(ToonSurface s, ToonContext c, Light light, float3 diffuseL
     rawT = lerp(rawT, faceLit, faceBlend);
 #endif
 
-    // 正面・上向きの陰を持ち上げる（FR-31）。**伝達関数の出力に掛ける** ──
-    float band = ToonTerminatorBand(rawT, softness);
-    float3 diffuse = ToonDiffuseColor(s.diffuseColor, s.shadowColor * shadowColorScale, lit, band,
-                                      ToonTerminatorFade(c.eyeDepth));
+    float3 diffuse = ToonDiffuseColor(s.diffuseColor, s.shadowColor * shadowColorScale, lit);
+    // 境界帯は皮下散乱の重みにだけ使う（Terminator の色付けは T-392 で廃止）。
+    float band = ToonScatterBand(rawT, softness);
 
 UNITY_BRANCH
 if (_UseRampMap > 0.5)
@@ -251,7 +253,9 @@ if (_UseRampMap > 0.5)
 #endif
 
     // --- 鏡面 ---------------------------------------------------------------
-    float3 specular = 0;
+    float3 specular  = 0;
+    float3 coat      = 0;   // クリアコート（滑らか）。成分として分けて返す（T-410）
+    float3 sheenTerm = 0;   // 布の毛羽。同上
 
     // 鏡面が持ち去ったエネルギーの割合（輝度換算）。**実際に足した量**を入れる。
     // 髪・布の経路では 0 のまま ── あちらは自前の強度と正規化を持っていて、
@@ -270,9 +274,9 @@ if (_UseRampMap > 0.5)
         // **マスクは両方のローブに掛ける。** 以前は副ローブにしか掛かっておらず、
         // NPR マップの R で「ここは光らせない」と塗っても主バンドが残った。
         // 束感（sparkle）は副ローブだけ ── 主バンドは細い芯なので割ると消える。
-        float g1 = ToonStrandSpecularGGX(T1, N, V, L, _HairSmoothness1, _HairAnisotropy, c.specAAKernel)
+        float g1 = ToonStrandSpecularGGX(T1, Ns, V, L, _HairSmoothness1, _HairAnisotropy, c.specAAKernel)
                  * s.specMask;
-        float g2 = ToonStrandSpecularGGX(T2, N, V, L, _HairSmoothness2, _HairAnisotropy, c.specAAKernel)
+        float g2 = ToonStrandSpecularGGX(T2, Ns, V, L, _HairSmoothness2, _HairAnisotropy, c.specAAKernel)
                  * s.specMask * c.hairSparkle;
 
         // ここだけ Kajiya-Kay と違って F を掛ける。GGX にした以上、
@@ -303,7 +307,7 @@ if (_UseRampMap > 0.5)
     }
 #else
     float D = ToonD_GGX(NdotH, s.roughness);
-    float Vis = ToonV_SmithGGX(NdotV, NdotLs, s.roughness);
+    float Vis = ToonV_SmithGGX(NdotVs, NdotLs, s.roughness);
     float3 F = ToonF_Schlick(s.f0, VdotH);
     // **倍率を掛ける。** これが無いと base GGX が実質 1.0 で出っぱなしになり、
     // Metallic が 0 でも「濡れたプラスチック」に見える。
@@ -339,7 +343,7 @@ if (_UseRampMap > 0.5)
         float sr     = 1.0 - _SecSmoothness;
         float rough2 = max(sr * sr, 0.002);
         float D2   = ToonD_GGX(NdotH, rough2);
-        float Vis2 = ToonV_SmithGGX(NdotV, NdotLs, rough2);
+        float Vis2 = ToonV_SmithGGX(NdotVs, NdotLs, rough2);
         specular += D2 * Vis2 * F * NdotLs * s.specMask
                   * _SecSpecularIntensity * _SecSpecularColor.rgb;
     }
@@ -375,7 +379,7 @@ if (_UseRampMap > 0.5)
 
         diffuse  *= coatAtten;
         specular *= coatAtten;
-        specular += Dc * Vc * Fc * NdotLs * coatTint;
+        coat      = Dc * Vc * Fc * NdotLs * coatTint;
     }
 #endif
 
@@ -403,13 +407,16 @@ if (_UseRampMap > 0.5)
     // 1 にすると glTF KHR_materials_sheen と同じ挙動になる。
     float sheenScale = c.sheenScale;   // ライト非依存。フラグメントで前計算
 
-    diffuse  *= sheenScale;
-    specular *= sheenScale;
-    specular += Dc * Vc * sheenColor * NdotLs;
+    diffuse   *= sheenScale;
+    specular  *= sheenScale;
+    coat      *= sheenScale;
+    sheenTerm  = Dc * Vc * sheenColor * NdotLs;
 #endif
 
     // 窪みの底に鏡面を残さない。アルベド側は既に掛けてある。
-    specular *= s.cavity;
+    specular  *= s.cavity;
+    sheenTerm *= s.cavity;
+    coat      *= s.cavity;
 
     // 影の中で光らせない。ただし完全に殺すと硬く見えるので少し残す。
     //
@@ -422,7 +429,10 @@ if (_UseRampMap > 0.5)
     // `_SpecularShadeInfluence` というノブでやっており、184 マテリアル中 92 が
     // 既定から動かしている（T-201）。機能ではなく可動域だけを出す。
     float specFloor = _SpecShadowFloor * (1.0 - saturate(castShadow * _CastShadowColorStrength));
-    specular *= lerp(specFloor, 1.0, lit);
+    float specLit = lerp(specFloor, 1.0, lit);
+    specular  *= specLit;
+    sheenTerm *= specLit;
+    coat      *= specLit;
 
     // --- 透過 (耳・指・薄い布) ---------------------------------------------
     float3 transmission = 0;
@@ -462,8 +472,15 @@ if (_UseRampMap > 0.5)
 
     float3 lightEnergy = ToonLightEnergy(light);
 
-    return (diffuse * directAO + transmission) * ToonDiffuseEnergy(lightEnergy)
-         + specular * lightEnergy;
+    ToonLightTerms t = (ToonLightTerms)0;
+    t.diffuse  = (diffuse * directAO + transmission) * ToonDiffuseEnergy(lightEnergy);
+    t.specular = specular  * lightEnergy;
+    t.sheen    = sheenTerm * lightEnergy;
+    t.coat     = coat      * lightEnergy;
+    // リムもこのライトの成分。形（rimShape）は視線だけで決まり、どの光が縁を照らすかは
+    // ライトごと（T-351）。落ち影の反映もここで済む。
+    t.rim      = ToonRimLight(rimShape, c, light.direction, ToonDiffuseEnergy(lightEnergy), castShadow);
+    return t;
 }
 
 // ----------------------------------------------------------------------------
@@ -535,14 +552,16 @@ float3 ToonShadeIndirect(ToonSurface s, ToonContext c, float mainLit, float main
     // 鏡面: プローブから。ここが背景と繋がる主経路。
     float pr = lerp(s.perceptualRoughness, 1.0, _EnvSpecFlatten);
 
-    float3 R = reflect(-c.V, c.N);
+    // 反射ベクトルはベース法線から（T-401）。ディテール法線だと起伏ごとに映り込みが
+    // 割れて点になる。布の起伏は拡散側で見せる。
+    float3 R = reflect(-c.V, c.specN);
 #if defined(_SURFACETYPE_HAIR)
     // 髪だけ反射ベクトルを繊維に沿って寝かせる。Kajiya-Kay 版ではここは等方のまま。
     UNITY_BRANCH
     if (_HairAnisoGGXOn > 0.5)
     {
         float3 strandWS = ToonHairStrandDir(c.T, c.B, c.uv, c.uvDx, c.uvDy);
-        R = ToonAnisoReflectVector(c.N, c.V, strandWS, _HairAnisotropy, pr);
+        R = ToonAnisoReflectVector(c.specN, c.V, strandWS, _HairAnisotropy, pr);
     }
 #endif
 
@@ -553,7 +572,7 @@ float3 ToonShadeIndirect(ToonSurface s, ToonContext c, float mainLit, float main
     // プローブ中心からの位置で、長さが部屋の大きさになる。内積が桁で大きくなり
     // saturate が常に 1 に張り付くので、箱を持つプローブでは補正が消えていた。
     // 投影自体はプローブごとに箱が違うので ToonSampleEnvSpecular の中でやる。
-    float horizon = saturate(1.0 + dot(R, c.N));
+    float horizon = saturate(1.0 + dot(R, c.specN));
     horizon *= horizon;
 
     float3 env = ToonSampleEnvSpecular(R, pr, c.positionWS, c.screenUV) * horizon;
@@ -592,6 +611,11 @@ float3 ToonShadeIndirect(ToonSurface s, ToonContext c, float mainLit, float main
 #if defined(_SURFACETYPE_CLOTH)
     indirectSpecular *= c.sheenScale;
 #endif
+    // ラメ生地では映り込みも粒の集まり（T-410）。粒は小さな鏡なので、環境を映すのも粒ごと
+    //（それぞれ別の方向の環境を映す）── 物理的にはこちらが正しい。マスクは平均 1 なので
+    // 明るさは保たれる。コート（この下で足す薄膜の映り込み）は粒の上に載る滑らかな層なので
+    // 掛けない。Glitter Specular 0 のときは 1。
+    indirectSpecular *= c.specGrain;
 
     // コートの映り込み。下地より鋭いので別 mip を引く。
     UNITY_BRANCH

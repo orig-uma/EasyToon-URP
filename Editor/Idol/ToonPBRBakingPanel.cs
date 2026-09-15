@@ -47,7 +47,25 @@ namespace ToonNPR.EditorTools
 
         private EasyPbrShadeNormalBaker.Settings _shadeNormal = EasyPbrShadeNormalBaker.Default;
         private EasyPbrHairFlowBaker.Settings    _hairFlow    = EasyPbrHairFlowBaker.Default;
-        private EasyPbrFaceSdfBaker.Settings     _faceSdf     = EasyPbrFaceSdfBaker.Default;
+        private EasyPbrFaceSdfBaker.Settings     _faceSdf     = MakeFaceSdfDefault();
+        // 顔 SDF のプロキシ（T-414）。既定は自動（楕円体を焼く頂点に最小二乗で合わせ、Blend 0.7）。
+        private bool       _sdfProxyManual;                  // 中心・半径を手で指定する（Proxy Manual Fit）
+        private Transform  _sdfProxyCenterTransform;                  // 指定があれば中心 = Transform ＋ Offset
+        private Vector3    _sdfProxyOffset = Vector3.zero;
+        private Vector3    _sdfProxyCenterWS = Vector3.zero; // Transform 無しのときの中心（ワールド、m）
+        private Vector3    _sdfProxyRadii  = Vector3.zero;   // 0 なら自動
+        private GameObject _sdfProxyObject;
+        private int        _sdfProxyShape;                   // 0 楕円体 / 1 卵型 / 2 前を平ら / 3 円盤 / 4 カスタム
+
+        // Idol の既定: 卵型プロキシ・Blend 0.7（鼻・眉の形を少し残す）。ローポリの顔でも
+        // 何も設定せずに滑らかな境界が出る。従来の「メッシュの法線」は Proxy で選べる。
+        private static EasyPbrFaceSdfBaker.Settings MakeFaceSdfDefault()
+        {
+            var s = EasyPbrFaceSdfBaker.Default;
+            s.proxyMode = 1; s.proxyBlend = 0.7f;
+            s.proxyTaper = 0.3f; // 卵型（顎を細く）。楕円体より顔の明暗境界が自然（利用者確認済み）
+            return s;
+        }
         private EasyPbrBentNormalBaker.Settings  _bentNormal  = EasyPbrBentNormalBaker.Default;
         private EasyPbrCurvatureBaker.Settings   _curvature   = EasyPbrCurvatureBaker.Default;
         private EasyPbrCavityBaker.Settings      _cavity      = EasyPbrCavityBaker.Default;
@@ -227,7 +245,7 @@ namespace ToonNPR.EditorTools
                     _faceSdf.xAxisTilt, -45f, 45f);
 
                 _faceSdf.useCastShadow = EditorGUILayout.Toggle(
-                    _kit.Label("Cast Shadow", "Include nose/brow cast shadows via raycasts",
+                    _kit.Label("Use Cast Shadow", "Include nose/brow cast shadows via raycasts",
                                "鼻・眉の落ち影をレイキャストで含める"),
                     _faceSdf.useCastShadow);
                 using (new EditorGUI.DisabledScope(!_faceSdf.useCastShadow))
@@ -247,12 +265,130 @@ namespace ToonNPR.EditorTools
                 using (new EditorGUI.DisabledScope(!_faceSdf.dfBlend))
                 {
                     _faceSdf.dfSpread = EditorGUILayout.Slider(
-                        _kit.Label("Line Softness", "Rounding radius in texels. "
+                        _kit.Label("DF Spread", "Rounding radius in texels. "
                                    + "Higher = smoother, loses fine detail",
                                    "線の丸め半径（texel）。大きいほど滑らか・細部が消える"),
                         _faceSdf.dfSpread, 1f, 16f);
                     // Idol は 16bit 1ch の一方式だけ（T-382）。常に pack16 で焼く。
                     _faceSdf.pack16 = true;
+                }
+
+                // ---- プロキシ法線（T-414）--------------------------------------
+                // ローポリの顔は法線がポリゴンごとに折れて等値線がガタつく。頭に合わせた楕円体か
+                // プロキシメッシュの法線で遷移角を求めれば、線は完全に滑らかになる。UV は顔の
+                // ものをそのまま使う（頂点位置からプロキシの法線を引くだけ）ので UV 合わせは不要。
+                EditorGUILayout.Space(2);
+                // 表示順は 自動（楕円体）/ メッシュの法線 / プロキシメッシュ。内部の mode は 1 / 0 / 2
+                int[] modeOfIndex = { 1, 0, 2 };
+                int curIndex = System.Array.IndexOf(modeOfIndex, _faceSdf.proxyMode);
+                if (curIndex < 0) curIndex = 0;
+                curIndex = EditorGUILayout.Popup(
+                    _kit.Label("Proxy Mode", "Which normals define the shadow transition",
+                               "影の遷移角をどの法線で決めるか"),
+                    curIndex,
+                    jp ? new[] { "自動（楕円体を顔に合わせる）", "メッシュの法線（従来）", "プロキシメッシュ" }
+                       : new[] { "Auto (ellipsoid fitted to the face)", "Mesh normals (legacy)", "Proxy mesh" });
+                _faceSdf.proxyMode = modeOfIndex[curIndex];
+                if (_faceSdf.proxyMode != 0)
+                {
+                    using (new EditorGUI.IndentLevelScope())
+                    {
+                        _faceSdf.proxyBlend = EditorGUILayout.Slider(
+                            _kit.Label("Proxy Blend", "1 = proxy normals only (smoothest). Lower to keep some "
+                                       + "of the nose/brow shape from the real mesh",
+                                       "1 でプロキシの法線だけ（最も滑らか）。下げると鼻や眉の形が少し戻ります"),
+                            _faceSdf.proxyBlend, 0f, 1f);
+                        if (_faceSdf.proxyMode == 1)
+                        {
+                            // 形のプリセット。選ぶと Taper / Flatten を入れ、下のスライダーで微調整できる
+                            //（手で動かすと「カスタム」表示になる）
+                            int shape = ShapeOfParams(_faceSdf.proxyTaper, _faceSdf.proxyFlatten);
+                            int newShape = EditorGUILayout.Popup(
+                                _kit.Label("Proxy Shape", "Ellipsoid = plain. Egg = narrower chin. Flat Front = front half "
+                                           + "flattened, back stays round. Disc = front nearly planar with a rounded rim",
+                                           "楕円体 = 素のまま。卵型 = 顎を細く。前を平ら = 前半分だけ平らに（後ろは丸いまま）。"
+                                           + "円盤 = 正面がほぼ平面で縁が丸い"),
+                                shape,
+                                jp ? new[] { "楕円体", "卵型", "前を平ら", "円盤", "カスタム" }
+                                   : new[] { "Ellipsoid", "Egg", "Flat Front", "Disc", "Custom" });
+                            if (newShape != shape && newShape < 4)
+                            {
+                                _faceSdf.proxyTaper   = s_shapeTaper[newShape];
+                                _faceSdf.proxyFlatten = s_shapeFlatten[newShape];
+                            }
+                            _faceSdf.proxyTaper = EditorGUILayout.Slider(
+                                _kit.Label("Proxy Taper", "Egg shape: + narrows the chin and widens the top, - the opposite",
+                                           "卵型。+ で顎が細く上が広く、− でその逆"),
+                                _faceSdf.proxyTaper, -0.5f, 0.5f);
+                            _faceSdf.proxyFlatten = EditorGUILayout.Slider(
+                                _kit.Label("Proxy Flatten", "Flattens the front half (0 = round, 1 = disc-like). "
+                                           + "The back half stays round",
+                                           "前半分を平らに（0 = 丸い、1 = 円盤に近い）。後ろ半分は丸いまま"),
+                                _faceSdf.proxyFlatten, 0f, 1f);
+                        }
+                        _faceSdf.proxyDetail = EditorGUILayout.Slider(
+                            _kit.Label("Proxy Detail", "Brings the real mesh normals back only where they differ "
+                                       + "strongly from the proxy (nose, brow, lips). Cheeks and forehead stay smooth",
+                                       "プロキシから大きくずれる場所（鼻・眉・唇）だけ実際のメッシュの法線に戻します。"
+                                       + "頬・額は滑らかなまま"),
+                            _faceSdf.proxyDetail, 0f, 1f);
+                        if (_faceSdf.proxyDetail > 0f)
+                            _faceSdf.proxyDetailAngle = EditorGUILayout.Slider(
+                                _kit.Label("Proxy Detail Angle", "Angle (deg) between mesh and proxy normal from which "
+                                           + "the mesh normal is used. Smaller = more of the face uses the mesh",
+                                           "メッシュとプロキシの法線の角度差がこれ（度）を超える場所からメッシュの法線を使う。"
+                                           + "小さいほど顔の広い範囲がメッシュになる"),
+                                _faceSdf.proxyDetailAngle, 10f, 80f);
+                        if (_faceSdf.proxyMode == 2)
+                        {
+                            _sdfProxyObject = (GameObject)EditorGUILayout.ObjectField(
+                                _kit.Label("Proxy Mesh", "A smooth head proxy (MeshFilter or SkinnedMeshRenderer) "
+                                           + "placed over the head. Its own UVs are not used",
+                                           "頭に重ねた滑らかなプロキシ（MeshFilter か SkinnedMeshRenderer）。プロキシ側の UV は使いません"),
+                                _sdfProxyObject, typeof(GameObject), true);
+                        }
+                        bool wasManual = _sdfProxyManual;
+                        _sdfProxyManual = EditorGUILayout.Toggle(
+                            _kit.Label("Proxy Manual Fit", "Off = centre and radii are fitted to the face vertices "
+                                       + "(least squares, outliers dropped). On = set them yourself, "
+                                       + "starting from the auto-fitted values",
+                                       "OFF = 中心と半径を顔の頂点に自動で合わせます（最小二乗・外れ値除去）。"
+                                       + "ON = 手で指定（自動の値が最初に入ります）"),
+                            _sdfProxyManual);
+                        // ON にした瞬間に自動の値を入れておく（空から入力させない）
+                        if (_sdfProxyManual && !wasManual) AutoFillSdfProxy(e.target as Material);
+                    }
+                }
+                if (_faceSdf.proxyMode != 0 && _sdfProxyManual)
+                {
+                    using (new EditorGUI.IndentLevelScope())
+                    {
+                        _sdfProxyCenterTransform = (Transform)EditorGUILayout.ObjectField(
+                            _kit.Label("Proxy Center Transform", "Transform at the head's centre (head bone). "
+                                       + "Empty = fitted from the face mesh vertices (usually right)",
+                                       "頭の中心の Transform（頭ボーン）。空なら顔メッシュの頂点から自動で合わせます（通常はこれで十分）"),
+                            _sdfProxyCenterTransform, typeof(Transform), true);
+                        if (_sdfProxyCenterTransform != null)
+                            _sdfProxyOffset = EditorGUILayout.Vector3Field(
+                                _kit.Label("Proxy Center Offset", "Offset from Proxy Center Transform, in its local axes (m)",
+                                           "Proxy Center Transform からのずらし（そのローカル軸、m）"),
+                                _sdfProxyOffset);
+                        else
+                            _sdfProxyCenterWS = EditorGUILayout.Vector3Field(
+                                _kit.Label("Proxy Center WS", "Ellipsoid centre in world space (m)",
+                                           "楕円体の中心（ワールド座標、m）"),
+                                _sdfProxyCenterWS);
+                        if (_faceSdf.proxyMode == 1)
+                        {
+                            _sdfProxyRadii = EditorGUILayout.Vector3Field(
+                                _kit.Label("Proxy Radii", "Ellipsoid radii in metres (x = width, y = height, z = depth). "
+                                           + "0 = fitted from the face mesh vertices when baking",
+                                           "楕円体の半径（x = 幅、y = 高さ、z = 奥行き）。0 なら焼くときに顔メッシュの頂点から合わせます"),
+                                _sdfProxyRadii);
+                        }
+                        if (GUILayout.Button(jp ? "自動算出（今の顔メッシュから）" : "Auto-fit from the face mesh"))
+                            AutoFillSdfProxy(e.target as Material);
+                    }
                 }
 
                 // **_FaceFlatness を立てないと焼いても絵が変わらない。**
@@ -272,9 +408,89 @@ namespace ToonNPR.EditorTools
         private bool BakeSdfAndRoute(Material m)
         {
             _faceSdf.pack16 = true;
+            ResolveSdfProxy(m);
             if (!EasyPbrFaceSdfBaker.Bake(_bakeRoot, m, _faceSdf)) return false;
             SetIfUnset(m, "_FaceFlatness", 1f);
             return true;
+        }
+
+        // 形のプリセット（Taper, Flatten）。楕円体 / 卵型 / 前を平ら / 円盤
+        private static readonly float[] s_shapeTaper   = { 0f, 0.3f, 0f,   0f };
+        private static readonly float[] s_shapeFlatten = { 0f, 0f,   0.5f, 1f };
+        private static int ShapeOfParams(float taper, float flatten)
+        {
+            for (int i = 0; i < s_shapeTaper.Length; i++)
+                if (Mathf.Abs(taper - s_shapeTaper[i]) < 1e-4f && Mathf.Abs(flatten - s_shapeFlatten[i]) < 1e-4f) return i;
+            return 4;
+        }
+
+        /// <summary>
+        /// 自動フィットの値を手動欄に入れる（T-414）。Baker と同じ頂点（バインドポーズをワールドへ写したもの）に
+        /// 最小二乗の楕円体を当てる。Proxy Center Transform が指定済みならその Offset に、無ければワールド中心に入れる。
+        /// </summary>
+        private void AutoFillSdfProxy(Material m)
+        {
+            if (m == null || _bakeRoot == null) return;
+            var pts = new System.Collections.Generic.List<Vector3>();
+            foreach (var r in _bakeRoot.GetComponentsInChildren<Renderer>(true))
+            {
+                if (System.Array.IndexOf(r.sharedMaterials, m) < 0) continue;
+                Mesh mesh = r is SkinnedMeshRenderer smr ? smr.sharedMesh : r.GetComponent<MeshFilter>()?.sharedMesh;
+                if (mesh == null) continue;
+                foreach (var v in mesh.vertices) pts.Add(r.transform.TransformPoint(v));
+            }
+            if (pts.Count == 0)
+            {
+                Debug.LogWarning("[EasyToon] この材質を使うメッシュが Source Root の下に見つかりません（Read/Write Enabled も確認）。");
+                return;
+            }
+            if (!EasyPbrFaceSdfBaker.FitEllipsoid(pts.ToArray(), out var c, out var rad)) return;
+            if (_sdfProxyCenterTransform != null) _sdfProxyOffset = _sdfProxyCenterTransform.InverseTransformPoint(c);
+            else _sdfProxyCenterWS = c;
+            _sdfProxyRadii = rad;
+        }
+
+        /// <summary>プロキシの中心・半径・メッシュをワールド空間で Settings に入れる（T-414）。</summary>
+        // 中心・半径は Baker が「焼く頂点そのもの」から合わせるのが既定（Renderer.bounds はスキン後の
+        // 姿勢の箱で、Baker が使うバインドポーズの頂点と 6 cm ずれた）。Proxy Center Transform を指定したときだけ
+        // 中心をそれにする。**注意**: バインドポーズと今の姿勢がずれるモデルでは、頭ボーンの位置も
+        // ずれるので自動のほうが正しい。
+        private void ResolveSdfProxy(Material m)
+        {
+            if (_faceSdf.proxyMode == 0 || _bakeRoot == null) return;
+
+            bool manualCenter = _sdfProxyManual && (_sdfProxyCenterTransform != null || _sdfProxyCenterWS.sqrMagnitude >= 1e-8f);
+            bool manualRadii  = _sdfProxyManual && _sdfProxyRadii.sqrMagnitude >= 1e-8f;
+            _faceSdf.proxyAutoCenter = !manualCenter;
+            _faceSdf.proxyCenterWS   = !manualCenter ? Vector3.zero
+                                     : (_sdfProxyCenterTransform != null ? _sdfProxyCenterTransform.TransformPoint(_sdfProxyOffset) : _sdfProxyCenterWS);
+            _faceSdf.proxyAutoRadii  = !manualRadii;
+            _faceSdf.proxyRadii      = manualRadii ? _sdfProxyRadii : Vector3.zero;
+
+            _faceSdf.proxyMesh = null;
+            _faceSdf.proxyMatrix = Matrix4x4.identity;
+            if (_faceSdf.proxyMode == 2 && _sdfProxyObject != null)
+            {
+                var smr = _sdfProxyObject.GetComponentInChildren<SkinnedMeshRenderer>();
+                var mf  = _sdfProxyObject.GetComponentInChildren<MeshFilter>();
+                if (smr != null)
+                {
+                    var baked = new Mesh();
+                    smr.BakeMesh(baked, true);
+                    _faceSdf.proxyMesh = baked;
+                    _faceSdf.proxyMatrix = smr.transform.localToWorldMatrix;
+                }
+                else if (mf != null && mf.sharedMesh != null)
+                {
+                    _faceSdf.proxyMesh = mf.sharedMesh;
+                    _faceSdf.proxyMatrix = mf.transform.localToWorldMatrix;
+                }
+                else
+                {
+                    Debug.LogWarning("[EasyToon] Proxy Mesh に MeshFilter / SkinnedMeshRenderer が無いので、楕円体で焼きます。");
+                    _faceSdf.proxyMode = 1;
+                }
+            }
         }
 
         private void DrawBentNormal(MaterialEditor e, bool jp)

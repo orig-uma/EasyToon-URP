@@ -10,8 +10,9 @@
 // バリアントが消えても絵は出るので、実機で「なぜか効かない」としか見えない。
 // pragma は `.shader` 側に残してある（`#include_with_pragmas` も使わない）。
 //
-// 切り出しは**1行も変えていない。** include を展開し直して元の `.shader` と
-// バイト一致することを確かめてから分けた（T-210）。
+// 切り出し時（T-210）は 1 行も変えず、バイト一致を確認して分けた。
+// その後 T-386 でフラグメントを 4 段の関数に分けた（fxc の命令数・
+// 一時レジスタの完全一致で意味不変を確認済み）。
 
             struct Attributes
             {
@@ -58,26 +59,25 @@
                 return output;
             }
 
-            half4 ToonFrag(Varyings input) : SV_Target
+            // =================================================================
+            //  フラグメントの段構成（T-386）。Doll の ForwardPass に倣い
+            //  「サーフェス収集 → コンテキスト → ライト → 環境と後処理」の
+            //  4 段に分け、ToonFrag は流れだけを書く。**切り出しは意味を変えて
+            //  いない** ── fxc の命令数・一時レジスタの完全一致で確認済み。
+            //  各段の中身と置き順の理由は、段の中のコメントがそのまま持っている。
+            // =================================================================
+
+            // ---- 1. サーフェス収集 ----------------------------------------
+            // テクスチャ群 → ToonSurface。法線（TBN・幾何法線）と SpecAA
+            // カーネルはコンテキスト側も使うので out で返す。
+            // アルファテスト（clip）とディゾルブもここ ── 消える画素の
+            // ライティングを計算しないため、できるだけ早い段に置く。
+            ToonSurface ToonGatherSurface(Varyings input, float2 uv,
+                                          out float3 normalWS, out float3 baseNormalWS,
+                                          out float3 tangentWS,
+                                          out float3 bitangentWS, out float3 geomNormalWS,
+                                          out float specAAKernel)
             {
-                #ifdef LOD_FADE_CROSSFADE
-                    LODFadeCrossFade(input.positionCS);
-                #endif
-
-                UNITY_SETUP_INSTANCE_ID(input);
-                UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
-
-                // **前髪透過にキーワードのゲートは持たない。** 以前は
-                // `_HAIRSEETHROUGH_ON` で切っていたが、それだと
-                // **ステンシルを設定しただけでは効かない** ── 髪が穴を空けて
-                // 誰も埋めない状態になり、目と眉が素通しで出る（T-254）。
-                //
-                // ゲートはステンシルそのもの（`Ref 0 / ReadMask 6 / Comp NotEqual`）。
-                // 眉と目がビットを書いていなければ 1 画素も描かれないので、
-                // 設定していないマテリアルには影響しない。移植元も同じ作り。
-
-                float2 uv = input.uv;
-
                 // ---- サーフェス ------------------------------------------------
                 float4 baseTex = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, uv);
                 float4 albedo  = baseTex * _BaseColor;
@@ -96,7 +96,11 @@
                     float2 detailUV = uv * _DetailMap_ST.xy + _DetailMap_ST.zw;
                     float4 detail = SAMPLE_TEXTURE2D(_DetailMap, sampler_DetailMap, detailUV)
                                   * _DetailColor;
-                    albedo.rgb = lerp(albedo.rgb, detail.rgb, detail.a);
+                    // 置き換え（タトゥー等）か乗算（生地の陰・AO。T-404）か。
+                    // 乗算は「元の色を暗くする」ので、灰のテクスチャをどのアルベドにも掛けられる。
+                    // 強さは detail.a（テクスチャの A × Detail Color の A）。
+                    float3 detailTarget = (_DetailMultiply > 0.5) ? albedo.rgb * detail.rgb : detail.rgb;
+                    albedo.rgb = lerp(albedo.rgb, detailTarget, detail.a);
                 }
 
                 #if defined(_ALPHATEST_ON)
@@ -161,22 +165,33 @@
                 }
 
                 // ---- 法線 -----------------------------------------------------
-                float3 normalWS   = normalize(input.normalWS);
-                float3 tangentWS  = normalize(input.tangentWS.xyz);
-                float3 bitangentWS= normalize(cross(normalWS, tangentWS) * input.tangentWS.w);
+                normalWS    = normalize(input.normalWS);
+                tangentWS   = normalize(input.tangentWS.xyz);
+                bitangentWS = normalize(cross(normalWS, tangentWS) * input.tangentWS.w);
 
                 // 法線マップを掛ける前の幾何法線。ベイクしたマップは
                 // この向きの接線空間で焼かれているので、戻すときもこれを使う。
-                float3 geomNormalWS = normalWS;
+                geomNormalWS = normalWS;
 
                 // ベースとディテールの法線は**接空間で合成してから 1 回だけ回す**。
                 // TBN 回転を 2 回重ねると合成にならない（回転の連結は加算と違う）。
+                // ディテール法線は**鋭いローブには入れない**（T-401）。
+                // 織り目のような高周波の起伏が GGX の鏡面や環境反射を通ると、起伏 1 つ
+                // ごとに点が立って網点印刷になる。しかも三角形ごとに UV 密度（＝ミップ）が
+                // 違うので「点が立つ三角形」と「均されて平らな三角形」が隣り合う。
+                // 一方、柔らかい拡散・sheen・リムを通ると、半影にだけ生地の目が浮く
+                //（参考にした実機の布の見え方）。そこで法線を 2 本持つ:
+                //   normalWS     = ベース ＋ ディテール → 拡散・sheen・リム・環境光（c.N）
+                //   baseNormalWS = ベースのみ           → GGX・環境反射・MatCap・グリッター（c.specN）
+                float3x3 tbn = float3x3(tangentWS, bitangentWS, normalWS);
                 float3 normalTS = float3(0.0, 0.0, 1.0);
+                baseNormalWS = normalWS;
                 UNITY_BRANCH
                 if (_NormalMapOn > 0.5)
                 {
                     normalTS = UnpackNormalScale(
                         SAMPLE_TEXTURE2D(_BumpMap, sampler_BumpMap, uv), _BumpScale);
+                    baseNormalWS = normalize(mul(normalTS, tbn));
                 }
                 UNITY_BRANCH
                 if (_DetailOn > 0.5)
@@ -187,11 +202,11 @@
                         _DetailNormalScale);
                     // whiteout ブレンド（xy 加算・z 乗算。Doll と同じ）
                     normalTS = normalize(float3(normalTS.xy + dTS.xy, normalTS.z * dTS.z));
+                    normalWS = normalize(mul(normalTS, tbn));
                 }
-                UNITY_BRANCH
-                if (_NormalMapOn > 0.5 || _DetailOn > 0.5)
+                else
                 {
-                    normalWS = normalize(mul(normalTS, float3x3(tangentWS, bitangentWS, normalWS)));
+                    normalWS = baseNormalWS;
                 }
 
                 #if defined(_DBUFFER)
@@ -238,7 +253,7 @@
                 // **カーネルはここで1回だけ求める。** 微分を使うので光源ループの中では
                 // 取れない（Forward+ は反復回数が実行時に決まる）。
                 // ToonContext はまだ宣言されていないのでローカルに受け、後で載せる。
-                float specAAKernel = ToonSpecAAKernel(normalWS);
+                specAAKernel = ToonSpecAAKernel(normalWS);
 
                 s.roughness = ToonApplyRoughnessKernel(
                                   s.perceptualRoughness * s.perceptualRoughness, specAAKernel);
@@ -249,10 +264,27 @@
                 // **スペキュラ AA が環境反射に効かない**（金具のちらつきが残る）。
                 s.perceptualRoughness = sqrt(s.roughness);
 
+                return s;
+            }
+
+            // ---- 2. コンテキスト（ライト非依存の前計算）--------------------
+            // ToonShadeLight はライトの数だけ呼ばれるので、光源に依らない量は
+            // すべてここで 1 回だけ求める（Forward+ で灯数ぶんの再計算が消える）。
+            // 微分（ddx/ddy/fwidth）もここ ── 光源ループの中は Forward+ だと
+            // 反復回数が実行時に決まるので、微分が保証されない。
+            // SSS マップが s.thickness を、SSAO が s.occlusion を書き換えるので
+            // ToonSurface は inout。
+            ToonContext ToonBuildContext(Varyings input, float2 uv, inout ToonSurface s,
+                                         float3 normalWS, float3 baseNormalWS,
+                                         float3 tangentWS,
+                                         float3 bitangentWS, float3 geomNormalWS,
+                                         float specAAKernel)
+            {
                 // ---- コンテキスト ---------------------------------------------
                 ToonContext c;
                 c.positionWS = input.positionWS;
                 c.N          = normalWS;
+                c.specN      = baseNormalWS;   // 鋭いローブ用。ディテール法線を含まない（T-401）
                 c.V          = normalize(GetWorldSpaceViewDir(input.positionWS));
                 c.T          = tangentWS;
                 c.B          = bitangentWS;
@@ -269,6 +301,8 @@
                 // ゼロ除算を避けたまま `1 - NdotV` が負にならない。
                 c.NdotV      = max(saturate(dot(c.N, c.V)), 1e-4);
                 c.specAAKernel = specAAKernel;   // 全鏡面ローブで共有（シーン・髪も含む）
+                c.specGrain    = 1.0;            // Glitter Specular が決める（ToonShadeLights）
+                c.rimGrain     = 1.0;            // Glitter Rim が決める（同上）
 
                 // 陰ランプ専用の平滑法線。TBN の3行目は法線マップを掛ける前の
                 // 幾何法線（ベイクがその空間で焼かれているため。T-024 と同じ理由）。
@@ -340,11 +374,17 @@
                 c.uv         = uv;
                 c.screenUV   = GetNormalizedScreenSpaceUV(input.positionCS);
                 c.positionSS = input.positionCS.xy;
-                c.eyeDepth   = LinearEyeDepth(input.positionCS.z, _ZBufferParams);
 
-                // ディザが要る処理（影の PCF・コンタクトシャドウ）で共有する。
-                // 別々に計算すると同じ式を2回踏むだけで、利点が無い。
-                c.dither     = ToonIGN(input.positionCS.xy);
+                // 影フィルタの回転角。**ブルーノイズを画面座標で引く（T-390）。**
+                // 以前は IGN（手続きノイズ）だったが、IGN は対角の格子構造を持つので
+                // Penumbra を上げて半径が大きくなると、回転角の構造がそのまま
+                // **縞**として見えた（利用者報告「粒は仕方ないが縞状なのが気になる」）。
+                // ブルーノイズは高周波だけの等方な粒で、同じタップ数でも縞にならない。
+                // 256 タイル・点サンプル（補間すると値が鈍って回転が偏る）・LOD 0。
+                // 既定テクスチャは .shader.meta で包内の 256² を指す。
+                // 解像度はテクスチャ側（TexelSize）で決まる（T-413）。粒は常に 1 画素で、大きくしても周期が伸びるだけ。
+                c.dither     = SAMPLE_TEXTURE2D_LOD(_BlueNoiseTex, sampler_PointRepeat,
+                                                    input.positionCS.xy * _BlueNoiseTex_TexelSize.xy, 0).r;
 
                 // UV の画面微分。**ここで取ること。** 光源ループの中は Forward+ だと
                 // 反復回数が実行時に決まるので暗黙 LOD が使えない。ミップを捨てずに
@@ -414,10 +454,6 @@
                 }
                 #endif
 
-                // 前髪の影は位置だけで決まる。ここで1回引いて全光源で使い回す。
-                // 光源ループの外なので、この値の微分を境界 AA の下限に使える。
-                UNITY_BRANCH
-
                 #if defined(_SCREEN_SPACE_OCCLUSION)
                     // URP の SSAO を遮蔽に畳む。DepthNormals パスを残しているのは
                     // これを成立させるため（REQUIREMENTS の NFR / パス構成の前提）。
@@ -428,6 +464,19 @@
                     s.occlusion = min(s.occlusion, ssao.indirectAmbientOcclusion);
                 #endif
 
+
+                return c;
+            }
+
+            // ---- 3. ライト（主光源 + フィル + グリッタ + 追加光源）---------
+            // c.dNdx / dNdy / edgeAA をここで書くので ToonContext は inout。
+            // mainLit / mainCast は間接光の陰側判定に、realLightDir は MatCap の
+            // ライト連動に、mainShadowAtten はデバッグ表示に、後段が使う。
+            float3 ToonShadeLights(Varyings input, ToonSurface s, inout ToonContext c,
+                                   float3 geomNormalWS,
+                                   out float mainLit, out float mainCast,
+                                   out float3 realLightDir, out float mainShadowAtten)
+            {
                 // ---- 主光源 ---------------------------------------------------
                 float4 shadowCoord = TransformWorldToShadowCoord(input.positionWS);
 
@@ -447,12 +496,12 @@
                 // 法線の画面微分。**ここで1回だけ取る。**
                 // 光源ごとの edgeAA はこれと L から求める（ToonShadeLight を参照）。
                 // ループ内で微分を取ると Forward+ で保証されないので、必ず外で。
-                c.dNdx = ddx(normalWS);
-                c.dNdy = ddy(normalWS);
+                c.dNdx = ddx(c.N);   // c.N はこの段では法線マップ適用後の normalWS
+                c.dNdy = ddy(c.N);
 
                 // 主光源基準の値。追加光源へは使わなくなったが、
                 // 顔の SDF など主光源だけを見る箇所がまだ参照する。
-                c.edgeAA = fwidth(dot(normalWS, mainLight.direction)) * 0.5;
+                c.edgeAA = fwidth(dot(c.N, mainLight.direction)) * 0.5;
 
                 // レンダリングレイヤーが合わないライトは無視する。
                 // 「背景用とキャラ用でライトを分ける」構成（README §6）を、
@@ -470,7 +519,7 @@
                 // 上書きされる前の実ライト方向を控えておく。
                 // シャドウマップは常に実ライトから焼かれているので、
                 // 受け側バイアスの計算はこちらを使わないと押し出す量がずれる。
-                float3 realLightDir = mainLight.direction;
+                realLightDir = mainLight.direction;
 
                 // 絵の都合で影の向きを差し替える。上書きは主光源だけに掛ける
                 // （追加光源まで回すと点光源が意味を成さなくなる）。
@@ -499,26 +548,46 @@
                 // 影の中の環境光を分けるため、主光源の遮蔽量だけを受け取っておく。
                 // レイヤーが合わないときは 1（＝遮蔽なし）。効かないライトの影を
                 // 環境光に反映してしまわないようにする。
-                float  mainLit  = 1.0;
-                float  mainCast = 0.0;   // 落ち影の量。間接光にも同じ着色を掛けるのに要る
+                mainLit  = 1.0;
+                mainCast = 0.0;   // 落ち影の量。間接光にも同じ着色を掛けるのに要る
                 float3 color    = 0.0;
 
                 // ---- グリッタ（ラメ・スパンコール。T-348）--------------------
                 // ライト非依存の幾何（最近傍セル探索）を 1 回だけ計算し、各ライトで
                 // フラッシュだけ乗せる（Doll と同じ 2 段構成・Core BRDF_Glitter 共有）。
                 // Intensity 0 ではマスクのフェッチごと飛ぶ＝キーワード不要で実質無料。
+                // 粒の色。Albedo Tint で生地の色を掛ける（T-407）。
+                // アルベドは 1 以下なので、既定の HDR 色 (2,2,2) と組むと「生地の色 × 2」のラメになる。
+                float3 glitterColor = _GlitterColor.rgb * lerp(1.0, s.albedo, _GlitterAlbedoTint);
                 GlitterGeom glitterGeom = (GlitterGeom)0;
                 bool glitterActive = false;
+                float glitterMask = 0.0;
                 UNITY_BRANCH
                 if (_GlitterIntensity > 0.0)
                 {
-                    float glitterMask = SAMPLE_TEXTURE2D(_GlitterMask, sampler_GlitterMask, uv).r;
-                    glitterActive = PrepareGlitter(c.N, c.V, uv,
+                    // uv はこの段では c.uv（コンテキストに載せた同じ値）
+                    glitterMask = SAMPLE_TEXTURE2D(_GlitterMask, sampler_GlitterMask, c.uv).r;
+                    glitterActive = PrepareGlitter(c.specN, c.V, c.uv,
                                                    _GlitterScale, _GlitterSize,
                                                    _GlitterTilt, glitterMask,
                                                    _GlitterIntensity, _GlitterSparsity,
                                                    glitterGeom);
                 }
+
+
+                // スパンコールで鏡面・リムを分解する（T-413）。マスクは円盤の中で > 0、外で 0、
+                // 平均 ≈ 1。機能が有効（Intensity > 0 かつマスク > 0）な画素だけ。
+                float glitterGrain = 1.0;
+                UNITY_BRANCH
+                if (_GlitterIntensity > 0.0 && glitterMask > 0.0 && (_GlitterRim > 0.0 || _GlitterSpecular > 0.0))
+                    glitterGrain = glitterActive
+                        ? ToonGlitterGrainMask(glitterGeom, c.specN, c.V, _GlitterScale, _GlitterSize, _GlitterSparsity)
+                        : 0.0;
+                c.specGrain = lerp(1.0, glitterGrain * _GlitterSpecular, saturate(_GlitterSpecular));
+                c.rimGrain  = lerp(1.0, glitterGrain * _GlitterRim,      saturate(_GlitterRim));
+                ToonGlitterSet sp;
+                sp.glitter = glitterGeom; sp.glitterActive = glitterActive;
+                sp.color   = glitterColor;
 
                 // 遮蔽量の画面変化率。**ここで取ること。** 光源ループの中は
                 // Forward+ だと反復回数が実行時に決まるので微分が保証されない。
@@ -532,11 +601,15 @@
 
                 if (mainLightMatches)
                 {
-                    color = ToonShadeLight(s, c, mainLight, mainDiffuseDir,
-                                           1.0, mainAttenAA, mainLit, mainCast);
-                    color += ToonRimLight(rimShape, c, mainLight.direction,
-                                          ToonDiffuseEnergy(ToonLightEnergy(mainLight)),
-                                          mainCast);
+                    ToonLightTerms mt = ToonShadeLight(s, c, mainLight, mainDiffuseDir,
+                                                       1.0, mainAttenAA, rimShape, mainLit, mainCast);
+                    // 主光源だけ環境光（SH）を粒のエネルギーに足す（影の中で粒が消えないように。T-378）。
+                    // SH はこの分岐（粒が有効な材質）でしか評価されない。
+                    float3 mainFlash;
+                    color = ToonComposeLight(mt, c, mainLight,
+                                             glitterActive ? SampleSH(c.N) * _AmbientIntensity : 0.0,
+                                             sp, mainFlash);
+                    color += mainFlash;
                 }
 
                 // ---- フィルライト（T-370。Doll から輸入）----------------------
@@ -560,23 +633,6 @@
                            * (_FillIntensity * fillShade * shadeSide);
                 }
 
-                // グリッタのフラッシュは主光源の影・距離減衰で暗くする
-                //（影の中で光り続けると粒だけ浮くため）。
-                // **ただし環境光は足す（T-378）。** Core の ApplyGlitterLight は
-                // フラッシュもベース反射も同じ光エネルギーに掛けるので、影の減衰
-                // だけだと濃い影の中で**ベースまで消えて粒が無くなる**（利用者報告）。
-                // スパンコールのベース反射は空や周囲を映すもので、影＝真っ暗は嘘。
-                // Doll は direct + indirect を渡している（影の減衰は無し）。Idol は
-                // 「影の中で強く光らない」を残しつつ、環境光ぶんは常に通す。
-                // SH はこの分岐（グリッタ有効な材質）でしか評価しない。
-                if (glitterActive && mainLightMatches)
-                    color += ApplyGlitterLight(glitterGeom, mainLight.direction, c.V,
-                                               _GlitterColor.rgb, _GlitterIntensity,
-                                               _GlitterIridescence, _GlitterIridescenceShift,
-                                               _GlitterBaseReflection,
-                                               mainLight.color * (mainLight.distanceAttenuation
-                                                                  * mainLight.shadowAttenuation)
-                                               + SampleSH(c.N) * _AmbientIntensity);
 
                 // ---- 追加光源 -------------------------------------------------
                 float3 addAccum = float3(0, 0, 0);
@@ -599,15 +655,15 @@
                         // 間接光の分岐は主光源基準に固定するので lit は捨てるが、
                         // 落ち影の量はリムの消灯に要る（T-351）。
                         float addLitUnused, addCast;
-                        float3 addContrib = ToonShadeLight(s, c, addLight, addLight.direction,
-                                                           _AddLightShadowColor, 0.0,
+                        // リムもこの光源で光る（成分として返る）。ステージのスポットで色を作る
+                        // 使い方では、これが無いとリムだけ主光源の色に取り残される。
+                        ToonLightTerms at = ToonShadeLight(s, c, addLight, addLight.direction,
+                                                           _AddLightShadowColor, 0.0, rimShape,
                                                            addLitUnused, addCast);
-
-                        // **リムもこの光源で光る。** ステージのスポットで色を作る
-                        // 使い方では、ここが無いとリムだけ主光源の色に取り残される。
-                        addContrib += ToonRimLight(rimShape, c, addLight.direction,
-                                                   ToonDiffuseEnergy(ToonLightEnergy(addLight)),
-                                                   addCast);
+                        // フラッシュ（スパンコール・粒）は下の Max 合成に巻き込まず直接足す（物理的に加算）
+                        float3 addFlash;
+                        float3 addContrib = ToonComposeLight(at, c, addLight, 0.0, sp, addFlash);
+                        color += addFlash;
 
                         // Add = 物理的な加算 / Max = 最も強い 1 灯だけを採る（T-350）。
                         // ステージのように何灯も浴びる絵では、加算だと肌が白へ寄って
@@ -616,17 +672,20 @@
                                  ? max(addAccum, addContrib)
                                  : addAccum + addContrib;
 
-                        if (glitterActive)
-                            color += ApplyGlitterLight(glitterGeom, addLight.direction, c.V,
-                                                       _GlitterColor.rgb, _GlitterIntensity,
-                                                       _GlitterIridescence, _GlitterIridescenceShift,
-                                                       _GlitterBaseReflection,
-                                                       addLight.color * (addLight.distanceAttenuation
-                                                                         * addLight.shadowAttenuation));
                     LIGHT_LOOP_END
                 #endif
                 color += addAccum;
 
+                mainShadowAtten = mainLight.shadowAttenuation;
+                return color;
+            }
+
+            // ---- 4. 環境と後処理（間接光 / MatCap / エミッシブ / 暗転 / フォグ）
+            void ToonApplyEnvironmentAndPost(ToonSurface s, ToonContext c,
+                                             float mainLit, float mainCast,
+                                             float3 realLightDir, float fogFactor,
+                                             inout float3 color)
+            {
                 // ---- 間接光 ---------------------------------------------------
                 color += ToonShadeIndirect(s, c, mainLit, mainCast);
 
@@ -636,7 +695,7 @@
                 UNITY_BRANCH
                 if (_MatCapIntensity > 0.0)
                 {
-                    color += ToonMatCap(c.N, realLightDir);
+                    color += ToonMatCap(c.specN, realLightDir);
                 }
 
                 // ---- エミッシブ -----------------------------------------------
@@ -648,7 +707,46 @@
                 // 黒く沈む（消したいときはディゾルブ側の役目）。
                 color = lerp(color, float3(0.0, 0.0, 0.0), _BlackOut);
 
-                color = MixFog(color, input.fogFactor);
+                color = MixFog(color, fogFactor);
+
+            }
+
+            half4 ToonFrag(Varyings input) : SV_Target
+            {
+                #ifdef LOD_FADE_CROSSFADE
+                    LODFadeCrossFade(input.positionCS);
+                #endif
+
+                UNITY_SETUP_INSTANCE_ID(input);
+                UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
+
+                // **前髪透過にキーワードのゲートは持たない。** 以前は
+                // `_HAIRSEETHROUGH_ON` で切っていたが、それだと
+                // **ステンシルを設定しただけでは効かない** ── 髪が穴を空けて
+                // 誰も埋めない状態になり、目と眉が素通しで出る（T-254）。
+                //
+                // ゲートはステンシルそのもの（`Ref 0 / ReadMask 6 / Comp NotEqual`）。
+                // 眉と目がビットを書いていなければ 1 画素も描かれないので、
+                // 設定していないマテリアルには影響しない。移植元も同じ作り。
+
+                float2 uv = input.uv;
+
+                float3 normalWS, baseNormalWS, tangentWS, bitangentWS, geomNormalWS;
+                float  specAAKernel;
+                ToonSurface s = ToonGatherSurface(input, uv, normalWS, baseNormalWS, tangentWS,
+                                                  bitangentWS, geomNormalWS, specAAKernel);
+
+                ToonContext c = ToonBuildContext(input, uv, s, normalWS, baseNormalWS, tangentWS,
+                                                 bitangentWS, geomNormalWS, specAAKernel);
+
+                float  mainLit, mainCast, mainShadowAtten;
+                float3 realLightDir;
+                float3 color = ToonShadeLights(input, s, c, geomNormalWS,
+                                               mainLit, mainCast, realLightDir,
+                                               mainShadowAtten);
+
+                ToonApplyEnvironmentAndPost(s, c, mainLit, mainCast, realLightDir,
+                                            input.fogFactor, color);
 
                 // ---- デバッグ表示 ---------------------------------------------
                 // **絵から逆算しにくい量を直接見るための出口。**
@@ -667,7 +765,7 @@
                     else if (mode == 3)  dbg = c.shadeN * 0.5 + 0.5;
                     else if (mode == 4)  dbg = c.bentN  * 0.5 + 0.5;
                     else if (mode == 5)  dbg = mainLit;                    // トゥーンの伝達関数の出力
-                    else if (mode == 6)  dbg = mainLight.shadowAttenuation; // HQ / コンタクト込み
+                    else if (mode == 6)  dbg = mainShadowAtten;            // HQ セルフシャドウ込み
                     else if (mode == 7)  dbg = c.curvature;                // 0=平面 1=参照半径以上
                     else if (mode == 8)  dbg = s.occlusion;
                     else if (mode == 9)  dbg = s.cavity;

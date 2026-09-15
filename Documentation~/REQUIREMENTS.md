@@ -40,7 +40,7 @@
 | 色空間 | Linear のみ |
 | レンダーパス | Forward および Forward+ |
 | グラフィックス API | DX11 / DX12 / Vulkan / Metal |
-| 必須設定 | URP Asset の Depth Texture が ON |
+| 必須設定 | 無し（Depth Texture は T-416 で不要になった） |
 | 必須アセット | シーンを焼いた Reflection Probe |
 | 検証環境 | Unity 6000.3.8f1 / URP 17.3.0（このリポジトリで実際に動かしている構成） |
 
@@ -56,7 +56,7 @@
 |---|---|---|
 | FR-01 | 拡散光の伝達関数を、曲率で軟らかさが変化するソフトステップとして実装する（**既定 OFF**。`_CurvatureSoftness = 0` で帯の幅は一定） | `ToonLightResponse` |
 | FR-02 | 影側の色を HSV 空間で色相回転・彩度スケール・明度スケールできる | `ToonShadowAlbedo` |
-| FR-03 | 影の境界帯にのみ別色を乗せられる | `ToonTerminatorBand` / `ToonDiffuseColor` |
+| ~~FR-03~~ | ~~影の境界帯にのみ別色を乗せられる~~ | **T-392 で廃止**。lit を入力にした色曲線は Ramp Override が完全に表現でき、生成 UI（T-388）で調達も不要になったため。境界帯の計算は皮下散乱の重みとして残る（`ToonScatterBand`） |
 | FR-04 | リアルタイム影を拡散光と同じ伝達関数に通し、境界の質を揃える | `ToonLightResponse` |
 | FR-05 | 鏡面反射に GGX（D / V / F を分離した実装）を用いる | `ToonD_GGX` ほか |
 | FR-06 | 布に Charlie 分布の sheen を加算できる | `ToonD_Charlie` / `ToonV_Ashikhmin` |
@@ -76,7 +76,7 @@
 | ~~FR-21~~ | ~~深度・法線・マテリアルIDから Sobel を取るスクリーンスペース輪郭~~ | **T-380 で廃止**（実プロジェクトで未導入・MSAA と両立せず、押し出し輪郭で足りる） |
 | ~~FR-30~~ | ~~頬から鼻先にかけての赤みを NdotV 由来の分布で乗せる~~ | **T-349 で廃止**（全マテリアルが強度 0 ＝ 未使用。頬の色は肌テクスチャか皮下散乱で出す） |
 | FR-31 | 影の中に入った部分の環境光を、影の外と別扱いにする | `ToonShadeIndirect` の `mainLit` 引数 |
-| FR-32 | カメラ距離でターミネータの強度を落とす | `ToonTerminatorFade`（既定 20m→40m） |
+| ~~FR-32~~ | ~~カメラ距離でターミネータの強度を落とす~~ | **T-392 で廃止**（Terminator ごと）。※ FR-32 は下の鏡面フロアと ID が重複していた |
 | FR-33 | 拡散光のライト方向をマテリアルごとに手で上書きできる | `ToonOverrideLightDir` / `_LightOverrideOn` |
 | FR-34 | 布の sheen をしわ方向に沿って異方化する | Cloth 分岐のハーフベクトル変形 |
 | FR-40 | GGX の多重散乱を補償し、粗い金属のエネルギー欠損を埋める | `ToonEnvBRDFMultiScatter` / `ToonEnergyCompensation` |
@@ -94,7 +94,7 @@
 | FR-52 | LOD Group のクロスフェードに対応する | `LOD_FADE_CROSSFADE`（4パス） |
 | FR-53 | URP のデカールを受ける | `ApplyDecal` / `_DBUFFER_MRT1/2/3` |
 | FR-54 | DepthNormals からレンダリングレイヤーを書き出す | `EncodeMeshRenderingLayer` / `_WRITE_RENDERING_LAYERS` |
-| FR-55 | 主光源の影を回転 Vogel PCF と PCSS で自前サンプルする | `ToonSampleMainShadowHQ` / `_HQ_SHADOW_ON` |
+| FR-55 | 主光源の影を回転 Vogel PCF で自前サンプルする（PCSS は T-415 で撤去） | `ToonSampleMainShadowHQ` / `_HQ_SHADOW_ON` |
 | ~~FR-56~~ | ~~顔 SDF を 4ch 化し、非対称な顔と上下光に対応する~~ | **T-382 で廃止**。16bit 1ch ＋ 距離場ブレンド ＋ Cast Shadow のベイクが品質で上回った。Idol の顔 SDF は 16bit 1ch（R×256+G）のみ |
 | FR-57 | アウトラインを独自 LightMode で分離し、ForwardLit のバッチを守る | `ToonOutlineFeature.cs` / LightMode `ToonOutline` |
 | FR-58 | クリアコート（二層目の鏡面）と薄膜干渉を加えられる | `ToonV_Kelemen` / `ToonIridescence` |
@@ -108,9 +108,9 @@
 | FR-67 | 焼いた Cavity マップで窪みの微細遮蔽を作り、アルベドと鏡面の両方に掛ける | `_CavityMap` / `_CavityStrength`。法線マップが無いモデルの主なディテール源 |
 | FR-68 | 追加光源が影色の下駄を足す量を制御できる | `_AddLightShadowColor`。既定 1（従来どおり） |
 | FR-69 | 中間量をデバッグ表示できる | `_DebugMode`。15 種。動的分岐でバリアント増加なし |
-| FR-70 | 落ち影だけを別の色で濃くでき、ターミネータの階調は保つ | `_CastShadowColor` / `_CastShadowColorStrength`。既定 0 で従来どおり |
+| FR-70 | 落ち影だけを別の色で濃くでき、陰の階調は保つ | `_CastShadowColor` / `_CastShadowColorStrength`。既定 0 で従来どおり |
 | FR-71 | 髪の副バンドを毛束の粒に割り、縁で強める | `_HairStrandScale` / `_HairStrandSparkle` + 副バンドのフレネル |
-| FR-72 | リムが光の回り込んだ側の縁だけに出て、遮蔽された場所では消える | `_RimDirectionality` / `_RimReceiveShadow`。どちらも既定 1 |
+| FR-72 | リムが光の回り込んだ側の縁だけに出て、遮蔽された場所では消える | Core `CalculateRimLight`（`saturate(N·L × 5)`）/ `_RimReceiveShadow`（既定 1） |
 | FR-73 | 影色を albedo の彩度に依存せず任意の色相へ寄せられる（乗算では無彩色の面に色が入らない） | `_ShadowColor` / `_ShadowColorMix`。Rec.709 輝度を合わせてから lerp するので**濃さは不変**。既定 Mix 0 で従来どおり |
 | FR-74 | 間接鏡面が持ち去ったエネルギーを間接拡散から引く（合計が 1 を超えないようにする） | `ToonShadeIndirect` 内。**実際に足した量**（`envBRDF × _EnvSpecIntensity × specOcclusion`）と同じ量を引く。ノブは持たない |
 | FR-75 | 直接光の鏡面が持ち去ったエネルギーを拡散から引ける（縁の締まり） | `_SpecEnergyConservation`。**既定 0 で従来どおり。** 縁で最大 23% と見える量なのでノブにしてある |
