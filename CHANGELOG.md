@@ -4,6 +4,10 @@
 
 ## [0.2.3] - 2026-09-15
 
+### Fixed
+
+- **旧 EasyShaderCore が入ったプロジェクトで本パッケージを更新しても Core が更新されなかった問題を修正。** Installer の必要最低バージョンは 0.3.3 に上げたのに、本体 Editor asmdef の `versionDefines` 式が `0.3.0` のままだった。旧 Core（0.3.1）では本体がコンパイル対象に残り、Core の新 API（プロキシ設定）参照でエラー → ドメインリロードが完了せず Installer が走らない、という 0.2.0 で直したはずの形が再発していた。式を `0.3.3` に揃え、`param_check.py`（設計ルール 4）に「Installer の `CoreMinVersion` と asmdef の式が一致すること」の検査を足して再発を止める。**Installer で Core を 0.3.3 に上げても Unity 側で一度エラーが出ていたプロジェクトは、本パッケージをこの版に更新してから Unity を再起動すること。**
+
 ### Changed (Breaking)
 
 - **Baking タブ > Face SDF の表示名を Baker の設定名に揃えた**（T-403 と同じ規則）。`Cast Shadow` → `Use Cast Shadow`、`Line Softness` → `DF Spread`、プロキシ関連は `Proxy Mode / Proxy Shape / Proxy Taper / Proxy Flatten / Proxy Detail / Proxy Detail Angle / Proxy Manual Fit / Proxy Center Transform / Proxy Center Offset / Proxy Center WS / Proxy Radii`。単位（m・texel）はツールチップへ。

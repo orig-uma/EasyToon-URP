@@ -30,10 +30,11 @@ namespace Origuma.EasyToon.URP.Installer
         private const string CoreGitUrlPinned = CoreGitUrl + "#v0.3.3";
         // **必要最低バージョン。** これより古い Core が入っていると本体 Editor が
         // Core の新 API を参照してコンパイルできない。本体 Editor asmdef の
-        // versionDefines は同じ下限（"0.3.0" = 0.3.0 以上）で、古い Core では本体を除外して
+        // versionDefines は同じ下限（素の "x.y.z" が x.y.z 以上の意味）で、古い Core では本体を除外して
         // コンパイルエラーを出さず、このインストーラーが更新に進めるようにしてある。
         // **両方を同時に上げること。** 片方だけ上げると「本体は除外されたのに
         // インストーラーは何もしない」か、その逆になる。
+        // param_check.py（設計ルール 4）が 2 か所の一致を検査する（0.2.3 で片方だけ上げて再発）。
         private const string CoreMinVersion = "0.3.3";
         private const string SessionDismissKey = "Origuma.EasyToon.URP.Installer.Dismissed";
         private const string SessionAutoAddKey = "Origuma.EasyToon.URP.Installer.AutoAddAttempted";

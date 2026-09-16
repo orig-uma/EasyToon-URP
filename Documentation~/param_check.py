@@ -2023,6 +2023,35 @@ def _check_asmdef_deps(root: Path) -> list[Finding]:
             f"（UPM がレジストリ解決に失敗してインストール自体が拒否される）ので、"
             f" versionDefines で定義したシンボルを defineConstraints に入れること。"))
 
+    # **下限は 2 か所にあり、必ず同じ値でなければならない。** Installer の
+    # `CoreMinVersion`（古い Core を更新する条件）と、Editor asmdef の
+    # `versionDefines` の式（この版以上の Core があるときだけ本体をコンパイル）。
+    # asmdef だけ古いままだと、旧 Core で本体がコンパイルされて新 API 参照で
+    # エラー → ドメインリロード未完了 → Installer が走らず**Core が追従しない**
+    # （0.2.3 で Installer だけ 0.3.3 に上げて実際に起きた）。逆なら本体が
+    # 除外されたまま Installer は何もしない。
+    inst = next(iter(pkg_root.rglob("EasyShaderCoreInstaller.cs")), None)
+    if inst is not None:
+        m = re.search(r'CoreMinVersion\s*=\s*"([^"]+)"', inst.read_text(encoding="utf-8", errors="replace"))
+        for asm in sorted(pkg_root.rglob("*.asmdef")):
+            try:
+                data = json.loads(asm.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            for vd in data.get("versionDefines") or []:
+                if vd.get("name") != "com.origuma.easyshader-core":
+                    continue
+                expr = str(vd.get("expression", "")).strip()
+                if m is None or expr != m.group(1):
+                    out.append(Finding(
+                        "error", "設計ルール 4", "Core の必要バージョンが 2 か所でずれている",
+                        f"{asm.name} の versionDefines 式 '{expr}' と Installer の"
+                        f" CoreMinVersion '{m.group(1) if m else '?'}' が違う。"
+                        f" asmdef が古いままだと、旧 Core のプロジェクトで本体 Editor が"
+                        f" コンパイルされて新 API 参照でエラーになり、ドメインリロードが"
+                        f" 完了せず Installer が走らない ── **Core が更新されない。**"
+                        f" 両方を同じ値（必要最低バージョン）にすること。"))
+
     if guid_refs:
         # **黙って飛ばさない。** GUID 参照は名前で解決できないので未検査。
         out.append(Finding(
