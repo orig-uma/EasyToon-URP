@@ -100,8 +100,8 @@ python gen_properties.py --write
 
 | プロパティ | 表示名 | 型 | 既定 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
-| `_ShadowThreshold` | Shadow Threshold | `Range(0,1)` | `0.5` | 明暗の境界の位置 |
-| `_ShadowSoftness` | Shadow Softness | `Range(0.001,0.5)` | `0.12` | 曲率で広げる前の、境界の基本の幅 |
+| `_ShadowThreshold` | Shadow Threshold | `Range(0,1)` | `0.2` | 明暗の境界の位置 |
+| `_ShadowSoftness` | Shadow Softness | `Range(0.001,0.5)` | `0.2` | 曲率で広げる前の、境界の基本の幅 |
 | `_CurvatureSoftness` | Curvature Softness | `Range(0,4)` | `0` | 曲がった面ほど境界を広げる度合い。幅 = Base Softness × (1 + 曲率 × Influence)。曲率は焼いた Curvature Map（質感タブ > ベイクしたマップ）から取ります ── 無ければ何も起きません |
 
 ### 拡散の伝達関数（Diffuse Transfer） ／ シェーディング法線
@@ -110,22 +110,22 @@ python gen_properties.py --write
 | :--- | :--- | :--- | :--- | :--- |
 | `_ShadeNormalMap` | Shade Normal Map | `2D` | `"bump" {}` | 拡散の伝達だけに使う、なめらかな法線 |
 | `_ShadeNormalStrength` | Shade Normal Strength | `Range(0,1)` | `0` | — |
-| `_DiffuseWrap` | Diffuse Wrap | `Range(0,1)` | `0.25` | 光を明暗境界の先まで回り込ませます。エネルギー保存形なので伝達の上限が 1/(1+wrap) まで下がります（上げるほど天井が下がる） |
+| `_DiffuseWrap` | Diffuse Wrap | `Range(0,1)` | `0.5` | 光を明暗境界の先まで回り込ませます。エネルギー保存形なので伝達の上限が 1/(1+wrap) まで下がります（上げるほど天井が下がる） |
 
 ### 拡散の伝達関数（Diffuse Transfer） ／ リアルタイム影の受け
 
 | プロパティ | 表示名 | 型 | 既定 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
 | `_ReceiveShadowStrength` | Receive Shadow Strength | `Range(0,1)` | `0.7` | 最後に一度だけ掛かります。HQ 影とマイクロシャドウがここに畳まれているので、下げるとまとめて薄くなります |
-| `_ShadowAttenSoftness` | Shadow Atten Softness | `Range(0.001,1)` | `0.35` | 遷移の幅。中心は「半分遮蔽」に固定なので、影の大きさは変わらず柔らかさだけが変わります |
+| `_ShadowAttenSoftness` | Shadow Atten Softness | `Range(0.001,1)` | `0.7` | 遷移の幅。中心は「半分遮蔽」に固定なので、影の大きさは変わらず柔らかさだけが変わります |
 | `_ShadowEdgeAA` | Shadow Edge AA | `Range(0,2)` | `1` | 境界を 1 画素ぶん広げてジャギを隠します |
 
 ### HQ セルフシャドウ（HQ Self Shadow）
 
 | プロパティ | 表示名 | 型 | 既定 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
-| `_HQShadowOn` ⚡ | HQ Shadow On | `Float` | `0` | 主光源のみ。全機能の中でテクスチャフェッチが一番多い |
-| `_HQShadowSoftness` | HQ Shadow Softness (texels) | `Range(0,3)` | `0.3` | フィルタ半径 = 1 + 値 × 6 テクセル（メートルではありません）。タップは 16 固定なので、1.5 あたりから粒（ディザのノイズ）が見え始めます ── きれいさより抽象化を優先したいときの領域。シャドウマップの解像度を下げれば同じ値でもワールドでの半影は広がります（タダで柔らかくなる） |
+| `_HQShadowOn` ⚡ | HQ Shadow On | `Float` | `1` | 主光源のみ。全機能の中でテクスチャフェッチが一番多い |
+| `_HQShadowSoftness` | HQ Shadow Softness (texels) | `Range(0,3)` | `1` | フィルタ半径 = 1 + 値 × 6 テクセル（メートルではありません）。タップは 16 固定なので、1.5 あたりから粒（ディザのノイズ）が見え始めます ── きれいさより抽象化を優先したいときの領域。シャドウマップの解像度を下げれば同じ値でもワールドでの半影は広がります（タダで柔らかくなる） |
 | `_ReceiverNormalBias` | Receiver Normal Bias | `Range(0,4)` | `1` | — |
 | `_BlueNoiseTex` | Blue Noise Tex (dither) | `2D` | `"gray" {}` | — |
 

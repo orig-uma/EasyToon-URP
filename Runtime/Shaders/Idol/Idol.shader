@@ -61,8 +61,8 @@ Shader "Origuma/EasyToon_URP/Idol"
         _NPRShadowOffsetStrength ("  NPR Shadow Offset Strength", Range(0,1)) = 0.4
 
         [Space(10)][Header(Diffuse Transfer)][Space(4)]
-        _ShadowThreshold ("Shadow Threshold", Range(0,1)) = 0.5
-        _ShadowSoftness ("  Shadow Softness", Range(0.001,0.5)) = 0.12
+        _ShadowThreshold ("Shadow Threshold", Range(0,1)) = 0.2
+        _ShadowSoftness ("  Shadow Softness", Range(0.001,0.5)) = 0.2
         // 曲率の供給源は焼いた Curvature Map だけ（T-381）。画面微分の推定は
         // 三角形ごとに一定で陰に面が並ぶため撤去した。0.5 が平坦＝無変化。
         _CurvatureSoftness ("  Curvature Softness", Range(0,4)) = 0
@@ -70,21 +70,21 @@ Shader "Origuma/EasyToon_URP/Idol"
         // 陰ランプ専用の平滑法線。鏡面やリムには影響しない。
         [Normal] _ShadeNormalMap ("  Shade Normal Map", 2D) = "bump" {}
         _ShadeNormalStrength ("  Shade Normal Strength", Range(0,1)) = 0
-        _DiffuseWrap ("  Diffuse Wrap", Range(0,1)) = 0.25
+        _DiffuseWrap ("  Diffuse Wrap", Range(0,1)) = 0.5
         _ReceiveShadowStrength ("  Receive Shadow Strength", Range(0,1)) = 0.7
-        _ShadowAttenSoftness ("  Shadow Atten Softness", Range(0.001,1)) = 0.35
+        _ShadowAttenSoftness ("  Shadow Atten Softness", Range(0.001,1)) = 0.7
         // 硬いセル設定で境界が 1px を切ったときのジャギ止め。0 で従来どおり。
         _ShadowEdgeAA ("  Shadow Edge AA", Range(0,2)) = 1
 
         [Space(10)][Header(High Quality Self Shadow    main light only)][Space(4)]
         // これだけキーワード。全経路コンパイルで occupancy が落ちるため。
-        [Toggle(_HQ_SHADOW_ON)] _HQShadowOn ("HQ Shadow On", Float) = 0
+        [Toggle(_HQ_SHADOW_ON)] _HQShadowOn ("HQ Shadow On", Float) = 1
         // 可動域を 1 → 3 に広げた（T-389）。半径 = 1 + 値 × 6 テクセル（1 で 7、
         // 3 で 19）。タップは 16 固定なので 1.5（半径 10）あたりから 1 タップが
         // 受け持つ面積が増えて粒（ディザのノイズ）が見え始める。それより上は
         // 「粒を許容してでも抽象化したい」用途。単位がテクセルなので、シャドウ
         // マップの解像度を下げれば同じ値でもワールドでの半影は広がる。
-        _HQShadowSoftness ("  HQ Shadow Softness (texels)", Range(0,3)) = 0.3
+        _HQShadowSoftness ("  HQ Shadow Softness (texels)", Range(0,3)) = 1
         _ReceiverNormalBias ("  Receiver Normal Bias", Range(0,4)) = 1
 
         [Space(10)][Header(Shadow Color   HSV)][Space(4)]

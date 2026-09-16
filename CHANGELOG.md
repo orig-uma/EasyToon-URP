@@ -2,15 +2,19 @@
 
 ## [Unreleased]
 
-## [0.2.3] - 2026-09-15
+## [0.2.4] - 2026-09-16
 
 ### Fixed
 
 - **旧 EasyShaderCore が入ったプロジェクトで本パッケージを更新しても Core が更新されなかった問題を修正。** Installer の必要最低バージョンは 0.3.3 に上げたのに、本体 Editor asmdef の `versionDefines` 式が `0.3.0` のままだった。旧 Core（0.3.1）では本体がコンパイル対象に残り、Core の新 API（プロキシ設定）参照でエラー → ドメインリロードが完了せず Installer が走らない、という 0.2.0 で直したはずの形が再発していた。式を `0.3.3` に揃え、`param_check.py`（設計ルール 4）に「Installer の `CoreMinVersion` と asmdef の式が一致すること」の検査を足して再発を止める。**Installer で Core を 0.3.3 に上げても Unity 側で一度エラーが出ていたプロジェクトは、本パッケージをこの版に更新してから Unity を再起動すること。**
 
-### Changed (Breaking)
+### Changed
 
-- **Baking タブ > Face SDF の表示名を Baker の設定名に揃えた**（T-403 と同じ規則）。`Cast Shadow` → `Use Cast Shadow`、`Line Softness` → `DF Spread`、プロキシ関連は `Proxy Mode / Proxy Shape / Proxy Taper / Proxy Flatten / Proxy Detail / Proxy Detail Angle / Proxy Manual Fit / Proxy Center Transform / Proxy Center Offset / Proxy Center WS / Proxy Radii`。単位（m・texel）はツールチップへ。
+- **影まわりの既定値を「汚い影を出さない」方向へ変更**（利用者が複数モデルで検証した値）。`Shadow Threshold` 0.5 → 0.2、`Shadow Softness` 0.12 → 0.2、`Diffuse Wrap` 0.25 → 0.5、`Shadow Atten Softness` 0.35 → 0.7、`HQ Shadow On` 0 → 1、`HQ Shadow Softness` 0.3 → 1。既存マテリアルの値は変わらない（新規作成時の既定のみ）。
+
+## [0.2.3] - 2026-09-15
+
+### Changed (Breaking)
 
 - **深度リム（Screen Silhouette）を撤去した**（T-416）。`Rim Mode` と、深度モードでだけ効いていた `Rim Width` / `Rim Threshold` / `Rim Softness` / `Rim Fresnel Power` / `Rim Backlight Bias` / `Rim Directionality` / `Rim Depth Blend` を削除。リムはフレネル（EasyPBR(Doll) と同じ Core の式）だけになり、Fresnel モードだった材質の見た目は変わらない（深度モードだった材質はフレネルに切り替わる）。シェーダーはシーン深度を読まなくなったので、URP Asset の Depth Texture は不要。`Rim Fresnel Thickness (PBR)` は `Rim Fresnel Thickness` に改名（プロパティ名は同じ）。移行ツールの `_RimThickness` は `_RimFresnelThickness` へ素通しに変更。
 - **接地硬化（PCSS）を撤去した**（T-415）。`Shadow Contact Hardening (PCSS)` と `Shadow Penumbra Scale` を削除し、HQ セルフシャドウは回転 Vogel 16 タップの固定半径（`HQ Shadow Softness`）だけになる。8 タップのブロッカー探索で半影の幅を変えていたが、キャラの自己遮蔽では真の半影が 1 テクセルに届かず、推定の分散が「まだら」やちらつきになっていた。シャドウマップのフェッチが最大 8 回減る。プリセット窓の「接地硬化を切る」「可動域を狭める」「接地硬化 OFF」の行も削除。材質に残った値は使われない。
@@ -26,6 +30,8 @@
 - **Detail Map に乗算モード `Detail Multiply`**（T-404）。従来は「その色で置く」だけだったが、生地の陰（AO）は「元の色を暗くする」ので乗算が要る。強さは Detail Color の A。DCC で焼いた AO や生地の陰を、どのアルベドにも掛けられる。
 
 ### Changed
+
+- **Baking タブ > Face SDF の表示名を Baker の設定名に揃えた**（T-403 と同じ規則）。`Cast Shadow` → `Use Cast Shadow`、`Line Softness` → `DF Spread`、プロキシ関連は `Proxy Mode / Proxy Shape / Proxy Taper / Proxy Flatten / Proxy Detail / Proxy Detail Angle / Proxy Manual Fit / Proxy Center Transform / Proxy Center Offset / Proxy Center WS / Proxy Radii`。単位（m・texel）はツールチップへ。
 
 - **ライト応答を成分で返し、畳む段を 1 か所にした**（T-410）。`ToonShadeLight` は拡散 / 鏡面 / sheen / クリアコート / リムを `ToonLightTerms` で返し、新設の `ToonComposeLight` がそれを畳む。粒への分解（Glitter Specular → 鏡面と sheen、Glitter Rim → リム）、スパンコールのフラッシュ、影の床は、主光源も追加光源もここで一律に掛かる。これまで鏡面は Lighting、リムと粒は ForwardPass に散っていて、粒を足すたびに掛け忘れが出ていた（利用者「リムにも sheen にも乗らない」）。**環境反射も粒に分解する**ようにした（粒は小さな鏡なので映り込みも粒ごと。物理的にこちらが正しい）。クリアコートは粒の上に載る滑らかな薄膜なので、直接光でも映り込みでも粒にしない。粒 0 のときの絵は変わらない。
 - **ディテール法線を鋭いローブから外した**（T-401）。Detail Normal Map は影のグラデーション・sheen・リム・環境光に効き、GGX の鏡面・環境反射・MatCap・グリッターはベースの法線（法線マップまで）を見る。細かい織り目の法線が鋭いハイライトや映り込みを通ると起伏ごとに点が立って網点印刷のようになり、三角形ごとにミップ段が違うぶん「点の三角形」と「平らな三角形」が隣り合って見えていた。柔らかい拡散を通せば半影にだけ生地の目が浮く。
