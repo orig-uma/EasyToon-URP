@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+## [0.2.5] - 2026-09-17
+
+### Changed (Breaking)
+
+- **NPR Map の B を Detail Mask に、A を未使用にした**（T-419）。旧 B（リムマスク）と旧 A（画素ごとのランプ行）は廃止。リムの部位調整は材質の `Rim Intensity`、ランプの行は `Ramp Index Override`（-1 = 先頭行）で行う。B は Detail Map の合成率とノーマル強度に掛かる（レースの部分だけ織りを入れる、など）。既存の NPR Map はそのまま読める（並びは変えていない）。旧 B に白以外を塗っていた材質だけ、ディテールがその場所で弱まる。
+
+### Added
+
+- **`Mask A Is Roughness`**（T-419）。Mask Map の A を Roughness として読む（反転）トグル。InstaMat / Substance の標準出力を反転せずに入れられる。SETUP.md に InstaMat の Export Preset 表（Mask / NPR / Fabric / Aniso の各チャンネル）を追加。
+
+- **`Anisotropy Map`（RG 向き / B 強さ）**（T-419）。Surface Type Cloth の織りの向きを場所ごとに指定する。glTF の anisotropyTexture と同じ並び（RG は接線空間の向きを 0..1 で、B は `Cloth Anisotropy` の倍率）。(0.5, 0.5) はメッシュの接線のまま。`Anisotropy Map On` で読む（キーワード `_ANISOMAP_ON`）。髪の Hair Flow Map は倍角エンコードのベイク出力で形式が違うため統合せず、従来どおり。
+
+- **`Fabric Map`（R Specular / G Sheen / B Clearcoat / A Iridescence）と `Reflectance`**（T-419）。衣装の質感を場所ごとに変える倍率マップ。並びは glTF の拡張と同じで InstaMat の書き出しプリセットがそのまま使える。白が中立。`Reflectance` は非金属の反射率で f0 = 0.16 × 値²（0.5 = 従来の 0.04。綿 0.35 / サテン 0.55 / エナメル 0.7）。`Fabric Map On` で読む（キーワード `_FABRICMAP_ON`。使わない材質のコストは変わらない）。
+
+- **`HQ Shadow Taps`**（T-418）: HQ Shadow のタップ数を材質ごとに 8 / 16 / 32 から選ぶ（KeywordEnum、既定 16 = 従来）。32 は Softness を上げても粒が出にくい（読みは 2 倍）。8 は一番軽いが 1 タップの重みが既定の遷移窓より太く、ライトを回すと影が反転しうるので硬い影向け。
+
+### Changed
+
+- **Glitter をキーワード `_GLITTER_ON` に移した**（T-418）。トグルは増やさず `Glitter Intensity > 0` に追従する（材質 GUI の ValidateMaterial と Migrator が立てる）。一様分岐のままだと OFF の材質でも最悪経路の一時レジスタ（8 本）を確保され、GPU の占有率を下げていた。実測（fxc、ForwardLit フラグメント、PC 実行時相当）: **2,389 → 1,917 命令 / 一時レジスタ 57 → 51**。Forward は 1,679 → 1,264。**既存の材質はインスペクタで一度表示するか `Tools > Idol > EasyToon・EasyPBR から移行` を通すとキーワードが揃う**（Intensity > 0 なのに粒が出ないときはこれ）。
+- **追加光ではクリアコートと Glitter のフラッシュを評価しない**（T-418）。ステージの追加光で要るのは色・光沢・sheen・リムで、コートの薄い層と粒のきらめきは主光源だけで足りる。sheen / リム / 2 ローブ目は追加光でも従来どおり。
+- **追加光の影を硬い 1 タップにした**（T-418、`ToonAdditionalLightShadowHard`）。URP は追加光にも主光源と同じソフトフィルタ（最大 16 タップ）を掛けていた。ステージの追加光は数が多く、影の縁の柔らかさは主光源ほど目立たない。点光源の面選択・距離フェード・Shadow Strength・ライトクッキーは従来どおり。
+- **環境反射のプローブは一番重要な 1 つだけ読む**（T-418）。以前は Forward で 2 枚、Forward+ で重みが埋まるまで複数を混ぜていたが、ステージはプローブ 1 つが普通で、混合の判定と 2 枚目の読みだけで 200 命令超を払っていた。影響範囲の外は従来どおり空へ滑らかに戻る。**プローブを重ねて置く配置では境界の混ざり方が変わる。**
+- **Stocking / MatCap / Debug をキーワード `_STOCKING_ON` / `_MATCAP_ON` / `_DEBUG_ON` に移した**（T-418）。Glitter と同じく、それぞれ `Stocking Intensity` / `MatCap Intensity` > 0、`Debug Mode` > 0 に追従（GUI の ValidateMaterial と Migrator が立てる）。
+- **Glitter の近傍探索を 1 セル 1 ハッシュに**（Core 0.3.4）。粒の配置は以前と変わる（密度・大きさの分布は同じ）。インストーラの Core ピンを v0.3.4 に。
+- **T-418 の合計**（fxc、ForwardLit フラグメント、命令 / 一時レジスタ）: PC 実行時相当 **2,389 / 57 → 1,625 / 39**、Glitter ON の材質 2,389 / 57 → 1,930 / 42、Forward 1,679 / 37 → 1,077 / 31、素 1,465 / 32 → 862 / 22。
+
 ## [0.2.4] - 2026-09-16
 
 ### Fixed

@@ -8,7 +8,7 @@
 python gen_properties.py --write
 ```
 
-シェーダー: `Idol.shader` / プロパティ 201 個
+シェーダー: `Idol.shader` / プロパティ 208 個
 
 ⚡ はシェーダーバリアントを生むもの（マテリアル間で値が違うとバッチが分断される）。
 
@@ -39,7 +39,7 @@ python gen_properties.py --write
 
 | プロパティ | 表示名 | 型 | 既定 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
-| `_DetailOn` | Detail On | `Float` | `0` | 独立したタイリングを持つ重ねレイヤー ── タトゥー・チークの印刷・布地の織り目など。RGB = 色 / A = 合成率 |
+| `_DetailOn` | Detail On | `Float` | `0` | 独立したタイリングを持つ重ねレイヤー ── タトゥー・チークの印刷・布地の織り目など。RGB = 色 / A = 合成率。NPR Map の B で効かせる場所を絞れます（色・ノーマルとも） |
 | `_DetailMap` | Detail Map (RGB=color A=blend) | `2D` | `"black" {}` | — |
 | `_DetailColor` | Detail Color | `Color` | `(1,1,1,1)` | RGB はディテールの色。A は混ぜる量 |
 | `_DetailMultiply` | Detail Multiply | `Float` | `0` | OFF = ディテールの色で置き換え（タトゥー・プリント）。ON = 乗算（DCC で焼いた生地の陰・AO） |
@@ -60,6 +60,7 @@ python gen_properties.py --write
 | :--- | :--- | :--- | :--- | :--- |
 | `_MaskMap` | Mask Map | `2D` | `"white" {}` | パック済みの RGBA マスク |
 | `_Metallic` | Metallic | `Range(0,1)` | `0` | R チャンネルを倍率で調整 |
+| `_MaskAIsRoughness` | Mask A Is Roughness | `Float` | `0` | ON = A が Roughness（InstaMat / Substance の標準出力）で、ここで反転して読みます。OFF = A は Smoothness |
 | `_OcclusionStrength` | Occlusion Strength | `Range(0,1)` | `1` | G が間接光をどれだけ落とすか |
 | `_DirectOcclusion` | Direct Occlusion | `Range(0,1)` | `0.3` | 物理的には AO は間接光だけのもの。絵として要るときだけ上げる |
 | `_MicroShadow` | Micro Shadow | `Range(0,1)` | `1` | 斜めから当たる直接光を遮蔽量で削る |
@@ -71,6 +72,14 @@ python gen_properties.py --write
 | `_NPRMapOn` | NPR Map On | `Float` | `0` | — |
 | `_NPRMap` | NPR Map | `2D` | `"white" {}` | — |
 | `_NPRShadowOffsetStrength` | NPR Shadow Offset Strength | `Range(0,1)` | `0.4` | G が影の境界をどれだけずらすか |
+
+### ファブリックマップ（Fabric Map）
+
+| プロパティ | 表示名 | 型 | 既定 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `_FabricMapOn` ⚡ | Fabric Map On | `Float` | `0` | — |
+| `_FabricMap` | Fabric Map | `2D` | `"white" {}` | — |
+| `_Reflectance` | Reflectance | `Range(0,1)` | `0.5` | 非金属の反射率。f0 = 0.16 × 値²（0.5 で 0.04 = 従来の固定値）。綿 0.35 / 絹・サテン 0.55 / エナメル・ビニール 0.7 あたり。Fabric Map の R が掛かります |
 
 ### 発光（Emission）
 
@@ -125,7 +134,8 @@ python gen_properties.py --write
 | プロパティ | 表示名 | 型 | 既定 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
 | `_HQShadowOn` ⚡ | HQ Shadow On | `Float` | `1` | 主光源のみ。全機能の中でテクスチャフェッチが一番多い |
-| `_HQShadowSoftness` | HQ Shadow Softness (texels) | `Range(0,3)` | `1` | フィルタ半径 = 1 + 値 × 6 テクセル（メートルではありません）。タップは 16 固定なので、1.5 あたりから粒（ディザのノイズ）が見え始めます ── きれいさより抽象化を優先したいときの領域。シャドウマップの解像度を下げれば同じ値でもワールドでの半影は広がります（タダで柔らかくなる） |
+| `_HQShadowSoftness` | HQ Shadow Softness (texels) | `Range(0,3)` | `1` | フィルタ半径 = 1 + 値 × 6 テクセル（メートルではありません）。16 タップだと 1.5 あたりから粒（ディザのノイズ）が見え始めます ── HQ Shadow Taps を上げるか、粒を許容するか。シャドウマップの解像度を下げれば同じ値でもワールドでの半影は広がります（タダで柔らかくなる） |
+| `_HQShadowTaps` ⚡ | HQ Shadow Taps | `Float` | `1` | — |
 | `_ReceiverNormalBias` | Receiver Normal Bias | `Range(0,4)` | `1` | — |
 | `_BlueNoiseTex` | Blue Noise Tex (dither) | `2D` | `"gray" {}` | — |
 
@@ -143,7 +153,7 @@ python gen_properties.py --write
 | `_UseRampMap` | Use Ramp Map | `Float` | `0` | — |
 | `_RampMap` | Ramp Map | `2D` | `"white" {}` | — |
 | `_RampRowCount` | Ramp Row Count | `Float` | `8` | テクスチャに縦へ何本のランプを並べてあるか |
-| `_RampIndexOverride` | Ramp Index Override (-1 = use NPR.a) | `Float` | `-1` | -1 で NPR マップの A から画素ごとに行を選びます |
+| `_RampIndexOverride` | Ramp Index Override | `Float` | `-1` | この材質が使うランプの行（-1 で先頭行） |
 | `_RampStrength` | Ramp Strength | `Range(0,1)` | `1` | 1 でランプだけが影の色を決めます。1 未満では HSV の影色が混ざり、その設定が下に出ます |
 
 ### 顔（SDF）（Face (SDF)）
@@ -257,6 +267,8 @@ python gen_properties.py --write
 | `_SheenEnergyConservation` | Sheen Energy Conservation | `Range(0,1)` | `0` | sheen の指向性アルベドぶん下地を縮めてから足します。0 は足すだけなので、縁で入射より多く返ることがあります |
 | `_ClothAnisotropy` | Cloth Anisotropy | `Range(0,0.9)` | `0` | 織りの方向へ光沢を伸ばします |
 | `_ClothTangentSwap` | Cloth Tangent Swap | `Float` | `0` | 光沢が織りと直交して出るときに切り替えます |
+| `_AnisotropyMapOn` ⚡ | Anisotropy Map On | `Float` | `0` | — |
+| `_AnisotropyMap` | Anisotropy Map (RG=dir B=strength) | `2D` | `"white" {}` | — |
 
 ### 異方性ハイライト（髪）（Anisotropic (Hair)）
 
@@ -336,7 +348,7 @@ python gen_properties.py --write
 | `_GlitterAlbedoTint` | Glitter Albedo Tint | `Range(0,1)` | `0` | 粒の色にアルベドを掛けます。1 で生地と同じ色のラメ（Sparkle と共通） |
 | `_GlitterRim` | Glitter Rim | `Range(0,4)` | `1` | リムの帯をどれだけスパンコールに分解するか。1 で帯が円盤の集まりに、2 以上で明るく、0 で滑らかな帯 |
 | `_GlitterSpecular` | Glitter Specular | `Range(0,4)` | `1` | スペキュラ（GGX・sheen・髪・映り込み）をどれだけスパンコールに分解するか。Glitter Rim と同じ尺度 |
-| `_GlitterIntensity` | Glitter Intensity | `Range(0,50)` | `0` | 0 で機能ごとスキップします（一様分岐 ── バリアント非増・フェッチも無し）。粒のきらめきの強さです |
+| `_GlitterIntensity` | Glitter Intensity | `Range(0,50)` | `0` | 0 で機能ごとコンパイルから外れます（キーワード _GLITTER_ON がこの値に追従）。粒のきらめきの強さです |
 | `_GlitterScale` | Glitter Scale (Scale) | `Range(10,1000)` | `100` | UV あたりのセル数。上げるほど細かく密に |
 | `_GlitterSize` | Glitter Size | `Range(0.0005,0.05)` | `0.005` | セル内の粒の半径 |
 | `_GlitterTilt` | Glitter Tilt | `Range(0,2)` | `0.8` | 粒ごとの法線の傾け。強いほど色々な角度でフラッシュします |
@@ -378,7 +390,7 @@ python gen_properties.py --write
 | プロパティ | 表示名 | 型 | 既定 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
 | `_RimColor` | Rim Color | `Color` | `(1.0, 0.75, 0.5, 1)` | — |
-| `_RimIntensity` | Rim Intensity | `Range(0,8)` | `1.5` | NPR マップの B でも絞られるので、部位ごとにマスクできます。ライトのエネルギーに比例し（ステージ照明の色が縁に乗る）、光が回り込んだ側だけに出ます |
+| `_RimIntensity` | Rim Intensity | `Range(0,8)` | `1.5` | ライトのエネルギーに比例し（ステージ照明の色が縁に乗る）、光が回り込んだ側だけに出ます |
 | `_RimFresnelThickness` | Rim Fresnel Thickness | `Range(0,1)` | `0.3` | 0 で極細（指数 12）、1 で極太（0.5）。Doll と同じ写像です |
 | `_RimReceiveShadow` | Rim Receive Shadow | `Range(0,1)` | `1` | 落ち影の中でリムを消します。見るのは落ち影だけで NdotL の陰は含みません（リムは「そこに光が届いているか」の話なので） |
 
@@ -486,4 +498,4 @@ python gen_properties.py --write
 
 ---
 
-説明のあるもの 148 / 201。**残り 53 個は tooltip が書かれていない** ── `ToonPBRShaderGUI.cs` に足すとここにも出ます。
+説明のあるもの 150 / 208。**残り 58 個は tooltip が書かれていない** ── `ToonPBRShaderGUI.cs` に足すとここにも出ます。

@@ -687,6 +687,31 @@ namespace ToonNPR.EditorTools
             SetToggle(mat, "_AlphaClipOn",     "_ALPHATEST_ON");
             SetToggle(mat, "_HQShadowOn",      "_HQ_SHADOW_ON");
             SetToggle(mat, "_OutlineOn",       "_OUTLINE_ON");
+            SetToggle(mat, "_FabricMapOn",     "_FABRICMAP_ON");
+            SetToggle(mat, "_AnisotropyMapOn", "_ANISOMAP_ON");
+            // 値に追従するキーワード（T-418）: トグルを持たず、強度 > 0 で立つ
+            SetFollow(mat, "_GlitterIntensity",  "_GLITTER_ON",  0f);
+            SetFollow(mat, "_StockingIntensity", "_STOCKING_ON", 0f);
+            SetFollow(mat, "_MatCapIntensity",   "_MATCAP_ON",   0f);
+            SetFollow(mat, "_DebugMode",         "_DEBUG_ON",    0.5f);
+            // HQ Shadow Taps（KeywordEnum 8 / 16 / 32。T-418）
+            if (mat.HasProperty("_HQShadowTaps"))
+            {
+                int taps = Mathf.Clamp(Mathf.RoundToInt(mat.GetFloat("_HQShadowTaps")), 0, 2);
+                string[] tapKw = { "_HQSHADOWTAPS_8", "_HQSHADOWTAPS_16", "_HQSHADOWTAPS_32" };
+                for (int i = 0; i < tapKw.Length; i++)
+                {
+                    if (i == taps) mat.EnableKeyword(tapKw[i]);
+                    else mat.DisableKeyword(tapKw[i]);
+                }
+            }
+        }
+
+        private static void SetFollow(Material mat, string prop, string keyword, float threshold)
+        {
+            if (!mat.HasProperty(prop)) return;
+            if (mat.GetFloat(prop) > threshold) mat.EnableKeyword(keyword);
+            else mat.DisableKeyword(keyword);
         }
 
         private static void SetToggle(Material mat, string prop, string keyword)

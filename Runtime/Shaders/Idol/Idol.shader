@@ -48,17 +48,28 @@ Shader "Origuma/EasyToon_URP/Idol"
         _CavityStrength ("  Cavity Strength", Range(0,1)) = 0
         _Metallic ("  Metallic", Range(0,1)) = 0
         _Smoothness ("  Smoothness", Range(0,1)) = 0.25
+        // InstaMat などの標準出力は Roughness。反転を忘れると全面ツルツルになるので材質側で受ける（T-419）
+        [Toggle] _MaskAIsRoughness ("  Mask A Is Roughness", Float) = 0
         _OcclusionStrength ("  Occlusion Strength", Range(0,1)) = 1
         _DirectOcclusion ("  Direct Occlusion", Range(0,1)) = 0.3
         // AO と入射角から細かい凹凸の自己遮蔽を作る。AO が無ければ何も起きない。
         _MicroShadow ("  Micro Shadow", Range(0,1)) = 1
 
-        [Space(10)][Header(NPR Map    R SpecMask    G ShadowOffset    B RimMask    A RampIndex)][Space(4)]
+        [Space(10)][Header(NPR Map    R SpecMask    G ShadowOffset    B DetailMask    A unused)][Space(4)]
         // 未使用時は中立値を使う。白テクスチャは G=1（＝影オフセット最大）で
         // 中立ではないため、既定テクスチャに頼れない。
         [Toggle] _NPRMapOn ("NPR Map On", Float) = 0
         _NPRMap ("  NPR Map", 2D) = "white" {}
         _NPRShadowOffsetStrength ("  NPR Shadow Offset Strength", Range(0,1)) = 0.4
+
+        // 衣装の PBR 拡張（T-419）。並びは glTF の拡張と 1:1（specular / sheen / clearcoat / iridescence）
+        // なので InstaMat の Export Preset がそのまま書ける。白が中立（全チャンネル 1 = 材質値のまま）。
+        [Space(10)][Header(Fabric Map    R Specular    G Sheen    B Clearcoat    A Iridescence)][Space(4)]
+        [Toggle(_FABRICMAP_ON)] _FabricMapOn ("Fabric Map On", Float) = 0
+        _FabricMap ("  Fabric Map", 2D) = "white" {}
+        // 非金属の反射率。f0 = 0.16 × 値²（Filament と同じ写像。0.5 で 0.04 = 従来）。
+        // 綿 0.35 / 絹・サテン 0.55 / エナメル・ビニール 0.7 あたり。Fabric Map の R が掛かる。
+        _Reflectance ("  Reflectance", Range(0,1)) = 0.5
 
         [Space(10)][Header(Diffuse Transfer)][Space(4)]
         _ShadowThreshold ("Shadow Threshold", Range(0,1)) = 0.2
@@ -85,6 +96,10 @@ Shader "Origuma/EasyToon_URP/Idol"
         // 「粒を許容してでも抽象化したい」用途。単位がテクセルなので、シャドウ
         // マップの解像度を下げれば同じ値でもワールドでの半影は広がる。
         _HQShadowSoftness ("  HQ Shadow Softness (texels)", Range(0,3)) = 1
+        // タップ数（T-418）。8 は 1 タップの重み 0.125 が既定の遷移窓 0.086 より太く、ライトを
+        // 回すとサンプル 1 つの入れ替わりで影が反転しうる（軽さ優先・硬い影向け）。32 は Softness
+        // を上げても粒が出にくい（きれいさ優先）。既定 16 は従来と同じ。
+        [KeywordEnum(8, 16, 32)] _HQShadowTaps ("  HQ Shadow Taps", Float) = 1
         _ReceiverNormalBias ("  Receiver Normal Bias", Range(0,4)) = 1
 
         [Space(10)][Header(Shadow Color   HSV)][Space(4)]
@@ -112,7 +127,7 @@ Shader "Origuma/EasyToon_URP/Idol"
         [Toggle] _UseRampMap ("Use Ramp Map", Float) = 0
         _RampMap ("  Ramp Map", 2D) = "white" {}
         _RampRowCount ("  Ramp Row Count", Float) = 8
-        _RampIndexOverride ("  Ramp Index Override (-1 = use NPR.a)", Float) = -1
+        _RampIndexOverride ("  Ramp Index Override", Float) = -1
         _RampStrength ("  Ramp Strength", Range(0,1)) = 1
 
         [Space(10)][Header(Specular)][Space(4)]
@@ -156,7 +171,7 @@ Shader "Origuma/EasyToon_URP/Idol"
 
         [Space(10)][Header(Glitter)][Space(4)]
         // ラメ・スパンコール（T-348）。プロパティ群は Doll と同名・実装は
-        // Core の BRDF_Glitter を共有。Intensity 0 で UNITY_BRANCH により
+        // Core の BRDF_Glitter を共有。Intensity 0 でキーワード _GLITTER_ON が落ち（T-418）、
         // マスクのフェッチごとスキップ＝キーワード不要でバリアント非増。
         [NoScaleOffset] _GlitterMask ("Glitter Mask (R)", 2D) = "white" {}
         [HDR] _GlitterColor ("  Glitter Color (HDR)", Color) = (2,2,2,1)
@@ -215,6 +230,10 @@ Shader "Origuma/EasyToon_URP/Idol"
         // 縮めた結果が 0 ベクトルになって normalize が壊れるため。
         _ClothAnisotropy ("  Cloth Anisotropy", Range(0,0.9)) = 0
         [Toggle] _ClothTangentSwap ("  Cloth Tangent Swap", Float) = 0
+        // 織りの向きを場所ごとに（T-419）。glTF の anisotropyTexture と同じ並び: RG = 接線空間の向き
+        //（0..1 → -1..1）、B = 強さの倍率。髪の Hair Flow Map（倍角・ベイク）とは別物。
+        [Toggle(_ANISOMAP_ON)] _AnisotropyMapOn ("  Anisotropy Map On", Float) = 0
+        _AnisotropyMap ("  Anisotropy Map (RG=dir B=strength)", 2D) = "white" {}
 
         [Space(10)][Header(Hair    only when SurfaceType is Hair)][Space(4)]
         [Toggle] _HairTangentSwap ("Hair Tangent Swap", Float) = 1
@@ -488,6 +507,18 @@ Shader "Origuma/EasyToon_URP/Idol"
 
             #pragma shader_feature_local          _ALPHATEST_ON
             #pragma shader_feature_local_fragment _HQ_SHADOW_ON
+            #pragma shader_feature_local_fragment _HQSHADOWTAPS_8 _HQSHADOWTAPS_16 _HQSHADOWTAPS_32
+            // Glitter は材質の静的な設定なのでキーワードで切る（T-418）。一様分岐だと OFF でも
+            // 413 命令ぶんのレジスタ（8 本）を最悪経路として確保され、占有率を下げていた。
+            // キーワードは Glitter Intensity > 0 に追従する（GUI の ValidateMaterial が立てる）。
+            #pragma shader_feature_local_fragment _GLITTER_ON
+            #pragma shader_feature_local_fragment _FABRICMAP_ON
+            #pragma shader_feature_local_fragment _ANISOMAP_ON
+            // 同じ理由でキーワードに（T-418）。それぞれ Stocking Intensity > 0 / MatCap Intensity > 0 /
+            // Debug Mode > 0 に追従する（GUI の ValidateMaterial が立てる）。
+            #pragma shader_feature_local_fragment _STOCKING_ON
+            #pragma shader_feature_local_fragment _MATCAP_ON
+            #pragma shader_feature_local_fragment _DEBUG_ON
             #pragma shader_feature_local_fragment _SURFACETYPE_DEFAULT _SURFACETYPE_SKIN _SURFACETYPE_FACE _SURFACETYPE_HAIR _SURFACETYPE_CLOTH
 
             #pragma multi_compile _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE _MAIN_LIGHT_SHADOWS_SCREEN
@@ -603,6 +634,18 @@ Shader "Origuma/EasyToon_URP/Idol"
 
             #pragma shader_feature_local          _ALPHATEST_ON
             #pragma shader_feature_local_fragment _HQ_SHADOW_ON
+            #pragma shader_feature_local_fragment _HQSHADOWTAPS_8 _HQSHADOWTAPS_16 _HQSHADOWTAPS_32
+            // Glitter は材質の静的な設定なのでキーワードで切る（T-418）。一様分岐だと OFF でも
+            // 413 命令ぶんのレジスタ（8 本）を最悪経路として確保され、占有率を下げていた。
+            // キーワードは Glitter Intensity > 0 に追従する（GUI の ValidateMaterial が立てる）。
+            #pragma shader_feature_local_fragment _GLITTER_ON
+            #pragma shader_feature_local_fragment _FABRICMAP_ON
+            #pragma shader_feature_local_fragment _ANISOMAP_ON
+            // 同じ理由でキーワードに（T-418）。それぞれ Stocking Intensity > 0 / MatCap Intensity > 0 /
+            // Debug Mode > 0 に追従する（GUI の ValidateMaterial が立てる）。
+            #pragma shader_feature_local_fragment _STOCKING_ON
+            #pragma shader_feature_local_fragment _MATCAP_ON
+            #pragma shader_feature_local_fragment _DEBUG_ON
             #pragma shader_feature_local_fragment _SURFACETYPE_DEFAULT _SURFACETYPE_SKIN _SURFACETYPE_FACE _SURFACETYPE_HAIR _SURFACETYPE_CLOTH
 
             // **ライティングに効くキーワードは ForwardLit と揃える。**

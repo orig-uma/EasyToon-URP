@@ -66,7 +66,7 @@ Shade Normal / Hair Flow / Face SDF / Bent Normal / Curvature / SSS / Cavity / A
 | R | Metallic |
 | G | Occlusion |
 | B | Thickness（Skin/Cloth の透過量。耳や薄い布を白に） |
-| A | Smoothness |
+| A | Smoothness（`Mask A Is Roughness` を ON にすると Roughness として読む） |
 
 ### NPRMap（様式化側 / **sRGB OFF**）
 
@@ -74,10 +74,30 @@ Shade Normal / Hair Flow / Face SDF / Bent Normal / Curvature / SSS / Cavity / A
 |---|---|
 | R | スペキュラマスク |
 | G | 影のオフセット。0.5が基準、暗くすると影が入りやすい |
-| B | リムマスク（顔だけリムを弱めたい等） |
-| A | ランプ行インデックス（ランプを使う場合のみ） |
+| B | ディテールマスク（Detail Map を効かせる場所。レースの部分だけ織りを入れる等。白 = 全面） |
+| A | 未使用 |
 
-両方とも省略可（白テクスチャのまま動きます）。まず無しで組んで、破綻した部分だけ後から描き足すのが早いです。
+### FabricMap（衣装の PBR 拡張 / **sRGB OFF**）
+
+| ch | 用途 |
+|---|---|
+| R | Specular（非金属の反射率の倍率。材質の `Reflectance` に掛かる。glTF の specularFactor と同じ） |
+| G | Sheen の強さの倍率（Surface Type が Cloth のとき） |
+| B | Clearcoat の強さの倍率（エナメルの部分だけ、など） |
+| A | Iridescence の強さの倍率 |
+
+白が中立（材質値のまま）。並びは glTF の拡張（KHR_materials_specular / sheen / clearcoat / iridescence）と同じなので、InstaMat などの書き出しプリセットをそのまま使えます。
+
+### AnisotropyMap（布の織りの向き / **sRGB OFF** / Surface Type が Cloth のとき）
+
+| ch | 用途 |
+|---|---|
+| R, G | 織りの向き（接線空間。0..1 を -1..1 として読む。(0.5, 0.5) はメッシュの接線のまま） |
+| B | `Cloth Anisotropy` に掛かる強さの倍率 |
+
+glTF の anisotropyTexture と同じ並び。髪は焼いた Hair Flow Map（倍角エンコード。ミラー UV に強い）を使うので、このマップは布専用です。
+
+いずれも省略可（白テクスチャのまま動きます）。まず無しで組んで、破綻した部分だけ後から描き足すのが早いです。
 
 **NPRMap の G が一番効きます。** 首の下、前髪の落ち影、袖の内側、スカートの内股。ここを描くかどうかで手描き感が決まります。
 
@@ -261,7 +281,7 @@ Rim Receive Shadow     1.0      ← 落ち影の中では消す（NdotL の陰�
 | 症状 | 原因 |
 |---|---|
 | 金属が真っ黒 | Reflection Probe が無い／未 Bake |
-| リムが出ない | 主光源が被写体の向こう側に無い（リムは光が回り込んだ側だけに出る）／`Rim Intensity` が 0／NPR Map の B が 0 |
+| リムが出ない | 主光源が被写体の向こう側に無い（リムは光が回り込んだ側だけに出る）／`Rim Intensity` が 0 |
 | 影の境界が全部同じ硬さ | Curvature Softness が 0、または Curvature Map を焼いていない |
 | **影がまったく出ない・のっぺり平ら** | `Ambient Intensity` が高すぎる。環境光は影の中にも一律で乗るので、主光源と同量まで上げると影が埋まる。**`Shadow Ambient Intensity` を 0.5 前後に下げる**のが正攻法（全体の明るさを保ったまま影だけ沈む） |
 | 影色が濁る | Shadow Saturation を上げすぎ。1.2〜1.5 が実用域 |

@@ -349,6 +349,8 @@ def fetch_count(v: dict[str, float], kw: set[str],
         ("_BaseMap", 1),
         ("_MaskMap", 1),
         ("_NPRMap", 1 if on("_NPRMapOn") else 0),
+        ("_FabricMap", 1 if on("_FabricMapOn") else 0),
+        ("_AnisotropyMap", 1 if (st == 4 and on("_AnisotropyMapOn")) else 0),
         ("_CavityMap", 1 if on("_CavityStrength", 0.0) else 0),
         ("_EmissionMap", 1 if on("_EmissionOn") else 0),
         ("_BumpMap", 1 if on("_NormalMapOn") else 0),
@@ -364,7 +366,9 @@ def fetch_count(v: dict[str, float], kw: set[str],
         ("_HairShiftMap", 1 if st == 3 else 0),
         ("_HairFlowMap", 1 if (st == 3 and on("_HairFlowStrength", 0.0)) else 0),
         ("環境反射（プローブ）", 2),
-        ("影フィルタ", defines["TOON_SHADOW_TAPS"] if hq else 1),
+        # タップ数は材質の HQ Shadow Taps（キーワード）で 8 / 16 / 32。無指定は既定の 16（T-418）
+        ("影フィルタ", (8 if "_HQSHADOWTAPS_8" in kw else 32 if "_HQSHADOWTAPS_32" in kw
+                       else defines["TOON_SHADOW_TAPS"]) if hq else 1),
     ]
     return rows
 
@@ -1824,6 +1828,11 @@ ALLOWED_KEYWORDS = {
     "_ALPHATEST_ON",
     "_HQ_SHADOW_ON",
     "_OUTLINE_ON",
+    "_FABRICMAP_ON",    # T-419: Fabric Map（衣装の PBR 拡張）。割り当てがあるときだけ読む
+    "_ANISOMAP_ON",     # T-419: Anisotropy Map（布の織りの向き）。同上
+    "_GLITTER_ON",      # T-418: Glitter Intensity > 0 に追従。静的な設定なので一様分岐からキーワードへ
+    "_STOCKING_ON", "_MATCAP_ON", "_DEBUG_ON",   # 同上（Stocking / MatCap Intensity > 0、Debug Mode > 0）
+    "_HQSHADOWTAPS_8", "_HQSHADOWTAPS_16", "_HQSHADOWTAPS_32",   # T-418: HQ Shadow Taps（KeywordEnum）
     "_SURFACETYPE_DEFAULT", "_SURFACETYPE_SKIN", "_SURFACETYPE_FACE",
     "_SURFACETYPE_HAIR", "_SURFACETYPE_CLOTH",
 }

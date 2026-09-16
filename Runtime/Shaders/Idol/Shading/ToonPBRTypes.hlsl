@@ -24,8 +24,9 @@ struct ToonSurface
     float  thickness;
     float  specMask;
     float  shadowOffset;        // -1 .. +1
-    float  rimMask;
-    float  rampIndex;
+    float  sheenMask;           // Fabric Map G。1 = 材質値のまま（T-419）
+    float  coatMask;            // Fabric Map B
+    float  iridMask;            // Fabric Map A
     float3 emission;
     float3 shadowColor;         // 影側の色。フラグメントで1回だけ求める
 };
@@ -88,5 +89,7 @@ struct ToonContext
     // 正面・上向きの陰の持ち上げ（FR-31）。**法線と向きだけで決まるので光源非依存。**
     // 逆光で消す係数だけがライトごとに変わる。
     float  sheenScale;          // 布の下地の縮小率（sheen のエネルギー保存）
+    float3 clothT;              // 織りの向き（Cloth）。接線か Anisotropy Map の向き。光源非依存（T-419）
+    float  clothAniso;          // Cloth Anisotropy × Anisotropy Map の B
 };
 

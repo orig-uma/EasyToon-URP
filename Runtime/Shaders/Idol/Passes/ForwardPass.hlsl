@@ -87,6 +87,16 @@
                 // 「切り抜かれた画素だけ補正前の色」という食い違いが生まれうる。
                 albedo.rgb = ToonAlbedoHSV(albedo.rgb);
 
+                // NPR Map（T-419 で R / G / B の 3 チャンネルに縮小）。
+                // 中立値。R = 鏡面フル / G = 0.5（オフセット 0）/ B = ディテールをフルに掛ける。
+                // **白テクスチャでは G が 1 になり、影が最大まで遅れて出なくなる。**
+                // 仕様（REQUIREMENTS §6「G は 0.5 が基準」）と食い違うのでトグルで切る。
+                // ディテールより前に読む ── B（Detail Mask）をディテールの合成率に掛けるため。
+                float4 npr = float4(1.0, 0.5, 1.0, 0.0);
+                UNITY_BRANCH
+                if (_NPRMapOn > 0.5) npr = SAMPLE_TEXTURE2D(_NPRMap, sampler_NPRMap, uv);
+                float detailMask = npr.b;
+
                 // ディテールマップ（T-368）: A の合成率でベースへ重ねる。
                 // HSV 補正の**後**に置く ── ディテール（チークの赤等）は
                 // 「その色で置く」意図なので、全体の色調補正に巻き込まない。
@@ -98,9 +108,10 @@
                                   * _DetailColor;
                     // 置き換え（タトゥー等）か乗算（生地の陰・AO。T-404）か。
                     // 乗算は「元の色を暗くする」ので、灰のテクスチャをどのアルベドにも掛けられる。
-                    // 強さは detail.a（テクスチャの A × Detail Color の A）。
+                    // 強さは detail.a（テクスチャの A × Detail Color の A）× Detail Mask（NPR Map の B。T-419）
+                    //（レースの部分だけ織りを入れる、など場所で効き方を変える）。
                     float3 detailTarget = (_DetailMultiply > 0.5) ? albedo.rgb * detail.rgb : detail.rgb;
-                    albedo.rgb = lerp(albedo.rgb, detailTarget, detail.a);
+                    albedo.rgb = lerp(albedo.rgb, detailTarget, detail.a * detailMask);
                 }
 
                 #if defined(_ALPHATEST_ON)
@@ -118,12 +129,11 @@
                 }
 
                 float4 mask = SAMPLE_TEXTURE2D(_MaskMap, sampler_MaskMap, uv);
-                // 中立値。R=鏡面フル / G=0.5（オフセット 0）/ B=リムフル / A=ランプ先頭。
-                // **白テクスチャでは G が 1 になり、影が最大まで遅れて出なくなる。**
-                // 仕様（REQUIREMENTS §6「G は 0.5 が基準」）と食い違うのでトグルで切る。
-                float4 npr = float4(1.0, 0.5, 1.0, 0.0);
-                UNITY_BRANCH
-                if (_NPRMapOn > 0.5) npr = SAMPLE_TEXTURE2D(_NPRMap, sampler_NPRMap, uv);
+                // Fabric Map（T-419）: 反射率 / sheen / クリアコート / イリデッセンスの場所ごとの倍率。白が中立
+                float4 fabric = 1.0;
+            #if defined(_FABRICMAP_ON)
+                fabric = SAMPLE_TEXTURE2D(_FabricMap, sampler_FabricMap, uv);
+            #endif
 
                 // 窪みの微細遮蔽。**アルベドと鏡面の両方に掛ける。**
                 // EasyPBR はアルベドだけに掛けているが、それだと縫い目や皺の底に
@@ -150,11 +160,15 @@
                 s.occlusion  = saturate(lerp(1.0, mask.g, _OcclusionStrength));
                 s.specMask   = npr.r;
                 s.shadowOffset = (npr.g - 0.5) * 2.0;
-                s.rimMask    = npr.b;
-                s.rampIndex  = npr.a;
+                s.sheenMask  = fabric.g;
+                s.coatMask   = fabric.b;
+                s.iridMask   = fabric.a;
+                // npr.b は Detail Mask（上で使用済み）。npr.a は未使用（T-419 で RampIndex を廃止）
 
                 float metallic   = mask.r * _Metallic;
-                float smoothness = mask.a * _Smoothness;
+                // A を Roughness として書き出したマップ（InstaMat の標準）はここで反転（T-419）
+                float maskSmooth = (_MaskAIsRoughness > 0.5) ? 1.0 - mask.a : mask.a;
+                float smoothness = maskSmooth * _Smoothness;
 
                 s.emission = dissolveEmission;
                 UNITY_BRANCH
@@ -196,10 +210,11 @@
                 UNITY_BRANCH
                 if (_DetailOn > 0.5)
                 {
+                    // 強さに Detail Mask（NPR Map の B）も掛ける（T-419）
                     float3 dTS = UnpackNormalScale(
                         SAMPLE_TEXTURE2D(_DetailNormalMap, sampler_DetailNormalMap,
                                          uv * _DetailMap_ST.xy + _DetailMap_ST.zw),
-                        _DetailNormalScale);
+                        _DetailNormalScale * detailMask);
                     // whiteout ブレンド（xy 加算・z 乗算。Doll と同じ）
                     normalTS = normalize(float3(normalTS.xy + dTS.xy, normalTS.z * dTS.z));
                     normalWS = normalize(mul(normalTS, tbn));
@@ -228,15 +243,19 @@
                 // 視線方向をここでもう一度求めているのは、`c.V` の確定が
                 // 法線の後（コンテキストの組み立て）だから。**既定 OFF の分岐の中**なので
                 // 使わないマテリアルでは 1 命令も走らない。
+            #if defined(_STOCKING_ON)
                 UNITY_BRANCH
                 if (_StockingIntensity > 0.0)
                 {
                     float3 viewWS = normalize(GetWorldSpaceViewDir(input.positionWS));
                     ToonStockingLayer(uv, saturate(dot(normalWS, viewWS)), s.albedo);
                 }
+            #endif
 
                 s.diffuseColor = s.albedo * (1.0 - metallic);
-                s.f0           = lerp(0.04, s.albedo, metallic);
+                // 非金属の f0 = 0.16 × Reflectance²（0.5 で 0.04 = 従来）× Fabric Map の R（T-419）
+                float f0d = 0.16 * _Reflectance * _Reflectance * fabric.r;
+                s.f0           = lerp(f0d, s.albedo, metallic);
                 // 金属部だけスペキュラの倍率を上書き（T-383）。f0 と同じく
                 // **デカール適用後の metallic** から作ること。ライトに依存しないので
                 // ここで 1 回だけ。metallic 0 なら 1 = 従来と完全一致。
@@ -441,13 +460,28 @@
 
                 c.sheenScale = 1.0;
                 c.sheenAlpha = 0.0;
+                c.clothT     = c.T;
+                c.clothAniso = 0.0;
                 #if defined(_SURFACETYPE_CLOTH)
                 {
+                    // 織りの向き（T-419）。既定はメッシュの接線（Tangent Swap で従接線）。
+                    // Anisotropy Map があれば RG の向きを接線空間で回し、B を強さに掛ける。
+                    // 光源に依存しないのでここで 1 回だけ。
+                    c.clothT     = (_ClothTangentSwap > 0.5) ? c.B : c.T;
+                    c.clothAniso = _ClothAnisotropy;
+                #if defined(_ANISOMAP_ON)
+                    float3 am = SAMPLE_TEXTURE2D(_AnisotropyMap, sampler_AnisotropyMap, uv).rgb;
+                    float2 ad = am.rg * 2.0 - 1.0;
+                    float  al = length(ad);
+                    // 向きが潰れている（0.5, 0.5）画素は接線のまま
+                    if (al > 1e-3) c.clothT = normalize((c.T * ad.x + c.B * ad.y) / al);
+                    c.clothAniso = _ClothAnisotropy * am.b;
+                #endif
                     // **ここも光源に依存しない。** 以前はエネルギー保存の計算と
                     // ライトループの D 項とで**二重に**求めていた。1回に畳む。
                     c.sheenAlpha = ToonApplyRoughnessKernel(max(_SheenRoughness, 0.02), c.specAAKernel);
 
-                    float3 sc = _SheenColor.rgb * _SheenIntensity;
+                    float3 sc = _SheenColor.rgb * _SheenIntensity * s.sheenMask;
                     c.sheenScale = saturate(1.0
                         - ToonSheenAlbedo(c.NdotV, c.sheenAlpha)
                         * max(max(sc.r, sc.g), sc.b) * _SheenEnergyConservation);
@@ -555,13 +589,16 @@
                 // ---- グリッタ（ラメ・スパンコール。T-348）--------------------
                 // ライト非依存の幾何（最近傍セル探索）を 1 回だけ計算し、各ライトで
                 // フラッシュだけ乗せる（Doll と同じ 2 段構成・Core BRDF_Glitter 共有）。
-                // Intensity 0 ではマスクのフェッチごと飛ぶ＝キーワード不要で実質無料。
+                // _GLITTER_ON（Intensity > 0 に追従するキーワード）が無ければコードごと消える（T-418）。
+                // 以前は一様分岐だったが、OFF でも最悪経路のレジスタ（8 本）を確保され占有率を下げていた。
                 // 粒の色。Albedo Tint で生地の色を掛ける（T-407）。
                 // アルベドは 1 以下なので、既定の HDR 色 (2,2,2) と組むと「生地の色 × 2」のラメになる。
-                float3 glitterColor = _GlitterColor.rgb * lerp(1.0, s.albedo, _GlitterAlbedoTint);
                 GlitterGeom glitterGeom = (GlitterGeom)0;
                 bool glitterActive = false;
                 float glitterMask = 0.0;
+                ToonGlitterSet sp = (ToonGlitterSet)0;
+            #if defined(_GLITTER_ON)
+                float3 glitterColor = _GlitterColor.rgb * lerp(1.0, s.albedo, _GlitterAlbedoTint);
                 UNITY_BRANCH
                 if (_GlitterIntensity > 0.0)
                 {
@@ -585,9 +622,9 @@
                         : 0.0;
                 c.specGrain = lerp(1.0, glitterGrain * _GlitterSpecular, saturate(_GlitterSpecular));
                 c.rimGrain  = lerp(1.0, glitterGrain * _GlitterRim,      saturate(_GlitterRim));
-                ToonGlitterSet sp;
                 sp.glitter = glitterGeom; sp.glitterActive = glitterActive;
                 sp.color   = glitterColor;
+            #endif
 
                 // 遮蔽量の画面変化率。**ここで取ること。** 光源ループの中は
                 // Forward+ だと反復回数が実行時に決まるので微分が保証されない。
@@ -602,7 +639,7 @@
                 if (mainLightMatches)
                 {
                     ToonLightTerms mt = ToonShadeLight(s, c, mainLight, mainDiffuseDir,
-                                                       1.0, mainAttenAA, rimShape, mainLit, mainCast);
+                                                       1.0, mainAttenAA, rimShape, true, mainLit, mainCast);
                     // 主光源だけ環境光（SH）を粒のエネルギーに足す（影の中で粒が消えないように。T-378）。
                     // SH はこの分岐（粒が有効な材質）でしか評価されない。
                     float3 mainFlash;
@@ -643,7 +680,18 @@
 
                     uint lightCount = GetAdditionalLightsCount();
                     LIGHT_LOOP_BEGIN(lightCount)
-                        Light addLight = GetAdditionalLight(lightIndex, input.positionWS, half4(1,1,1,1));
+                        // 影は自前の硬い 1 タップ（T-418）。URP の GetAdditionalLight(…, shadowMask) は
+                        // 主光源と同じソフトフィルタを追加光にも掛けるので使わない。
+                        Light addLight = GetAdditionalLight(lightIndex, input.positionWS);
+                        #if USE_CLUSTER_LIGHT_LOOP
+                            int addShadowIndex = lightIndex;
+                        #else
+                            int addShadowIndex = GetPerObjectLightIndex(lightIndex);
+                        #endif
+                        addLight.shadowAttenuation = ToonAdditionalLightShadowHard(addShadowIndex, input.positionWS, addLight.direction);
+                        #if defined(_LIGHT_COOKIES)
+                            addLight.color *= SampleAdditionalLightCookie(addShadowIndex, input.positionWS);
+                        #endif
 
                         #ifdef _LIGHT_LAYERS
                             if (!IsMatchingLightLayer(addLight.layerMask, meshRenderingLayers))
@@ -657,13 +705,15 @@
                         float addLitUnused, addCast;
                         // リムもこの光源で光る（成分として返る）。ステージのスポットで色を作る
                         // 使い方では、これが無いとリムだけ主光源の色に取り残される。
+                        // 追加光ではクリアコートと Glitter のフラッシュを省く（T-418）。ステージの
+                        // 追加光で要るのは色・光沢・sheen・リムで、コートの薄い層と粒のきらめきは
+                        // 主光源だけで足りる（利用者判断）。allowCoat = false はコンパイル時に畳まれる。
                         ToonLightTerms at = ToonShadeLight(s, c, addLight, addLight.direction,
-                                                           _AddLightShadowColor, 0.0, rimShape,
+                                                           _AddLightShadowColor, 0.0, rimShape, false,
                                                            addLitUnused, addCast);
-                        // フラッシュ（スパンコール・粒）は下の Max 合成に巻き込まず直接足す（物理的に加算）
-                        float3 addFlash;
-                        float3 addContrib = ToonComposeLight(at, c, addLight, 0.0, sp, addFlash);
-                        color += addFlash;
+                        float3 addFlashUnused;
+                        ToonGlitterSet spNone = (ToonGlitterSet)0;   // glitterActive = false（定数で畳まれる）
+                        float3 addContrib = ToonComposeLight(at, c, addLight, 0.0, spNone, addFlashUnused);
 
                         // Add = 物理的な加算 / Max = 最も強い 1 灯だけを採る（T-350）。
                         // ステージのように何灯も浴びる絵では、加算だと肌が白へ寄って
@@ -692,11 +742,13 @@
                 // ---- MatCap ---------------------------------------------------
                 // **加算だけ。** 物理の上に載せるアクセントで、環境光の主経路
                 //（プローブ + SH）は置き換えない。既定 0 で分岐ごと飛ぶ。
+            #if defined(_MATCAP_ON)
                 UNITY_BRANCH
                 if (_MatCapIntensity > 0.0)
                 {
                     color += ToonMatCap(c.specN, realLightDir);
                 }
+            #endif
 
                 // ---- エミッシブ -----------------------------------------------
                 color += s.emission;
@@ -754,6 +806,7 @@
                 // 効いているのか判断できない。実際これらは「実装されているのに
                 // 効いていない」状態を長期間見逃す原因になった。
                 // 動的分岐でバリアントは増えない。既定 0 で何も起きない。
+            #if defined(_DEBUG_ON)
                 UNITY_BRANCH
                 if (_DebugMode > 0.5)
                 {
@@ -775,6 +828,7 @@
 
                     return half4(dbg, 1);
                 }
+            #endif
 
                 // 前髪透過は**ライティングを一切変えず、アルファだけ差し替える。**
                 // 髪の ForwardLit がステンシルで抜いた穴を、同じ色の半透明で埋める

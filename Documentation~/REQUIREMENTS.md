@@ -180,12 +180,12 @@
 |---|---|
 | R | 鏡面マスク |
 | G | 影のオフセット（0.5 が基準） |
-| B | リムマスク |
-| A | ランプ行インデックス |
+| B | ディテールマスク（Detail Map の合成率とノーマル強度に掛ける。T-419） |
+| A | 未使用（T-419 で RampIndex を廃止） |
 
 両方とも未設定で動作すること。テクスチャを必須にしない。
 
-**NPRMap は `Use NPR Map` を OFF にしたときが中立**（鏡面マスク 1 / 影オフセット 0 / リムマスク 1）。白テクスチャは G=1 ＝影オフセット最大であり中立ではないため、既定テクスチャに頼らずトグルで切り替える。MaskMap は白がそのまま中立（Metallic は `_Metallic` が 0、Occlusion 1、Smoothness は `_Smoothness` が握る）。
+**NPRMap は `Use NPR Map` を OFF にしたときが中立**（鏡面マスク 1 / 影オフセット 0 / ディテールマスク 1）。白テクスチャは G=1 ＝影オフセット最大であり中立ではないため、既定テクスチャに頼らずトグルで切り替える。MaskMap は白がそのまま中立（Metallic は `_Metallic` が 0、Occlusion 1、Smoothness は `_Smoothness` が握る）。
 
 ### Stencil の値域
 

@@ -135,15 +135,16 @@ float3 ToonSampleEnvSpecular(float3 reflectDir, float perceptualRoughness,
     uint probeIndex;
     ClusterIterator it = ClusterInit(screenUV, positionWS, 1);
 
-    // 重みが埋まったら打ち切る。URP 本体と同じで、重要度順に並んでいる前提。
-    [loop] while (ClusterNext(it, probeIndex) && totalWeight < 0.99)
+    // **一番重要な 1 つだけ**（T-418）。以前は重みが埋まるまで複数プローブを混ぜていたが、
+    // ステージはプローブ 1 つが普通で、混合の判定と 2 枚目の読みだけで 200 命令超を払っていた。
+    // 影響範囲の縁は空（下の totalWeight < 0.99）へ滑らかに戻るので、境界で切れはしない。
+    if (ClusterNext(it, probeIndex))
     {
         probeIndex -= URP_FP_PROBES_BEGIN;
 
         float weight = ToonProbeWeight(positionWS,
                                        urp_ReflProbes_BoxMin[probeIndex],
                                        urp_ReflProbes_BoxMax[probeIndex]);
-        weight = min(weight, 1.0 - totalWeight);
 
         float3 dir = ToonBoxProjectReflection(reflectDir, positionWS,
                                               urp_ReflProbes_ProbePosition[probeIndex],
@@ -154,27 +155,10 @@ float3 ToonSampleEnvSpecular(float3 reflectDir, float perceptualRoughness,
         totalWeight += weight;
     }
 #else
-    // Forward。2枚しか無いので、どちらが主役かを決めてから重みを配る。
-    // 重要度が高い方、同じなら影響範囲が小さい方が主役（URP と同じ規則）。
-    float3 size0 = unity_SpecCube0_BoxMax.xyz - unity_SpecCube0_BoxMin.xyz;
-    float3 size1 = unity_SpecCube1_BoxMax.xyz - unity_SpecCube1_BoxMin.xyz;
-    float  volumeDiff    = dot(size0, size0) - dot(size1, size1);
-    float  importanceSign = unity_SpecCube1_BoxMin.w;
-
-    bool dominant0 = importanceSign > 0.0 || (importanceSign == 0.0 && volumeDiff < -1e-4);
-    bool dominant1 = importanceSign < 0.0 || (importanceSign == 0.0 && volumeDiff >  1e-4);
-
+    // Forward。**主役の 1 枚（unity_SpecCube0）だけ**（T-418）。以前は 2 枚目との重み配分と
+    // 2 回目の読みを持っていたが、ステージはプローブ 1 つが普通で、混合の判定だけで
+    // 200 命令超を払っていた。影響範囲の外は空へ戻る（下）。
     float w0 = ToonProbeWeight(positionWS, unity_SpecCube0_BoxMin, unity_SpecCube0_BoxMax);
-    float w1 = ToonProbeWeight(positionWS, unity_SpecCube1_BoxMin, unity_SpecCube1_BoxMax);
-
-    // 主役でない方は、主役が空けた分しか取れない。
-    w0 = dominant1 ? min(w0, 1.0 - w1) : w0;
-    w1 = dominant0 ? min(w1, 1.0 - w0) : w1;
-
-    // どちらも主役でないと合計が 1 を超えうる。超えたときだけ正規化する。
-    float sum = max(w0 + w1, 1.0);
-    w0 /= sum;
-    w1 /= sum;
 
     UNITY_BRANCH
     if (w0 > 0.01)
@@ -186,21 +170,7 @@ float3 ToonSampleEnvSpecular(float3 reflectDir, float perceptualRoughness,
                                                unity_SpecCube0_HDR, dir, mip);
     }
 
-    UNITY_BRANCH
-    if (w1 > 0.01)
-    {
-        float3 dir = ToonBoxProjectReflection(reflectDir, positionWS,
-                                              unity_SpecCube1_ProbePosition,
-                                              unity_SpecCube1_BoxMin, unity_SpecCube1_BoxMax);
-        // unity_SpecCube1 は専用サンプラを持たない。URP 本体も 0 番のを流用している。
-        irradiance += w1 * ToonSampleCubeProbe(TEXTURECUBE_ARGS(unity_SpecCube1, samplerunity_SpecCube0),
-                                               unity_SpecCube1_HDR, dir, mip);
-    }
-
-    totalWeight = w0 + w1;
-
-
-
+    totalWeight = w0;
 #endif
 
     // 余った重みは空に返す。プローブの影響範囲の外側で真っ黒にならないように。

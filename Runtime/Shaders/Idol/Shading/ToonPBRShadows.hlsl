@@ -23,7 +23,18 @@
 // タップ数はトゥーンステップの遷移窓と釣り合わせること。
 // 8 タップだと1サンプルの重みが 0.125 で、既定設定の遷移窓 0.086 より**太い**。
 // ライトを回すとサンプルが1つ入れ替わるだけで影が全反転する（＝ちらつき）。
+// 既定（HQ Shadow Taps = 16）。param_check のフェッチ見積もりがこの行を読む（行末コメント不可）
 #define TOON_SHADOW_TAPS 16
+// 材質の HQ Shadow Taps で 8 / 16 / 32 を選ぶ（T-418）。展開ループなので数はコンパイル時に決まる
+#if defined(_HQSHADOWTAPS_8)
+    #define TOON_SHADOW_TAPS_USED 8
+#elif defined(_HQSHADOWTAPS_32)
+    #define TOON_SHADOW_TAPS_USED 32
+#elif defined(_HQSHADOWTAPS_16)
+    #define TOON_SHADOW_TAPS_USED 16
+#else
+    #define TOON_SHADOW_TAPS_USED TOON_SHADOW_TAPS
+#endif
 
 // 黄金角で回すディスク。少ないタップでも偏りが出にくい。
 // 当初この最適化は Idol だけが持っていたが、T-340 で **Core 側へ逆輸入**して
@@ -120,14 +131,14 @@ half ToonSampleMainShadowHQ(float3 positionWS, float3 normalWS, float NdotL, flo
     float2 filterPhase = ToonDiskPhase(phi);
 
     UNITY_UNROLL
-    for (int i = 0; i < TOON_SHADOW_TAPS; i++)
+    for (int i = 0; i < TOON_SHADOW_TAPS_USED; i++)
     {
-        float2 o = ToonVogelDisk(i, TOON_SHADOW_TAPS, filterPhase) * texel * radius;
+        float2 o = ToonVogelDisk(i, TOON_SHADOW_TAPS_USED, filterPhase) * texel * radius;
         atten += SAMPLE_TEXTURE2D_SHADOW(_MainLightShadowmapTexture,
                                          sampler_LinearClampCompare,
                                          float3(coord.xy + o, coord.z));
     }
-    atten /= TOON_SHADOW_TAPS;
+    atten /= TOON_SHADOW_TAPS_USED;
 
     // ライト側の Shadow Strength を掛ける。URP の SampleShadowmap は必ずこれを
     // 通しており、省くと HQ を ON にした瞬間スライダが効かなくなる。
@@ -149,6 +160,37 @@ half ToonSampleMainShadowHQ(float3 positionWS, float3 normalWS, float NdotL, flo
     // 距離フェードは URP と同じ扱いにする。
     half fade = GetMainLightShadowFade(positionWS);
     return lerp(atten, 1.0h, fade);
+#endif
+}
+
+// ----------------------------------------------------------------------------
+//  追加光の影（硬い 1 タップ。T-418）
+//
+//  URP の AdditionalLightRealtimeShadow は主光源と同じソフトフィルタ（_SHADOWS_SOFT で
+//  最大 16 タップ）を追加光にも掛ける。ステージの追加光は数が多く、影の縁の柔らかさは
+//  主光源ほど目立たないので、ハードウェアの 2×2 比較 1 回だけにする。実測で 1 灯あたり
+//  200 命令超の削減。点光源の面選択・距離フェード・Shadow Strength は URP と同じ。
+// ----------------------------------------------------------------------------
+half ToonAdditionalLightShadowHard(int lightIndex, float3 positionWS, half3 lightDirection)
+{
+#if defined(ADDITIONAL_LIGHT_CALCULATE_SHADOWS)
+    half4 shadowParams = GetAdditionalLightShadowParams(lightIndex);
+    int slice = shadowParams.w;
+    if (slice < 0) return 1.0h;
+    UNITY_BRANCH
+    if (shadowParams.z) slice += CubeMapFaceID(-lightDirection);   // 点光源: 6 面のどれか
+    #if USE_STRUCTURED_BUFFER_FOR_LIGHT_DATA
+        float4 sc = mul(_AdditionalLightsWorldToShadow_SSBO[slice], float4(positionWS, 1.0));
+    #else
+        float4 sc = mul(_AdditionalLightsWorldToShadow[slice], float4(positionWS, 1.0));
+    #endif
+    sc.xyz /= sc.w;
+    half atten = SAMPLE_TEXTURE2D_SHADOW(_AdditionalLightsShadowmapTexture, sampler_LinearClampCompare, sc.xyz);
+    atten = LerpWhiteTo(atten, shadowParams.x);
+    atten = BEYOND_SHADOW_FAR(sc) ? 1.0h : atten;
+    return lerp(atten, 1.0h, GetAdditionalLightShadowFade(positionWS));
+#else
+    return 1.0h;
 #endif
 }
 

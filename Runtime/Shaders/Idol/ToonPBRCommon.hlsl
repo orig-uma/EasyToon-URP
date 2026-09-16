@@ -71,6 +71,7 @@ CBUFFER_START(UnityPerMaterial)
     // PBR
     float  _Metallic;
     float  _Smoothness;
+    float  _MaskAIsRoughness;
     float  _OcclusionStrength;
     float  _CavityStrength;
     float  _DirectOcclusion;
@@ -90,6 +91,7 @@ CBUFFER_START(UnityPerMaterial)
     float  _DiffuseWrap;
     float  _NPRMapOn;
     float  _NPRShadowOffsetStrength;
+    float  _Reflectance;
     float  _ReceiveShadowStrength;
     float  _ShadowAttenSoftness;
     float  _ShadowEdgeAA;
@@ -313,6 +315,8 @@ CBUFFER_END
 #define sampler_DetailNormalMap sampler_LinearRepeat
 #define sampler_MaskMap        sampler_LinearRepeat
 #define sampler_NPRMap         sampler_LinearRepeat
+#define sampler_FabricMap      sampler_LinearRepeat
+#define sampler_AnisotropyMap  sampler_LinearRepeat
 #define sampler_HairShiftMap   sampler_LinearRepeat
 #define sampler_EmissionMap    sampler_LinearRepeat
 #define sampler_BentNormalMap  sampler_LinearRepeat
@@ -344,8 +348,12 @@ TEXTURE2D(_DetailNormalMap);
 // MaskMap : R=Metallic  G=Occlusion  B=Thickness  A=Smoothness
 TEXTURE2D(_MaskMap);
 
-// NPRMap  : R=SpecMask   G=ShadowOffset  B=RimMask  A=RampIndex
+// NPRMap  : R=SpecMask   G=ShadowOffset  B=DetailMask  A=未使用（T-419）
 TEXTURE2D(_NPRMap);
+// FabricMap: R=Specular  G=Sheen  B=Clearcoat  A=Iridescence（T-419。白が中立）
+TEXTURE2D(_FabricMap);
+// AnisotropyMap: RG=織りの向き（接線空間、0..1 → -1..1） B=強さの倍率（glTF anisotropyTexture。T-419）
+TEXTURE2D(_AnisotropyMap);
 
 TEXTURE2D(_RampMap);
 TEXTURE2D(_FaceSDFMap);

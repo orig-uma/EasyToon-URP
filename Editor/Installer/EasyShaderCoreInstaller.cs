@@ -27,7 +27,7 @@ namespace Origuma.EasyToon.URP.Installer
         private const string CorePackageName = "com.origuma.easyshader-core";
         private const string CoreGitUrl = "https://github.com/orig-uma/EasyShaderCore-URP.git";
         // 動作検証済みバージョンにピン留めした自動インストール用 URL。
-        private const string CoreGitUrlPinned = CoreGitUrl + "#v0.3.3";
+        private const string CoreGitUrlPinned = CoreGitUrl + "#v0.3.4";
         // **必要最低バージョン。** これより古い Core が入っていると本体 Editor が
         // Core の新 API を参照してコンパイルできない。本体 Editor asmdef の
         // versionDefines は同じ下限（素の "x.y.z" が x.y.z 以上の意味）で、古い Core では本体を除外して

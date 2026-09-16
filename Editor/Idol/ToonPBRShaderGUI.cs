@@ -171,6 +171,7 @@ namespace ToonNPR.EditorTools
             DrawBase(e);
             DrawMaskMap(e);
             DrawNPRMap(e);
+            DrawFabricMap(e);
             DrawEmission(e);
 
             // 輪郭線は「キャラの基本の見た目」（マテリアルごとの恒久設定）で
@@ -366,9 +367,11 @@ namespace ToonNPR.EditorTools
                     SubHeader("Detail Map", "ディテールマップ（タトゥーやチーク等）");
                     P(e, "_DetailOn", "Detail On",
                         "Overlay layer with its own tiling - tattoos, blush prints, "
-                        + "fabric weave. RGB = colour, A = blend amount",
+                        + "fabric weave. RGB = colour, A = blend amount. The B channel of the "
+                        + "NPR Map masks where it applies (colour and normal)",
                         "独立したタイリングを持つ重ねレイヤー ── タトゥー・チークの印刷・"
-                        + "布地の織り目など。RGB = 色 / A = 合成率");
+                        + "布地の織り目など。RGB = 色 / A = 合成率。NPR Map の B で効かせる場所を"
+                        + "絞れます（色・ノーマルとも）");
                     if (IsOn("_DetailOn"))
                         using (new EditorGUI.IndentLevelScope())
                         {
@@ -419,6 +422,11 @@ namespace ToonNPR.EditorTools
                     P(e, "_MaskMap", "Mask Map", "Packed RGBA mask", "パック済みの RGBA マスク");
                     P(e, "_Metallic", "Metallic", "Scales the R channel", "R チャンネルを倍率で調整");
                     P(e, "_Smoothness", "Smoothness", "Scales the A channel", "A チャンネルを倍率で調整");
+                    P(e, "_MaskAIsRoughness", "Mask A Is Roughness",
+                        "On = the A channel holds Roughness (InstaMat / Substance default) and is inverted here. "
+                        + "Off = A is Smoothness",
+                        "ON = A が Roughness（InstaMat / Substance の標準出力）で、ここで反転して読みます。"
+                        + "OFF = A は Smoothness");
                     P(e, "_OcclusionStrength", "Occlusion Strength",
                         "How much G darkens the indirect light", "G が間接光をどれだけ落とすか");
                     P(e, "_DirectOcclusion", "Direct Occlusion",
@@ -439,8 +447,10 @@ namespace ToonNPR.EditorTools
                 if (!Section("nprmap", false, "NPR Map", "NPR マップ")) return;
                 using (new EditorGUI.IndentLevelScope())
                 {
-                    Note("R = Specular mask, G = Shadow offset, B = Rim mask, A = Ramp index.",
-                        "R = スペキュラマスク / G = 影のオフセット / B = リムマスク / A = ランプ番号。");
+                    Note("R = Specular mask, G = Shadow offset (0.5 = neutral), B = Detail mask "
+                        + "(where the Detail Map applies). A is unused.",
+                        "R = スペキュラマスク / G = 影のオフセット（0.5 が基準）/ B = ディテールマスク"
+                        + "（Detail Map を効かせる場所）。A は未使用。");
 
                     DrawToggleWithTexture(e, "_NPRMapOn", "_NPRMap");
                     if (IsOn("_NPRMapOn"))
@@ -448,6 +458,35 @@ namespace ToonNPR.EditorTools
                             P(e, "_NPRShadowOffsetStrength", "NPR Shadow Offset Strength",
                                 "How far G pushes the shadow boundary",
                                 "G が影の境界をどれだけずらすか");
+                }
+            }
+        }
+
+        // 衣装の PBR 拡張（T-419）。glTF の拡張と同じ並びなので InstaMat の Export Preset がそのまま書ける。
+        private void DrawFabricMap(MaterialEditor e)
+        {
+            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+            {
+                if (!Section("fabricmap", false, "Fabric Map", "ファブリックマップ")) return;
+                using (new EditorGUI.IndentLevelScope())
+                {
+                    Note("Per-pixel multipliers for the costume look, in glTF order: R = Specular "
+                        + "(dielectric reflectance), G = Sheen, B = Clearcoat, A = Iridescence. "
+                        + "White = material values unchanged. Sheen needs Surface Type Cloth; "
+                        + "Clearcoat / Iridescence need their strengths > 0 in the Effects tab.",
+                        "衣装の質感を場所ごとに変える倍率。並びは glTF と同じ: R = Specular（非金属の反射率）/ "
+                        + "G = Sheen / B = Clearcoat / A = Iridescence。白で材質値のまま。"
+                        + "Sheen は Surface Type が Cloth のとき、Clearcoat / Iridescence は Effects タブの"
+                        + "強さが 0 より大きいときだけ効きます。");
+
+                    EditorGUI.BeginChangeCheck();
+                    DrawToggleWithTexture(e, "_FabricMapOn", "_FabricMap");
+                    if (EditorGUI.EndChangeCheck()) ApplyKeywordsToTargets();
+                    P(e, "_Reflectance", "Reflectance",
+                        "Dielectric reflectance. f0 = 0.16 x value^2 (0.5 = 0.04, the old fixed value). "
+                        + "Cotton ~0.35, silk / satin ~0.55, enamel / vinyl ~0.7. Fabric Map R multiplies it",
+                        "非金属の反射率。f0 = 0.16 × 値²（0.5 で 0.04 = 従来の固定値）。"
+                        + "綿 0.35 / 絹・サテン 0.55 / エナメル・ビニール 0.7 あたり。Fabric Map の R が掛かります");
                 }
             }
         }
@@ -566,16 +605,16 @@ namespace ToonNPR.EditorTools
                             + "colour is blended in and its controls appear below",
                             "1 でランプだけが影の色を決めます。1 未満では HSV の影色が混ざり、"
                             + "その設定が下に出ます");
-                        // 多段ランプ（NPR.a で行選択）は外部テクスチャを挿したときだけの話。
+                        // 多段ランプ（Ramp Index Override で行選択）は外部テクスチャを挿したときだけの話。
                         if (e.target is Material rampMat && ToonPBRRampGenerator.FindAsset(rampMat) == null
                             && rampMat.HasTexture("_RampMap") && rampMat.GetTexture("_RampMap") != null)
                         {
                             P(e, "_RampRowCount", "Ramp Row Count",
                                 "How many ramps are stacked vertically in the texture",
                                 "テクスチャに縦へ何本のランプを並べてあるか");
-                            P(e, "_RampIndexOverride", "Ramp Index Override (-1 = use NPR.a)",
-                                "-1 picks the row per-pixel from the A channel of the NPR Map",
-                                "-1 で NPR マップの A から画素ごとに行を選びます");
+                            P(e, "_RampIndexOverride", "Ramp Index Override",
+                                "Which row of the ramp texture this material uses (-1 = first row)",
+                                "この材質が使うランプの行（-1 で先頭行）");
                         }
                         if (GetFloat("_RampStrength") < 1f)
                         {
@@ -770,15 +809,38 @@ namespace ToonNPR.EditorTools
                             }
                             P(e, "_HQShadowSoftness", "HQ Shadow Softness (texels)",
                                 "Filter radius = 1 + value x 6 shadow-map texels (not metres). "
-                                + "16 taps are fixed, so above ~1.5 the disk gets sparse and "
-                                + "dither grain starts to show - use it when you want abstraction "
-                                + "more than cleanliness. Lowering the shadow-map resolution widens "
-                                + "the world-space penumbra for free at the same value",
+                                + "With 16 taps, above ~1.5 the disk gets sparse and dither grain "
+                                + "starts to show - raise HQ Shadow Taps or accept the grain. Lowering "
+                                + "the shadow-map resolution widens the world-space penumbra for free",
                                 "フィルタ半径 = 1 + 値 × 6 テクセル（メートルではありません）。"
-                                + "タップは 16 固定なので、1.5 あたりから粒（ディザのノイズ）が"
-                                + "見え始めます ── きれいさより抽象化を優先したいときの領域。"
+                                + "16 タップだと 1.5 あたりから粒（ディザのノイズ）が見え始めます ── "
+                                + "HQ Shadow Taps を上げるか、粒を許容するか。"
                                 + "シャドウマップの解像度を下げれば同じ値でもワールドでの半影は"
                                 + "広がります（タダで柔らかくなる）");
+                            // 自前 Popup（Debug View と同じ形）。値 0/1/2 = 8/16/32 タップ（KeywordEnum の並び）
+                            var tapsProp = Prop("_HQShadowTaps");
+                            if (tapsProp != null)
+                            {
+                                int tapsIdx = Mathf.Clamp(Mathf.RoundToInt(tapsProp.floatValue), 0, 2);
+                                EditorGUI.BeginChangeCheck();
+                                EditorGUI.showMixedValue = tapsProp.hasMixedValue;
+                                int tapsNext = EditorGUILayout.Popup(
+                                    _kit.VariantLabel("HQ Shadow Taps",
+                                        "Shadow-map fetches per pixel. 16 = default. 32 keeps the disk dense "
+                                        + "at high Softness (less grain, 2x fetches). 8 is the cheapest but one "
+                                        + "tap weighs 0.125 - wider than the default transition window, so "
+                                        + "the shadow can flip as the light turns; only for hard shadows",
+                                        "1 画素あたりのシャドウマップ読み。16 が既定。32 は Softness を上げても"
+                                        + "粒が出にくい（読みは 2 倍）。8 は一番軽いが 1 タップの重みが 0.125 で"
+                                        + "既定の遷移窓より太く、ライトを回すと影が反転しうる ── 硬い影向け"),
+                                    tapsIdx, s_TapNames);
+                                EditorGUI.showMixedValue = false;
+                                if (EditorGUI.EndChangeCheck())
+                                {
+                                    tapsProp.floatValue = tapsNext;
+                                    ApplyKeywordsToTargets();
+                                }
+                            }
                             P(e, "_ReceiverNormalBias", "Receiver Normal Bias", null, null);
                         }
                 }
@@ -929,6 +991,17 @@ namespace ToonNPR.EditorTools
                     P(e, "_ClothTangentSwap", "Cloth Tangent Swap",
                         "Flip when the sheen runs across the weave instead of along it",
                         "光沢が織りと直交して出るときに切り替えます");
+                    // 織りの向きを場所ごとに（T-419）。glTF の anisotropyTexture と同じ並び
+                    EditorGUI.BeginChangeCheck();
+                    DrawToggleWithTexture(e, "_AnisotropyMapOn", "_AnisotropyMap");
+                    if (EditorGUI.EndChangeCheck()) ApplyKeywordsToTargets();
+                    if (IsOn("_AnisotropyMapOn"))
+                        Note("RG = weave direction in tangent space (0..1 -> -1..1), B = strength multiplier "
+                            + "for Cloth Anisotropy. Same layout as glTF anisotropyTexture. (0.5, 0.5) keeps "
+                            + "the mesh tangent. Hair uses its own baked Hair Flow Map.",
+                            "RG = 織りの向き（接空間、0..1 → -1..1）/ B = Cloth Anisotropy に掛かる強さ。"
+                            + "glTF の anisotropyTexture と同じ並び。(0.5, 0.5) はメッシュの接線のまま。"
+                            + "髪は焼いた Hair Flow Map（別形式）を使います。");
                 }
             }
         }
@@ -1222,10 +1295,8 @@ namespace ToonNPR.EditorTools
 
                     P(e, "_RimColor", "Rim Color", null, null);
                     P(e, "_RimIntensity", "Rim Intensity",
-                        "Also scaled by the B channel of the NPR Map, so you can mask it per region. "
-                        + "Scales with light energy (stage lighting colours the edge) and appears only on the lit side",
-                        "NPR マップの B でも絞られるので、部位ごとにマスクできます。"
-                        + "ライトのエネルギーに比例し（ステージ照明の色が縁に乗る）、光が回り込んだ側だけに出ます");
+                        "Scales with light energy (stage lighting colours the edge) and appears only on the lit side",
+                        "ライトのエネルギーに比例し（ステージ照明の色が縁に乗る）、光が回り込んだ側だけに出ます");
                     P(e, "_RimFresnelThickness", "Rim Fresnel Thickness",
                         "0 razor-thin (exponent 12), 1 broad (0.5). Same mapping as Doll",
                         "0 で極細（指数 12）、1 で極太（0.5）。Doll と同じ写像です");
@@ -1449,10 +1520,10 @@ namespace ToonNPR.EditorTools
 
                     SubHeader("Glitter", "グリッター");
                     P(e, "_GlitterIntensity", "Glitter Intensity",
-                        "0 skips the whole feature (uniform branch - no variant, no fetch). "
+                        "0 compiles the whole feature out (keyword _GLITTER_ON follows this value). "
                         + "Flash strength of each sequin",
-                        "0 で機能ごとスキップします（一様分岐 ── バリアント非増・"
-                        + "フェッチも無し）。粒のきらめきの強さです");
+                        "0 で機能ごとコンパイルから外れます（キーワード _GLITTER_ON がこの値に追従）。"
+                        + "粒のきらめきの強さです");
                     if (IsPositive("_GlitterIntensity"))
                     {
                         var tex = Prop("_GlitterMask");
@@ -1857,6 +1928,9 @@ namespace ToonNPR.EditorTools
             }
         }
 
+        // HQ Shadow Taps の表示名（KeywordEnum(8, 16, 32) の並びと一致させること）
+        private static readonly string[] s_TapNames = { "8", "16", "32" };
+
         private static readonly string[] s_DebugNames =
         {
             "Off", "Albedo", "Normal", "ShadeNormal", "BentNormal", "Lit", "ShadowAtten",
@@ -1941,6 +2015,17 @@ namespace ToonNPR.EditorTools
             SetKeyword(m, "_ALPHATEST_ON",           IsOn(m, "_AlphaClipOn"));
             SetKeyword(m, "_HQ_SHADOW_ON",           IsOn(m, "_HQShadowOn"));
             SetKeyword(m, "_OUTLINE_ON",             IsOn(m, "_OutlineOn"));
+            SetKeyword(m, "_FABRICMAP_ON",           IsOn(m, "_FabricMapOn"));
+            SetKeyword(m, "_ANISOMAP_ON",            IsOn(m, "_AnisotropyMapOn"));
+            // Glitter はトグルを持たず Intensity > 0 に追従（T-418）。設定は静的なのでキーワードで切る
+            SetKeyword(m, "_GLITTER_ON",             Fl(m, "_GlitterIntensity") > 0f);
+            SetKeyword(m, "_STOCKING_ON",            Fl(m, "_StockingIntensity") > 0f);
+            SetKeyword(m, "_MATCAP_ON",              Fl(m, "_MatCapIntensity") > 0f);
+            SetKeyword(m, "_DEBUG_ON",               Fl(m, "_DebugMode") > 0.5f);
+            int taps = Mathf.RoundToInt(Fl(m, "_HQShadowTaps"));   // KeywordEnum(8, 16, 32) の並び
+            SetKeyword(m, "_HQSHADOWTAPS_8",  taps == 0);
+            SetKeyword(m, "_HQSHADOWTAPS_16", taps == 1);
+            SetKeyword(m, "_HQSHADOWTAPS_32", taps == 2);
 
             int type = Mathf.RoundToInt(Fl(m, "_SurfaceType"));
             SetKeyword(m, "_SURFACETYPE_DEFAULT", type == (int)ToonSurfaceType.Default);
