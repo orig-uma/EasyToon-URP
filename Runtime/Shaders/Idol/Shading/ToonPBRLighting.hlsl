@@ -53,6 +53,19 @@ float3 ToonLightEnergy(Light light)
     return light.color * light.distanceAttenuation;
 }
 
+// 肩の柔らかい輝度上限（T-421）。色相は保ち、輝度だけを丸める。
+// knee = 上限の 75% までは素通し、そこから上限へ指数で漸近する。硬いクランプだと
+// 上限に当たった面が一様に塗り潰されるが、これなら階調が残る。
+float3 ToonSoftLuminanceLimit(float3 col, float limit)
+{
+    float lum   = max(Luminance601(col), 1e-4);
+    float knee  = limit * 0.75;
+    float range = max(limit - knee, 1e-4);
+    float over  = max(lum - knee, 0.0);
+    float outL  = min(lum, knee) + range * (1.0 - exp(-over / range));
+    return col * (outL / lum);
+}
+
 // 白飛び防止（T-350）。**拡散・透過・リムにだけ**上限を掛ける ── 鏡面は
 // 「強い光源ほど鋭く光る」のが正しく、抑えると金属や瞳が死ぬ。
 // Doll は伝達関数を通した後の拡散光を抑えるが、こちらは**光源側**を
@@ -62,8 +75,21 @@ float3 ToonDiffuseEnergy(float3 lightEnergy)
 {
     float3 e = lightEnergy;
     UNITY_BRANCH
+    // 硬いクランプから柔らかい肩へ（T-421）。上限値の意味は同じで、上限の 75% までは素通し。
+    // 他の 4 つの上限と挙動を揃える（硬いと上限に当たった面が一様に塗り潰される）。
     if (_DiffuseLightLimit > 0.0)
-        e = ApplyLuminanceClamp(lightEnergy, _DiffuseLightLimit);
+        e = ToonSoftLuminanceLimit(lightEnergy, _DiffuseLightLimit);
+    return e;
+}
+
+// 鏡面・sheen・コートに使う光のエネルギー。Specular Light Limit で 1 灯あたりを丸める（T-421）。
+// 拡散と別にするのは、鏡面は強い光ほど鋭く光るのが正しく、上限を別に持ちたいため。
+float3 ToonSpecularEnergy(float3 lightEnergy)
+{
+    float3 e = lightEnergy;
+    UNITY_BRANCH
+    if (_SpecularLightLimit > 0.0)
+        e = ToonSoftLuminanceLimit(lightEnergy, _SpecularLightLimit);
     return e;
 }
 
@@ -406,6 +432,8 @@ if (_UseRampMap > 0.5)
     float Vc = ToonV_Ashikhmin(NdotV, NdotLs);
 
     float3 sheenColor = _SheenColor.rgb * _SheenIntensity * s.sheenMask;   // Fabric Map の G（T-419）
+    // 金属部は sheen を反射色（アルベド）で染める（T-420。ラメ・金糸）。0 で白のまま
+    sheenColor *= lerp(1.0, s.albedo, s.metallic * _SheenMetalTint);
 
     // **sheen が持っていくぶん、下地を縮めてから足す。** 縮めないと
     // 布だけエネルギーが増える。既定は 0（従来どおり足すだけ）で、
@@ -479,9 +507,10 @@ if (_UseRampMap > 0.5)
 
     ToonLightTerms t = (ToonLightTerms)0;
     t.diffuse  = (diffuse * directAO + transmission) * ToonDiffuseEnergy(lightEnergy);
-    t.specular = specular  * lightEnergy;
-    t.sheen    = sheenTerm * lightEnergy;
-    t.coat     = coat      * lightEnergy;
+    float3 specEnergy = ToonSpecularEnergy(lightEnergy);
+    t.specular = specular  * specEnergy;
+    t.sheen    = sheenTerm * specEnergy;
+    t.coat     = coat      * specEnergy;
     // リムもこのライトの成分。形（rimShape）は視線だけで決まり、どの光が縁を照らすかは
     // ライトごと（T-351）。落ち影の反映もここで済む。
     t.rim      = ToonRimLight(rimShape, c, light.direction, ToonDiffuseEnergy(lightEnergy), castShadow);

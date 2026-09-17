@@ -4,7 +4,7 @@
 
 見積もりの目安: **S** = 1ファイル内で完結 / **M** = 複数ファイル + 新規クラス / **L** = Renderer Feature など仕組みの追加
 
-**この文書は 411 項目まで伸びた。着手先を探すときは以下だけ見れば足りる。**
+**この文書は 416 項目まで伸びた。着手先を探すときは以下だけ見れば足りる。**
 実装済みの項目は経緯の記録であって、順に読む必要は無い。
 
 **サマリは必ず更新すること。** 一度「99 項目」「プリセットは T-109」と書いたまま
@@ -76,7 +76,7 @@ python check.py --full       # 約 3 分。キーワード全組（Idol 180 / Ce
 検査の規模 ── 静的検査（E000-E014 / W101-W111 の 26 コード）・実コンパイル（56 組）・
 値の検算（39 種）・自己診断（**91 項目 / カバー率 72 検査**）。
 
-バリアントは **ForwardLit は feature 3,840 × system 32,768**。
+バリアントは **ForwardLit は feature 7,680 × system 32,768**。
 `param_check` がここの数字と実装を毎回突き合わせるので、
 **キーワードを足したらここも直る**（直さないと診断が赤くなる）。
 
@@ -1564,6 +1564,62 @@ Animation / Timeline から Renderer のマテリアルプロパティとして
 | ~~要判断~~ | ~~**2影**（`_Shadow2*`）~~ | **見送りで確定**（利用者判断）。Ramp Override が機能的に上位互換（N 段・色も自由）で、専用プロパティは操作が楽になるだけ ── プロパティを脂やさない方を取った |
 | 低 | **グレイン** | 手続き的に作れば Blue Noise 不要。3D ライブの遠景では潰れやすい |
 | 低 | 小さなオプション欠け | クリアコートのマスク・反射強度 / 鏡面の f0 直接指定 / 顔 SDF とシャドウマップの混合率 / カットアウト時の影バイアス / 間接光の Tint |
+
+### T-424 Baked Map → Geometry Map（外部で作ったマップも受ける建付け）　[S]
+
+**状況（実装済み）** ── 利用者「BakedMap じゃなくて別の名前にして、外部で作成したマップも受け入れる建付けに」。
+中身は形状由来のグレー（Cavity / Curvature / AO）で、Substance でいう Mesh Maps と同じもの。規約も同じ
+（Curvature 0.5 = 平坦・凸が明るい、AO / Cavity は白 = 遮蔽なし）なので、名前から「Unity で焼いたもの」という
+限定を外した。候補は Mesh Map（Mask Map と字面が近く取り違える）/ Shape Map / Geometry Map で、Geometry Map に。
+GUI は Effects タブの Baked Maps（法線系のベイク）から基本タブの独立節へ（Mask / NPR / Fabric と同じ並び）。
+SETUP の書き出し表と IdolMapTools（テンプレートとパッカー）に `_Geometry` を追加。
+
+### T-423 個別の Cavity Map / Curvature Map を廃止（Geometry Map に一本化）　[S]
+
+**状況（実装済み）** ── 利用者「互換性を失ってよいので従来のキャビティと曲率のマップはなくしませんか。
+命令数もレジスタも減りますよね」。減る: Geometry Map OFF の変種から Cavity と曲率のフェッチ＋分岐が
+コードごと消える（PC 相当 1,727 / 41 → 1,707 / 40、テクスチャ 24 → 22）。効果は小さいが、供給源が 1 つに
+なって GUI と検査と Migrator が単純になる方が大きい。`_CavityMap` / `_CurvatureMap` を shader・CBUFFER 周り・
+GUI・DropDeadWork・SetupCheck・param_check（フェッチ見積もり・dead gate）・self_test から外した。
+**移行**: 材質ファイルには旧プロパティの参照が残る（m_TexEnvs）ので、`LegacyTexPath`（SerializedObject で
+直接読む）で拾って詰める。`Tools > Idol > Cavity・Curvature を Geometry Map へ移行` が全 Idol 材質を一括処理。
+Migrator（Doll / Cel → Idol）は移行元の 3 枚を `PackGeometryMapFromTextures` で詰める ── これまで「バイナリを
+生成しない方針」で AO は移せないと注記するだけだったが、Baking パネルが PNG を書く以上その縛りは無い。
+
+### T-422 Geometry Map（R Cavity / G Curvature / B AO）と Occlusion Source　[M]
+
+**状況（実装済み・要評価）** ── 利用者「ベイクするマップを 1 枚にまとめるのは悪手か。Cavity と Curvature と
+AO あたりはまとめてもよいかも。AO は参照先を切り替えるトグルを付けて、ベイクしたものと Mask Map の
+使いたい方を使う形は避けた方がよいか」。どちらも良い方向: 3 つとも 1 チャンネルのグレーで同じ UV・
+解像度・sRGB OFF。`_GEOMETRYMAP_ON` の間は `_CavityMap` / `_CurvatureMap` を読まない（フェッチ 2 → 1）。
+中立が R 1 / G 0.5 / B 1 で 1 色の既定テクスチャにできないのでトグルで切るが、効きは各チャンネルの
+ノブのまま（利用者確認「個別に無効化できる状態か」→ できる）。`Occlusion Source` は Mask G / Geometry B /
+Both。InstaMAT 由来の Mask Map をベイクが上書きしない構造になる。**AO は従来「保存のみ・Mask G へ
+手で合成」だったが、Baked の B で初めて自動割り当てになる。** パネルは Cavity / Curvature / AO を
+焼くたびに `PackGeometryMap`（材質の `_CavityMap` / `_CurvatureMap` と Baked フォルダの `*_AO.png` から
+`*_Geometry.png` を作って割り当て）。Core のベイカーは触っていない。
+
+### T-421 白飛び対策の 4 段（アルベド / 追加光の合計 / 鏡面 / 最終出力）　[S]
+
+**状況（実装済み・要評価）** ── 利用者「メインライト、AdditionalLight、アルベド、Specular などで
+白飛び対策を入れたい」。既存は `Diffuse Light Limit`（拡散・透過・リムの 1 灯あたり、硬いクランプ）と
+`Additional Light Blend Mode`（Max）だけで、白い衣装のアルベド・追加光の重なり・鏡面・最終出力に
+守りが無かった。`ToonSoftLuminanceLimit`（色相保持、上限の 75% から指数で漸近）を足し、
+`Albedo Brightness Limit` / `Additional Light Total Limit` / `Specular Light Limit` /
+`Output Luminance Limit` の 4 つに使う。鏡面は `ToonSpecularEnergy` として拡散と別の上限を持つ
+（鏡面は強い光ほど鋭く光るのが正しいので、拡散と同じ値で切らない）。最終出力は発光の手前
+（Bloom 用の HDR を残す）。**設計の整理（利用者「慣習的に、適切なノブの分離で」）**: 光が足される
+場所に沿って 入力（Albedo）→ 1 灯ごと（Diffuse / Specular）→ 合成（Blend Mode / Add Total）→
+出力（Output = 保険）。主光源と追加光で 1 灯ごとの上限は分けない（主光源は 1 灯、追加光は合計で守る）。
+`Diffuse Light Limit` も柔らかい肩に揃えた。**既定は 1 灯ごとの 2 つだけ**（Diffuse 1.2 / Specular 4）、
+他は OFF ── アルベドは材質の作り方、合計と出力は照明設計の問題で、既定で掛けると原因が見えなくなる。
+
+### T-420 金属の明度と sheen の金属染め　[S]
+
+**状況（実装済み・要評価）** ── 利用者「Metallic で明度が落ち込む、Sheen に Metallic が乗らない」。
+金属は拡散 0 で、映り込みの弱いステージでは沈む → `Metal Diffuse Retain`（拡散を一部残す）。
+sheen の色は材質値だけで金属でも白 → `Sheen Metal Tint`（金属部をアルベドで染める。エネルギー保存の
+縮小も同じ色）。既定は 0 = 従来。案: Retain 0.25 / Tint 1。
 
 ### T-419 衣装の PBR 表現を充実させるマップ構成（第 1 段: NPR Map の縮小と Detail Mask）　[L]
 

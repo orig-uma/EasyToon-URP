@@ -287,10 +287,8 @@ namespace ToonNPR.EditorTools
             new Rule(Kind.Tex,   "_BentNormalMap",     "_BentNormalMap"),
             new Rule(Kind.Number,"_BentNormalStrength","_BentNormalOn",
                      v => v > 0.0f ? 1.0f : 0.0f, "強度をトグルへ畳んだ"),
-            new Rule(Kind.Tex,   "_CavityMap",         "_CavityMap"),
             new Rule(Kind.Number,"_CavityStrength",    "_CavityStrength",
                      v => Clamp(v, 0.0f, 1.0f)),
-            new Rule(Kind.Tex,   "_CurvatureMap",      "_CurvatureMap"),
             // Doll の Strength（0..1 の混合率）は Idol では Influence（境界幅の倍率）。
             // 0 なら 0、使っていれば 1 に畳む（T-381 でマップが唯一の供給源になった）。
             new Rule(Kind.Number,"_CurvatureStrength", "_CurvatureSoftness",
@@ -525,13 +523,24 @@ namespace ToonNPR.EditorTools
                 }
                 else
                 {
-                    rep.Notes.Add("**_OcclusionMap が割り当ててある。** ToonPBR は AO を "
-                                + "_MaskMap にパックして読むので、そのままでは移せない。"
-                                + "AO を _MaskMap の G へ詰めたマップを焼くか、"
-                                + "上の「AO を _MaskMap に流用する」を使うこと");
+                    rep.Notes.Add("_OcclusionMap は Geometry Map の B へ詰める（T-423。Occlusion Source = Geometry B）");
                 }
             }
             // lint:foreign-end
+
+            // **Cavity / Curvature は Idol では Geometry Map（R / G）にまとめてある（T-423）。**
+            // 個別のスロットが無いので、移行元のテクスチャをここで控えて、差し替えの後に 1 枚へ詰める。
+            // AO を _MaskMap に流用しない場合は、AO も同じ 1 枚の B に入れる（以前は移せなかった）。
+            // lint:foreign-begin  _CavityMap / _CurvatureMap は移行元の名前
+            var srcCavity    = mat.HasProperty("_CavityMap")    ? mat.GetTexture("_CavityMap")    : null;
+            var srcCurvature = mat.HasProperty("_CurvatureMap") ? mat.GetTexture("_CurvatureMap") : null;
+            // lint:foreign-end
+            var srcAo = _reuseAoAsMask ? null : aoTex;
+            if (srcCavity != null || srcCurvature != null || srcAo != null)
+                rep.Notes.Add("Cavity / Curvature"
+                            + (srcAo != null ? " / AO" : "")
+                            + " を Geometry Map（R / G / B）へ詰める"
+                            + (srcAo != null ? "。Occlusion Source は Geometry B にする" : ""));
 
             if (!apply) return rep;
 
@@ -604,6 +613,10 @@ namespace ToonNPR.EditorTools
                                 + "（0 のままだと _SpecularTint が効かない）");
                 }
             }
+
+            // Geometry Map へ詰める（Occlusion Source は AO を入れたときだけ Geometry B = 1）
+            if (srcCavity != null || srcCurvature != null || srcAo != null)
+                ToonPBRBakingPanel.PackGeometryMapFromTextures(mat, srcCavity, srcCurvature, srcAo, 1f);
 
             mat.SetFloat("_SurfaceType", surface);
             ApplyKeywords(mat, surface);
@@ -688,6 +701,7 @@ namespace ToonNPR.EditorTools
             SetToggle(mat, "_HQShadowOn",      "_HQ_SHADOW_ON");
             SetToggle(mat, "_OutlineOn",       "_OUTLINE_ON");
             SetToggle(mat, "_FabricMapOn",     "_FABRICMAP_ON");
+            SetToggle(mat, "_GeometryMapOn",      "_GEOMETRYMAP_ON");
             SetToggle(mat, "_AnisotropyMapOn", "_ANISOMAP_ON");
             // 値に追従するキーワード（T-418）: トグルを持たず、強度 > 0 で立つ
             SetFollow(mat, "_GlitterIntensity",  "_GLITTER_ON",  0f);

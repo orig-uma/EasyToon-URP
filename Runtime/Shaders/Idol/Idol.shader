@@ -44,7 +44,17 @@ Shader "Origuma/EasyToon_URP/Idol"
         _MaskMap ("Mask Map", 2D) = "white" {}
         // 高精細から焼いた微細遮蔽（窪み）。法線マップが無いモデルでは
         // これが唯一のディテール源になる。R チャンネルのみ。
-        _CavityMap ("  Cavity Map (R)", 2D) = "white" {}
+        // 形状由来のグレー 3 種を 1 枚に（T-422 / T-424）: R Cavity / G Curvature / B Ambient Occlusion。
+        // Unity で焼いても、InstaMAT / Substance の Mesh Maps を詰めてもよい（Curvature は 0.5 が平坦・凸が明るい、
+        // Cavity と AO は白が遮蔽なし ── 業界標準と同じ規約）。
+        // 中立が R 1 / G 0.5 / B 1 と揃わないので既定テクスチャに頼らずトグルで切る。
+        // 個別の Cavity Map / Curvature Map は T-423 で廃止した（Cavity と Curvature の供給源はこれだけ）。
+        // 各チャンネルの効きは従来どおり Cavity Strength / Curvature Softness / Occlusion Strength。
+        [Toggle(_GEOMETRYMAP_ON)] _GeometryMapOn ("Geometry Map On", Float) = 0
+        _GeometryMap ("  Geometry Map (R=Cavity G=Curvature B=AO)", 2D) = "white" {}
+        // 遮蔽の出どころ。Mask G = InstaMAT などで作った細かい遮蔽 / Geometry B = Unity で焼いた大きな遮蔽 /
+        // Both = 掛け合わせ（性質が違うので一番良い絵になることが多い）。Geometry Map On のときだけ効く
+        [Enum(Mask G, 0, Geometry B, 1, Both, 2)] _OcclusionSource ("  Occlusion Source", Float) = 0
         _CavityStrength ("  Cavity Strength", Range(0,1)) = 0
         _Metallic ("  Metallic", Range(0,1)) = 0
         _Smoothness ("  Smoothness", Range(0,1)) = 0.25
@@ -77,7 +87,6 @@ Shader "Origuma/EasyToon_URP/Idol"
         // 曲率の供給源は焼いた Curvature Map だけ（T-381）。画面微分の推定は
         // 三角形ごとに一定で陰に面が並ぶため撤去した。0.5 が平坦＝無変化。
         _CurvatureSoftness ("  Curvature Softness", Range(0,4)) = 0
-        _CurvatureMap ("  Curvature Map (R)", 2D) = "gray" {}
         // 陰ランプ専用の平滑法線。鏡面やリムには影響しない。
         [Normal] _ShadeNormalMap ("  Shade Normal Map", 2D) = "bump" {}
         _ShadeNormalStrength ("  Shade Normal Strength", Range(0,1)) = 0
@@ -142,6 +151,9 @@ Shader "Origuma/EasyToon_URP/Idol"
         // 既定 1 = 従来と完全一致。
         _MetalSpecularBoost ("  Metal Specular Boost", Range(0,4)) = 1
         _MetalEnvBoost ("  Metal Env Boost", Range(0,4)) = 1
+        // 金属で拡散を残す量（T-420）。物理では金属の拡散は 0 で、映り込みが暗いステージでは
+        // 金属が沈む。トゥーンでは拡散の陰影を少し残す方が絵として読める。0 = 物理どおり。
+        _MetalDiffuseRetain ("  Metal Diffuse Retain", Range(0,1)) = 0
         // 鏡面が持ち去ったエネルギーを拡散から引く。**既定 0（従来どおり）。**
         // 間接光側（FR-74）は影響が 1% 未満なので常時入れているが、
         // 直接光は縁で最大 23% と**見える量**なので、入れるかどうかは絵の判断。
@@ -226,6 +238,8 @@ Shader "Origuma/EasyToon_URP/Idol"
         _SheenRoughness ("  Sheen Roughness", Range(0.02,1)) = 0.3
         _SheenIntensity ("  Sheen Intensity", Range(0,4)) = 0.6
         _SheenEnergyConservation ("  Sheen Energy Conservation", Range(0,1)) = 0
+        // 金属部の sheen をアルベド（金属の反射色）で染める量（T-420）。ラメ・金糸の布向け。0 = 白のまま
+        _SheenMetalTint ("  Sheen Metal Tint", Range(0,1)) = 0
         // 0.9 止まりなのは、1.0 だとハーフベクトルが織り方向と一致したとき
         // 縮めた結果が 0 ベクトルになって normalize が壊れるため。
         _ClothAnisotropy ("  Cloth Anisotropy", Range(0,0.9)) = 0
@@ -417,10 +431,21 @@ Shader "Origuma/EasyToon_URP/Idol"
         _LightSaturationLimit ("  Light Saturation Limit", Range(0,1)) = 1
         _LightMinBrightness ("  Light Min Brightness", Range(0,1)) = 0
         // 1 灯あたりの拡散光の輝度上限。**0 = OFF**（分岐ごとスキップ）。
-        _DiffuseLightLimit ("Diffuse Light Limit (0 = Off)", Range(0,5)) = 0
+        // 既定は「1 灯ごと」の 2 つだけ入れる（拡散 1.2 / 鏡面 4。T-421）。アルベドは材質の作り方、
+        // 合計と出力はステージ照明の設計の問題なので、既定で掛けると原因が見えなくなる。
+        _DiffuseLightLimit ("Diffuse Light Limit (0 = Off)", Range(0,5)) = 1.2
         // 追加光源の合成。Add = 物理的（重なると白飛びする）/ Max = アニメ向け
         // （最も強い 1 灯だけが効くので彩度が残る）。既定は従来どおり Add。
         [Enum(Add, 0, Max, 1)] _AdditionalLightBlendMode ("Additional Light Blend Mode", Float) = 0
+        // 白飛び対策の残り 4 段（T-421）。どれも色相を保ったまま輝度だけを丸める（肩の柔らかい上限）。
+        // アルベド: 白い衣装（1.0 近い）は 1 灯で飛ぶ。最大成分をここまでに抑える。1 = OFF
+        _AlbedoBrightnessLimit ("Albedo Brightness Limit (1 = Off)", Range(0.5,1)) = 1
+        // 追加光の合計の輝度上限。Add 合成で何灯も重なったぶんを丸める。0 = OFF
+        _AdditionalLightTotalLimit ("Additional Light Total Limit (0 = Off)", Range(0,5)) = 0
+        // 鏡面・sheen・クリアコートに使う 1 灯あたりの光の輝度上限。0 = OFF
+        _SpecularLightLimit ("Specular Light Limit (0 = Off)", Range(0,10)) = 4
+        // 最終出力（直接光＋間接光。発光の手前）の輝度上限。最後の保険。0 = OFF
+        _OutputLuminanceLimit ("Output Luminance Limit (0 = Off)", Range(0,5)) = 0
 
         [Space(10)][Header(Render State)][Space(4)]
         // 描画モード（不透明 / カットアウト / 半透明。T-358）。
@@ -513,6 +538,7 @@ Shader "Origuma/EasyToon_URP/Idol"
             // キーワードは Glitter Intensity > 0 に追従する（GUI の ValidateMaterial が立てる）。
             #pragma shader_feature_local_fragment _GLITTER_ON
             #pragma shader_feature_local_fragment _FABRICMAP_ON
+            #pragma shader_feature_local_fragment _GEOMETRYMAP_ON
             #pragma shader_feature_local_fragment _ANISOMAP_ON
             // 同じ理由でキーワードに（T-418）。それぞれ Stocking Intensity > 0 / MatCap Intensity > 0 /
             // Debug Mode > 0 に追従する（GUI の ValidateMaterial が立てる）。
@@ -640,6 +666,7 @@ Shader "Origuma/EasyToon_URP/Idol"
             // キーワードは Glitter Intensity > 0 に追従する（GUI の ValidateMaterial が立てる）。
             #pragma shader_feature_local_fragment _GLITTER_ON
             #pragma shader_feature_local_fragment _FABRICMAP_ON
+            #pragma shader_feature_local_fragment _GEOMETRYMAP_ON
             #pragma shader_feature_local_fragment _ANISOMAP_ON
             // 同じ理由でキーワードに（T-418）。それぞれ Stocking Intensity > 0 / MatCap Intensity > 0 /
             // Debug Mode > 0 に追従する（GUI の ValidateMaterial が立てる）。

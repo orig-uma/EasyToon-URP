@@ -88,6 +88,17 @@ Shade Normal / Hair Flow / Face SDF / Bent Normal / Curvature / SSS / Cavity / A
 
 白が中立（材質値のまま）。並びは glTF の拡張（KHR_materials_specular / sheen / clearcoat / iridescence）と同じなので、InstaMat などの書き出しプリセットをそのまま使えます。
 
+### GeometryMap（形状由来のグレー 3 種を 1 枚に / **sRGB OFF**）
+
+| ch | 用途 |
+|---|---|
+| R | Cavity（窪みの微細遮蔽。1 = 遮蔽なし） |
+| G | Curvature（0.5 = 平坦、> 0.5 凸、< 0.5 凹） |
+| B | Ambient Occlusion（1 = 遮蔽なし） |
+| A | 未使用 |
+
+`Geometry Map On` で読む。Cavity と Curvature の供給源はこれだけ（個別の Cavity Map / Curvature Map は廃止）。Baking タブで Cavity / Curvature / AO を焼くと自動で詰まる。**外部で作ったマップも使える** ── InstaMAT / Substance の Mesh Maps（Curvature / Ambient Occlusion）と規約が同じ（Curvature は 0.5 が平坦で凸が明るい、AO は白が遮蔽なし）なので、チャンネルに詰めるだけでよい。遮蔽は `Occlusion Source` で Mask Map の G（作り込んだ細かい遮蔽）と Baked の B（焼いた大きな遮蔽）のどちらか、または掛け合わせを選ぶ。各チャンネルの効きは `Cavity Strength` / `Curvature Softness` / `Occlusion Strength` のまま。
+
 ### AnisotropyMap（布の織りの向き / **sRGB OFF** / Surface Type が Cloth のとき）
 
 | ch | 用途 |
@@ -282,7 +293,7 @@ Rim Receive Shadow     1.0      ← 落ち影の中では消す（NdotL の陰�
 |---|---|
 | 金属が真っ黒 | Reflection Probe が無い／未 Bake |
 | リムが出ない | 主光源が被写体の向こう側に無い（リムは光が回り込んだ側だけに出る）／`Rim Intensity` が 0 |
-| 影の境界が全部同じ硬さ | Curvature Softness が 0、または Curvature Map を焼いていない |
+| 影の境界が全部同じ硬さ | Curvature Softness が 0、または Geometry Map（G = Curvature）を焼いていない |
 | **影がまったく出ない・のっぺり平ら** | `Ambient Intensity` が高すぎる。環境光は影の中にも一律で乗るので、主光源と同量まで上げると影が埋まる。**`Shadow Ambient Intensity` を 0.5 前後に下げる**のが正攻法（全体の明るさを保ったまま影だけ沈む） |
 | 影色が濁る | Shadow Saturation を上げすぎ。1.2〜1.5 が実用域 |
 | 顔の影が反転 | Face SDF Flip U、または Binder の軸設定 |

@@ -172,6 +172,7 @@ namespace ToonNPR.EditorTools
             DrawMaskMap(e);
             DrawNPRMap(e);
             DrawFabricMap(e);
+            DrawGeometryMap(e);
             DrawEmission(e);
 
             // 輪郭線は「キャラの基本の見た目」（マテリアルごとの恒久設定）で
@@ -435,6 +436,9 @@ namespace ToonNPR.EditorTools
                     P(e, "_MicroShadow", "Micro Shadow",
                         "Occlusion-driven shadowing on grazing direct light",
                         "斜めから当たる直接光を遮蔽量で削る");
+                    if (IsOn("_GeometryMapOn"))
+                        Note("Occlusion can also come from the Geometry Map (Geometry Map section below > Occlusion Source).",
+                            "遮蔽は Geometry Map からも取れます（下の Geometry Map の節 > Occlusion Source）。");
 
                 }
             }
@@ -487,6 +491,56 @@ namespace ToonNPR.EditorTools
                         + "Cotton ~0.35, silk / satin ~0.55, enamel / vinyl ~0.7. Fabric Map R multiplies it",
                         "非金属の反射率。f0 = 0.16 × 値²（0.5 で 0.04 = 従来の固定値）。"
                         + "綿 0.35 / 絹・サテン 0.55 / エナメル・ビニール 0.7 あたり。Fabric Map の R が掛かります");
+                }
+            }
+        }
+
+        // 形状由来のグレー 3 種を 1 枚に（T-422 / T-424）。Unity の Baking タブで焼いても、
+        // InstaMAT / Substance などの Mesh Maps（Curvature / AO）を詰めてもよい ── 規約は業界標準と同じ
+        //（Curvature は 0.5 が平坦で凸が明るい、Cavity と AO は白が「遮蔽なし」）。
+        private void DrawGeometryMap(MaterialEditor e)
+        {
+            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+            {
+                if (!Section("geometrymap", false, "Geometry Map", "ジオメトリマップ")) return;
+                using (new EditorGUI.IndentLevelScope())
+                {
+                    Note("Shape-derived greys in one texture: R = Cavity, G = Curvature (0.5 = flat, convex is brighter), "
+                        + "B = Ambient Occlusion. White means no cavity / no occlusion. Bake it from the Baking tab, "
+                        + "or pack mesh maps from InstaMAT / Substance - the conventions are the same. "
+                        + "Each channel's strength sits right below; 0 turns that channel off.",
+                        "形状から決まるグレー 3 種を 1 枚に: R = Cavity / G = Curvature（0.5 が平坦、凸が明るい）/ "
+                        + "B = Ambient Occlusion。白は「窪み無し・遮蔽無し」。Baking タブで焼いても、"
+                        + "InstaMAT / Substance の Mesh Maps を詰めても使えます（規約は同じ）。"
+                        + "各チャンネルの強さはすぐ下にあり、0 でそのチャンネルは無効になります。");
+                    // ---- Geometry Map（R Cavity / G Curvature / B AO。T-422）----
+                    // 各チャンネルの調整ノブを**すぐ下に隣接**させる（利用者要望）。同じプロパティは
+                    // 元の場所（Mask Map / 陰・影タブ）にも出るが、値は 1 つ。
+                    // Cavity と Curvature の供給源はこれだけ（個別マップは T-423 で廃止）。
+                    EditorGUI.BeginChangeCheck();
+                    DrawToggleWithTexture(e, "_GeometryMapOn", "_GeometryMap");
+                    if (EditorGUI.EndChangeCheck()) ApplyKeywordsToTargets();
+                    if (IsOn("_GeometryMapOn"))
+                        using (new EditorGUI.IndentLevelScope())
+                        {
+                            EditorGUILayout.LabelField(_kit.Jp ? "R = Cavity（窪み）" : "R = Cavity", EditorStyles.miniBoldLabel);
+                            P(e, "_CavityStrength", "Cavity Strength",
+                                "How much the R channel darkens albedo and specular in crevices. 0 turns the channel off",
+                                "R チャンネルが窪みでアルベドと鏡面をどれだけ落とすか。0 でこのチャンネルは無効");
+                            EditorGUILayout.LabelField(_kit.Jp ? "G = Curvature（曲率。0.5 が平坦）" : "G = Curvature (0.5 = flat)", EditorStyles.miniBoldLabel);
+                            P(e, "_CurvatureSoftness", "Curvature Softness",
+                                "How much curved areas widen the shadow transition. 0 turns the channel off",
+                                "曲がった面ほど影の境界を広げる度合い。0 でこのチャンネルは無効");
+                            EditorGUILayout.LabelField(_kit.Jp ? "B = Ambient Occlusion（遮蔽）" : "B = Ambient Occlusion", EditorStyles.miniBoldLabel);
+                            P(e, "_OcclusionSource", "Occlusion Source",
+                                "Mask G = authored occlusion (fine wrinkles). Geometry B = occlusion baked in Unity "
+                                + "(armpits, inside collars). Both = multiplied",
+                                "Mask G = 作り込んだ遮蔽（細かい皺など）/ Geometry B = Unity で焼いた遮蔽"
+                                + "（脇の下・襟の内側など）/ Both = 掛け合わせ");
+                            P(e, "_OcclusionStrength", "Occlusion Strength",
+                                "How much the chosen occlusion darkens the indirect light. 0 turns it off",
+                                "選んだ遮蔽が間接光をどれだけ落とすか。0 で無効");
+                        }
                 }
             }
         }
@@ -547,7 +601,7 @@ namespace ToonNPR.EditorTools
                     P(e, "_CurvatureSoftness", "Curvature Softness",
                         "How much curved areas widen the transition: "
                         + "width = Base Softness x (1 + curvature x Influence). "
-                        + "Curvature comes from the baked Curvature Map (Effects tab > Baked Maps); "
+                        + "Curvature comes from the G channel of the Geometry Map (Base tab); "
                         + "without one this does nothing",
                         "曲がった面ほど境界を広げる度合い。"
                         + "幅 = Base Softness × (1 + 曲率 × Influence)。"
@@ -886,30 +940,15 @@ namespace ToonNPR.EditorTools
                 using (new EditorGUI.IndentLevelScope())
                 {
                     Note("Bake these from the Baking tab; it assigns them here automatically. "
-                        + "Occlusion is not here - it lives in the G channel of the Mask Map "
-                        + "(Base tab).",
+                        + "Cavity / Curvature / AO live in the Geometry Map (Base tab).",
                         "Baking タブで焼くと自動でここへ入ります。"
-                        + "**遮蔽（AO）だけはここにありません** ── "
-                        + "Mask Map の G チャンネル（基本タブ）に入ります。");
+                        + "Cavity / Curvature / AO は Geometry Map（基本タブ）にあります。");
 
                     SubHeader("Bent Normal", "ベント法線マップ");
                     P(e, "_BentNormalOn", "Bent Normal On",
                         "Aims the indirect diffuse away from occluded directions",
                         "間接拡散の向きを、遮蔽されていない方向へ寄せます");
                     P(e, "_BentNormalMap", "Bent Normal Map", null, null);
-
-                    SubHeader("Cavity", "キャビティ（くぼみの微細遮蔽）");
-                    P(e, "_CavityMap", "Cavity Map (R)", "Fine crevices", "細かい窪み");
-                    P(e, "_CavityStrength", "Cavity Strength", null, null);
-
-                    SubHeader("Curvature", "曲率マップ");
-                    P(e, "_CurvatureMap", "Curvature Map (R)",
-                        "Baked curvature (0.5 = flat). The only curvature source - "
-                        + "Curvature Influence (Shading tab) reads it to widen the transition "
-                        + "on curved areas. Continuous across triangles, so no facets",
-                        "焼いた曲率（0.5 = 平坦）。曲率の唯一の供給源で、"
-                        + "Curvature Influence（陰・影タブ）がこれを読んで曲がった面の境界を広げます。"
-                        + "三角形をまたいで連続なので面は出ません");
                 }
             }
         }
@@ -985,6 +1024,9 @@ namespace ToonNPR.EditorTools
                         + "At 0 it just adds, which can exceed the incoming light at the rim",
                         "sheen の指向性アルベドぶん下地を縮めてから足します。"
                         + "0 は足すだけなので、縁で入射より多く返ることがあります");
+                    P(e, "_SheenMetalTint", "Sheen Metal Tint",
+                        "Tints the sheen by the albedo on metallic areas (lame, gold thread). 0 keeps it white",
+                        "金属部の sheen をアルベド（金属の反射色）で染めます（ラメ・金糸）。0 で白のまま");
                     P(e, "_ClothAnisotropy", "Cloth Anisotropy",
                         "Stretches the sheen along the weave direction",
                         "織りの方向へ光沢を伸ばします");
@@ -1237,6 +1279,28 @@ namespace ToonNPR.EditorTools
                         "Add: 物理的 ── 何灯も重なると白へ飛びます。"
                         + "Max: 最も強い 1 灯だけが効くので**彩度が残ります**"
                         + "（ライトの多いステージ向けのアニメ的な嘘）");
+
+                    Note("The four limits below keep the hue and only round off the luminance with a soft shoulder "
+                        + "(75% of the limit passes untouched). Order of effect: albedo -> per-light -> "
+                        + "additional total -> final output.",
+                        "下の 4 つは色相を保ったまま輝度だけを柔らかい肩で丸めます（上限の 75% までは素通し）。"
+                        + "効く順: アルベド → 1 灯ごと → 追加光の合計 → 最終出力。");
+                    P(e, "_AlbedoBrightnessLimit", "Albedo Brightness Limit (1 = Off)",
+                        "Caps the brightest albedo channel. White costumes authored near 1.0 blow out with "
+                        + "a single light; 0.85-0.9 leaves room. Hue and saturation are unchanged",
+                        "アルベドの最大成分の上限。1.0 近い白い衣装は 1 灯で飛びます。0.85〜0.9 で余白ができます。"
+                        + "色相・彩度は変わりません");
+                    P(e, "_AdditionalLightTotalLimit", "Additional Light Total Limit (0 = Off)",
+                        "Luminance cap on the sum of all additional lights (after Add / Max blending)",
+                        "追加光ぜんぶの合計の輝度上限（Add / Max 合成の後）");
+                    P(e, "_SpecularLightLimit", "Specular Light Limit (0 = Off)",
+                        "Per-light luminance cap on the light used for specular, sheen and clearcoat. "
+                        + "Keep it well above Diffuse Light Limit or highlights go flat",
+                        "鏡面・sheen・クリアコートに使う 1 灯あたりの光の輝度上限。"
+                        + "Diffuse Light Limit より十分高くしないとハイライトが平たくなります");
+                    P(e, "_OutputLuminanceLimit", "Output Luminance Limit (0 = Off)",
+                        "Last safety net on direct + indirect light. Emission is excluded so Bloom still works",
+                        "直接光＋間接光への最後の保険。発光は対象外なので Bloom は従来どおり効きます");
                 }
             }
         }
@@ -2016,6 +2080,7 @@ namespace ToonNPR.EditorTools
             SetKeyword(m, "_HQ_SHADOW_ON",           IsOn(m, "_HQShadowOn"));
             SetKeyword(m, "_OUTLINE_ON",             IsOn(m, "_OutlineOn"));
             SetKeyword(m, "_FABRICMAP_ON",           IsOn(m, "_FabricMapOn"));
+            SetKeyword(m, "_GEOMETRYMAP_ON",            IsOn(m, "_GeometryMapOn"));
             SetKeyword(m, "_ANISOMAP_ON",            IsOn(m, "_AnisotropyMapOn"));
             // Glitter はトグルを持たず Intensity > 0 に追従（T-418）。設定は静的なのでキーワードで切る
             SetKeyword(m, "_GLITTER_ON",             Fl(m, "_GlitterIntensity") > 0f);
@@ -2159,9 +2224,6 @@ namespace ToonNPR.EditorTools
                 ("_MatCapIntensity", "_MatCapTex", false,
                  "MatCap ── 既定が黒なので **加算値が 0**。絵は変わらないのにフェッチと約 26 命令を払います",
                  "MatCap - the default is black so it **adds nothing**; you pay a fetch and ~26 instructions for no change"),
-                ("_CavityStrength", "_CavityMap", false,
-                 "キャビティマップ ── 既定が白なので **窪みが 1（無変化）**。絵は変わらないのにフェッチを払います",
-                 "Cavity Map - the default is white so it **changes nothing**; you pay a fetch for no change"),
             };
 
             string broken = "", wasted = "", sleeping = "";
@@ -2256,6 +2318,11 @@ namespace ToonNPR.EditorTools
                 + "looks dead in dim stages. Does not affect the clearcoat layer",
                 "金属部だけ Env Specular Intensity に掛かる倍率。金属の見た目はほぼ映り込みで"
                 + "決まるので、暗いステージで金具が死ぬときに上げます。クリアコート層には掛かりません");
+            P(e, "_MetalDiffuseRetain", "Metal Diffuse Retain",
+                "Keeps part of the diffuse shading on metallic areas. Physically metal has none, "
+                + "so metal goes dark on dim stages with weak reflections; toon reads better with some left. 0 = physical",
+                "金属部に拡散の陰影を一部残します。物理では金属の拡散は 0 なので、映り込みの弱いステージでは"
+                + "金属が沈みます。トゥーンでは少し残す方が読めます。0 = 物理どおり");
             EditorGUILayout.Space(2);
         }
 

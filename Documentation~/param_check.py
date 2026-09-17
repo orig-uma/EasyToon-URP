@@ -351,7 +351,8 @@ def fetch_count(v: dict[str, float], kw: set[str],
         ("_NPRMap", 1 if on("_NPRMapOn") else 0),
         ("_FabricMap", 1 if on("_FabricMapOn") else 0),
         ("_AnisotropyMap", 1 if (st == 4 and on("_AnisotropyMapOn")) else 0),
-        ("_CavityMap", 1 if on("_CavityStrength", 0.0) else 0),
+        # Cavity / Curvature / AO は Geometry Map の 1 枚（個別マップは T-423 で廃止）
+        ("_GeometryMap", 1 if "_GEOMETRYMAP_ON" in kw else 0),
         ("_EmissionMap", 1 if on("_EmissionOn") else 0),
         ("_BumpMap", 1 if on("_NormalMapOn") else 0),
         ("_ShadeNormalMap", 1 if on("_ShadeNormalStrength", 0.0) else 0),
@@ -360,7 +361,6 @@ def fetch_count(v: dict[str, float], kw: set[str],
                           and (v.get("_SubsurfaceStrength", 0.0)
                                + v.get("_TransmissionStrength", 0.0)) > 0.0) else 0),
         ("_BentNormalMap", 1 if on("_BentNormalOn") else 0),
-        ("_CurvatureMap", 1 if on("_CurvatureSoftness", 0.0) else 0),
         ("_RampMap", 1 if on("_UseRampMap") else 0),
         ("_FaceSDFMap", 1 if st == 2 else 0),
         ("_HairShiftMap", 1 if st == 3 else 0),
@@ -1451,8 +1451,6 @@ def check_dead_gates(root: Path, materials_dir: Path | None) -> list[Finding]:
     GATES = [
         ("_MatCapIntensity", "_MatCapTex", False,
          "既定が黒なので**加算値が 0**。絵は変わらないがフェッチと約 26 命令を払う"),
-        ("_CavityStrength", "_CavityMap", False,
-         "既定が白なので**窪みが 1（無変化）**。絵は変わらないがフェッチを払う"),
         ("_NPRMapOn", "_NPRMap", True,
          "既定が白だと **G が 1**（基準は 0.5）になり、**影が最大まで遅れて出なくなる**"),
         ("_UseRampMap", "_RampMap", True,
@@ -1830,6 +1828,7 @@ ALLOWED_KEYWORDS = {
     "_OUTLINE_ON",
     "_FABRICMAP_ON",    # T-419: Fabric Map（衣装の PBR 拡張）。割り当てがあるときだけ読む
     "_ANISOMAP_ON",     # T-419: Anisotropy Map（布の織りの向き）。同上
+    "_GEOMETRYMAP_ON",     # T-422: Geometry Map（R Cavity / G Curvature / B AO を 1 枚に）
     "_GLITTER_ON",      # T-418: Glitter Intensity > 0 に追従。静的な設定なので一様分岐からキーワードへ
     "_STOCKING_ON", "_MATCAP_ON", "_DEBUG_ON",   # 同上（Stocking / MatCap Intensity > 0、Debug Mode > 0）
     "_HQSHADOWTAPS_8", "_HQSHADOWTAPS_16", "_HQSHADOWTAPS_32",   # T-418: HQ Shadow Taps（KeywordEnum）

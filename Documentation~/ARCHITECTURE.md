@@ -92,10 +92,10 @@ NdotL
 
 ### キーワード方針
 
-**17 個のみ。** 追加は `param_check` の `ALLOWED_KEYWORDS` へ書くのが手続き。
+**18 個のみ。** 追加は `param_check` の `ALLOWED_KEYWORDS` へ書くのが手続き。
 
 ```
-_ALPHATEST_ON  _HQ_SHADOW_ON  _OUTLINE_ON  _FABRICMAP_ON  _ANISOMAP_ON
+_ALPHATEST_ON  _HQ_SHADOW_ON  _OUTLINE_ON  _FABRICMAP_ON  _ANISOMAP_ON  _GEOMETRYMAP_ON
 _GLITTER_ON  _STOCKING_ON  _MATCAP_ON  _DEBUG_ON
 _HQSHADOWTAPS_{8,16,32}
 _SURFACETYPE_{DEFAULT,SKIN,FACE,HAIR,CLOTH}
@@ -203,7 +203,7 @@ Idol の 6 つに従う。現状:
 2. キーワードは上表のみ — **満たす**（8 個。許可リストで機械的に守る）
 3. Core は純粋関数のみ — **満たす**（共有は純関数 4 つ: IGN / GGX の D・V・F。T-340）
 4. include 順 / `Doll/` 禁止 — **満たす**
-5. 未ベイク・既定値で安全にスキップ — **満たす**（2D 23 個すべて既定値あり。ブルーノイズは .shader.meta の既定テクスチャ）
+5. 未ベイク・既定値で安全にスキップ — **満たす**（2D 22 個すべて既定値あり。ブルーノイズは .shader.meta の既定テクスチャ）
 6. RendererFeature は Render Graph — **満たす**（2 つとも）
 
 ## 検証

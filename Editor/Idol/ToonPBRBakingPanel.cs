@@ -17,11 +17,11 @@
 //  **プロパティ名の対応（Baker 側 → Idol 側）:**
 //
 //    Baker が渡すスロット   Idol   Baker の強度名        Idol の強度名
-//    _CavityMap             ○      _CavityStrength       ○ 同名（自動で入る）
+//    （Cavity）             × → Geometry Map の R へパネルが詰める（T-422/T-423）。_CavityStrength は同名
 //    _HairFlowMap           ○      _HairFlowStrength     ○ 同名（自動で入る）
 //    _ShadeNormalMap        ○      _ShadeNormalStrength  ○ 同名（自動で入る）
 //    _BentNormalMap         ○      _BentNormalStrength   × → _BentNormalOn をここで立てる
-//    _CurvatureMap          ○      _CurvatureStrength    × → _CurvatureSoftness をここで
+//    （Curvature）          × → Geometry Map の G へパネルが詰める。_CurvatureSoftness をここで立てる
 //    _FaceSDFMap            ○      _UseFaceSDF           × → _FaceFlatness をここで
 //    _SSSMap                ○      _SSSIntensity         × → _SSSMapStrength をここで
 //    _OcclusionMap          ×      _OcclusionStrength    ○  ── AO だけ扱いが違う（下記）
@@ -33,6 +33,7 @@
 //  黙って「焼けました」と出すと誤解するので、パネルで明示する。
 // =============================================================================
 using System;
+using System.IO;
 using UnityEditor;
 using UnityEngine;
 using Origuma.EasyShaderCore.Editor;
@@ -214,7 +215,7 @@ namespace ToonNPR.EditorTools
                         "The Baker sets _CavityStrength too.");
 
                 if (BakeButton(jp ? "Cavity をベイク" : "Bake Cavity"))
-                    BakeAll(e, m => EasyPbrCavityBaker.Bake(_bakeRoot, m, _cavity));
+                    BakeAll(e, m => EasyPbrCavityBaker.Bake(_bakeRoot, m, _cavity) && PackGeometryMap(m));
             }
         }
 
@@ -545,7 +546,7 @@ namespace ToonNPR.EditorTools
                 if (BakeButton(jp ? "Curvature をベイク" : "Bake Curvature"))
                     BakeAll(e, m => BakeThenSet(
                         () => EasyPbrCurvatureBaker.Bake(_bakeRoot, m, _curvature),
-                        m, "_CurvatureSoftness", 1f));
+                        m, "_CurvatureSoftness", 1f) && PackGeometryMap(m));
             }
         }
 
@@ -589,16 +590,15 @@ namespace ToonNPR.EditorTools
             {
                 // **ここだけ自動で入らない。** 黙って「焼けました」と出すと、
                 // 割り当たっていないことに気付かないまま強度だけ上げることになる。
+                // 焼いた AO は Geometry Map の B に自動で入る（T-422）。以前は保存のみで、Mask Map の G へ
+                // 手で合成する必要があった。Mask Map（InstaMAT などで作ったもの）は上書きしない。
                 EditorGUILayout.HelpBox(
-                    jp ? "Idol は遮蔽を単体テクスチャではなく **Mask Map の G** に詰める設計なので、"
-                         + "焼いた画像は**保存されるだけで自動では割り当たりません**。"
-                         + "画像編集で Mask Map の G チャンネルへ合成してください"
-                         + "（R:Metallic / G:Occlusion / B:Thickness / A:Smoothness）。"
-                       : "Idol packs occlusion into the G channel of the Mask Map rather than a "
-                         + "standalone texture, so the baked image is saved but NOT assigned. "
-                         + "Composite it into the Mask Map's G channel "
-                         + "(R:Metallic / G:Occlusion / B:Thickness / A:Smoothness).",
-                    MessageType.Warning);
+                    jp ? "焼いた AO は **Geometry Map の B** に自動で入り、`Geometry Map On` と `Occlusion Source` = Both が"
+                         + "立ちます（Mask Map の G の遮蔽と掛け合わせ。Mask Map は上書きしません）。"
+                       : "The baked AO goes into the **B channel of the Geometry Map** automatically, and sets "
+                         + "`Geometry Map On` and `Occlusion Source` = Both (multiplied with the Mask Map's G; "
+                         + "the Mask Map itself is never overwritten).",
+                    MessageType.Info);
 
                 _ao.resolution = ResField(_ao.resolution);
                 _ao.rayCount = Rays(_ao.rayCount);
@@ -611,8 +611,13 @@ namespace ToonNPR.EditorTools
                 _ao.dilate = Dilate(_ao.dilate);
                 _ao.blur = Blur(_ao.blur);
 
-                if (BakeButton(jp ? "AO をベイク（保存のみ）" : "Bake AO (save only)"))
-                    BakeAll(e, m => EasyPbrAoBaker.Bake(_bakeRoot, m, _ao));
+                if (BakeButton(jp ? "AO をベイク" : "Bake AO"))
+                    BakeAll(e, m => EasyPbrAoBaker.Bake(_bakeRoot, m, _ao) && PackGeometryMap(m, setOcclusionBoth: true));
+
+                EditorGUILayout.Space(4);
+                if (GUILayout.Button(jp ? "既存の Cavity / Curvature / AO を Geometry Map に詰め直す"
+                                        : "Repack existing Cavity / Curvature / AO into the Geometry Map"))
+                    BakeAll(e, m => PackGeometryMap(m));
             }
         }
 
@@ -621,6 +626,170 @@ namespace ToonNPR.EditorTools
         // ------------------------------------------------------------------
 
         /// <summary>ベイクが成功したときだけ、Idol 側の有効化プロパティを立てる。</summary>
+        // ------------------------------------------------------------------
+        //  Geometry Map（R Cavity / G Curvature / B AO）に詰める（T-422）
+        // ------------------------------------------------------------------
+        /// <summary>
+        /// 材質の `_CavityMap` / `_CurvatureMap` と、材質の隣の Baked フォルダにある `*_&lt;材質名&gt;_AO.png` を
+        /// 1 枚（`*_Geometry.png`）に詰めて `_GeometryMap` に割り当て、`Geometry Map On` とキーワードを立てる。
+        /// 無いチャンネルは中立（R 1 / G 0.5 / B 1）。Core のベイカーの出力はそのまま残す
+        ///（1 つだけ焼き直したときに、他のチャンネルをここから拾い直せるように）。
+        /// </summary>
+        internal static bool PackGeometryMap(Material m, bool setOcclusionBoth = false)
+        {
+            if (m == null || !m.HasProperty("_GeometryMap")) return true;   // 旧シェーダーなら何もしない
+            var bakedDir = BakedDirOf(m);
+
+            // Core のベイカーは Baked フォルダへ `<メッシュ>_<材質>_<種類>.png` を保存する（Idol には
+            // 個別スロットが無いので割り当ては起きない）。まずそれを拾い、無ければ材質に残っている
+            // 旧 `_CavityMap` / `_CurvatureMap` の参照（T-423 で廃止したプロパティの残骸）から拾う。
+            string cavityPath = FindBaked(bakedDir, m.name, "Cavity")    ?? LegacyTexPath(m, "_CavityMap");
+            string curvPath   = FindBaked(bakedDir, m.name, "Curvature") ?? LegacyTexPath(m, "_CurvatureMap");
+            string aoPath     = FindBaked(bakedDir, m.name, "AO");
+            return PackGeometryMapFromPaths(m, cavityPath, curvPath, aoPath, setOcclusionBoth ? 2f : -1f);
+        }
+
+        private static string BakedDirOf(Material m)
+        {
+            var matPath = AssetDatabase.GetAssetPath(m);
+            var dir = string.IsNullOrEmpty(matPath) ? "Assets" : Path.GetDirectoryName(matPath).Replace('\\', '/');
+            return dir + "/Baked";
+        }
+
+        /// <summary>テクスチャから詰める（Migrator 用）。occlusionSource &lt; 0 なら触らない。</summary>
+        internal static bool PackGeometryMapFromTextures(Material m, Texture cavity, Texture curvature, Texture ao,
+                                                      float occlusionSource)
+            => PackGeometryMapFromPaths(m, PngPath(cavity), PngPath(curvature), PngPath(ao), occlusionSource);
+
+        private static bool PackGeometryMapFromPaths(Material m, string cavityPath, string curvPath, string aoPath,
+                                                  float occlusionSource)
+        {
+            if (m == null || !m.HasProperty("_GeometryMap")) return true;
+            var bakedDir = BakedDirOf(m);
+            var dir = bakedDir.Substring(0, bakedDir.Length - "/Baked".Length);
+            if (cavityPath == null && curvPath == null && aoPath == null)
+            {
+                Debug.LogWarning($"[EasyToon] '{m.name}': 詰める元（Cavity / Curvature / AO）が見つかりません。");
+                return false;
+            }
+
+            var cav = LoadGray(cavityPath); var cur = LoadGray(curvPath); var ao = LoadGray(aoPath);
+            int size = Mathf.Max(cav?.width ?? 0, Mathf.Max(cur?.width ?? 0, ao?.width ?? 0));
+            var px = new Color[size * size];
+            for (int y = 0; y < size; y++)
+                for (int x = 0; x < size; x++)
+                {
+                    float u = (x + 0.5f) / size, v = (y + 0.5f) / size;
+                    px[y * size + x] = new Color(
+                        cav != null ? cav.GetPixelBilinear(u, v).r : 1f,
+                        cur != null ? cur.GetPixelBilinear(u, v).r : 0.5f,
+                        ao  != null ? ao.GetPixelBilinear(u, v).r  : 1f, 1f);
+                }
+            foreach (var t in new[] { cav, cur, ao }) if (t != null) UnityEngine.Object.DestroyImmediate(t);
+
+            var outTex = new Texture2D(size, size, TextureFormat.RGBA32, false, true);
+            outTex.SetPixels(px); outTex.Apply(false, false);
+            if (!AssetDatabase.IsValidFolder(bakedDir)) AssetDatabase.CreateFolder(dir, "Baked");
+            string stem = Path.GetFileNameWithoutExtension(cavityPath ?? curvPath ?? aoPath);
+            int cut = stem.LastIndexOf('_');
+            string outPath = $"{bakedDir}/{(cut > 0 ? stem.Substring(0, cut) : stem)}_Geometry.png";
+            File.WriteAllBytes(outPath, outTex.EncodeToPNG());
+            UnityEngine.Object.DestroyImmediate(outTex);
+            AssetDatabase.ImportAsset(outPath, ImportAssetOptions.ForceUpdate);
+            if (AssetImporter.GetAtPath(outPath) is TextureImporter imp)
+            {
+                imp.sRGBTexture = false;
+                imp.textureType = TextureImporterType.Default;
+                imp.textureCompression = TextureImporterCompression.Uncompressed;
+                imp.SaveAndReimport();
+            }
+
+            Undo.RecordObject(m, "Pack Geometry Map");
+            m.SetTexture("_GeometryMap", AssetDatabase.LoadAssetAtPath<Texture2D>(outPath));
+            m.SetFloat("_GeometryMapOn", 1f);
+            m.EnableKeyword("_GEOMETRYMAP_ON");
+            // AO を入れた直後だけ出どころを切り替える（自分で選んでいる人の値は触らない = Mask G のときだけ）
+            if (occlusionSource >= 0f && aoPath != null && m.HasProperty("_OcclusionSource")
+                && m.GetFloat("_OcclusionSource") < 0.5f)
+                m.SetFloat("_OcclusionSource", occlusionSource);
+            EditorUtility.SetDirty(m);
+            Debug.Log($"[EasyToon] Geometry Map を詰めました → {outPath}"
+                    + $"（R Cavity {(cavityPath != null ? "○" : "中立")} / G Curvature {(curvPath != null ? "○" : "中立")}"
+                    + $" / B AO {(aoPath != null ? "○" : "中立")}）");
+            return true;
+        }
+
+        private static string PngPath(Texture t)
+        {
+            var p = t != null ? AssetDatabase.GetAssetPath(t) : null;
+            return string.IsNullOrEmpty(p) || !p.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ? null : p;
+        }
+
+        // シェーダーから消えたプロパティでも、材質ファイルには参照が残る（m_SavedProperties.m_TexEnvs）。
+        // GetTexture は HasProperty が false だと使えないので、シリアライズ済みの値を直接読む。
+        private static string LegacyTexPath(Material m, string slot)
+        {
+            var envs = new SerializedObject(m).FindProperty("m_SavedProperties.m_TexEnvs");
+            if (envs == null) return null;
+            for (int i = 0; i < envs.arraySize; i++)
+            {
+                var e = envs.GetArrayElementAtIndex(i);
+                if (e.FindPropertyRelative("first").stringValue != slot) continue;
+                return PngPath(e.FindPropertyRelative("second.m_Texture").objectReferenceValue as Texture);
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// 個別の Cavity Map / Curvature Map を使っていた Idol の材質を、まとめて Geometry Map へ移す（T-423）。
+        /// 既に Geometry Map がある材質は触らない。
+        /// </summary>
+        [MenuItem("Tools/Idol/Cavity・Curvature を Geometry Map へ移行")]
+        private static void MigrateLegacyToGeometryMap()
+        {
+            int done = 0, skipped = 0;
+            foreach (var guid in AssetDatabase.FindAssets("t:Material"))
+            {
+                var m = AssetDatabase.LoadAssetAtPath<Material>(AssetDatabase.GUIDToAssetPath(guid));
+                if (m == null || !m.HasProperty("_GeometryMap")) continue;
+                if (m.GetTexture("_GeometryMap") != null) { skipped++; continue; }
+                var bakedDir = BakedDirOf(m);
+                bool any = LegacyTexPath(m, "_CavityMap") != null || LegacyTexPath(m, "_CurvatureMap") != null
+                        || FindBaked(bakedDir, m.name, "Cavity") != null || FindBaked(bakedDir, m.name, "Curvature") != null
+                        || FindBaked(bakedDir, m.name, "AO") != null;
+                if (any && PackGeometryMap(m)) done++;
+            }
+            AssetDatabase.SaveAssets();
+            EditorUtility.DisplayDialog("EasyToon / Idol",
+                $"{done} 個の材質を Geometry Map へ移行しました（既に Geometry Map がある {skipped} 個は対象外）。詳細は Console。", "OK");
+        }
+
+        // Core のベイカーの命名: `<メッシュ名>_<材質名>_<種類>.png`（Sanitize 済み）
+        private static string FindBaked(string bakedDir, string matName, string kind)
+        {
+            if (!AssetDatabase.IsValidFolder(bakedDir)) return null;
+            foreach (var guid in AssetDatabase.FindAssets("t:Texture2D", new[] { bakedDir }))
+            {
+                var p = AssetDatabase.GUIDToAssetPath(guid);
+                var stem = Path.GetFileNameWithoutExtension(p);
+                // Core と同じ規則（ファイル名に使えない文字だけ '_'）で材質名を直し、末尾一致で見る
+                //（`31._2` と `31._2x` を取り違えない）
+                string safe = matName;
+                foreach (var c in Path.GetInvalidFileNameChars()) safe = safe.Replace(c, '_');
+                if (stem.EndsWith("_" + safe + "_" + kind, StringComparison.Ordinal))
+                    return p;
+            }
+            return null;
+        }
+
+        // インポート設定（Read/Write）に依らず読めるよう、PNG をファイルから直接読む
+        private static Texture2D LoadGray(string assetPath)
+        {
+            if (assetPath == null) return null;
+            var t = new Texture2D(2, 2, TextureFormat.RGBA32, false, true);
+            return t.LoadImage(File.ReadAllBytes(assetPath)) ? t : null;
+        }
+
         private static bool BakeThenSet(Func<bool> bake, Material m, string prop, float value)
         {
             bool ok = bake();

@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+## [0.2.6] - 2026-09-18
+
+### Changed (Breaking)
+
+- **個別の `Cavity Map` / `Curvature Map` を廃止し、Geometry Map（R Cavity / G Curvature / B AO）に一本化した**（T-423）。Cavity と Curvature の供給源は Geometry Map だけになる。`Cavity Strength` / `Curvature Softness` はそのまま。**既存の Idol 材質は `Tools > Idol > Cavity・Curvature を Geometry Map へ移行` を一度実行する**（材質に残っている旧参照か、Baked フォルダの `*_Cavity.png` / `*_Curvature.png` / `*_AO.png` から 1 枚に詰めて割り当てる）。実行するまで Cavity と曲率は効かない。Doll / Cel からの移行（Migrator）は Cavity / Curvature / AO を自動で Geometry Map に詰める ── **AO が初めて自動で移るようになった**（従来は「移せない」と注記するだけだった）。Geometry Map が無い材質では Cavity / 曲率のコードごと消える（PC 実行時相当 1,727 → 1,707 命令、レジスタ 41 → 40、テクスチャ 24 → 22 枚）。
+
+### Added
+
+- **Baked Map を `Geometry Map` に改名し、基本タブの独立した節にした**（T-424）。Unity で焼いたものに限らず、InstaMAT / Substance の Mesh Maps（Curvature / Ambient Occlusion）を詰めたものも同じ規約で使える、という建付けにするため。プロパティは `_GeometryMap` / `_GeometryMapOn`、キーワードは `_GEOMETRYMAP_ON`、`Occlusion Source` の選択肢は Mask G / Geometry B / Both、Baking タブの出力は `*_Geometry.png`。
+
+- **`Geometry Map`（R Cavity / G Curvature / B Ambient Occlusion）と `Occlusion Source`**（T-422）。ベイクしたグレー 3 枚を 1 枚にまとめる。`Geometry Map On`（キーワード `_GEOMETRYMAP_ON`）の間は個別の Cavity Map / Curvature Map を読まず、フェッチが 2 → 1（AO も含めれば 3 → 1）。各チャンネルの効きは従来どおり `Cavity Strength` / `Curvature Softness` / `Occlusion Strength`。Baking タブは Cavity / Curvature / AO を焼くたびに自動で詰め直し、**AO が初めて自動で割り当たる**（従来は保存のみで Mask Map の G へ手で合成が必要だった）。遮蔽は `Occlusion Source` で Mask G / Geometry B / Both（掛け合わせ）を選ぶ。既存の個別マップはそのまま使える。
+
+- **白飛び対策を 4 段追加**（T-421）: `Albedo Brightness Limit`（アルベドの最大成分の上限）、`Additional Light Total Limit`（追加光の合計）、`Specular Light Limit`（鏡面・sheen・コートに使う 1 灯あたりの光）、`Output Luminance Limit`（直接光＋間接光の最終出力。発光は対象外）。どれも色相を保って輝度だけを柔らかい肩（上限の 75% まで素通し）で丸める。既存の `Diffuse Light Limit`（拡散の 1 灯あたり）と `Additional Light Blend Mode` と合わせて、アルベド → 1 灯ごと → 追加光の合計 → 最終出力の順に効く。既定はすべて OFF。
+
+- **`Metal Diffuse Retain`**（T-420）。金属部（Mask R × Metallic）に拡散の陰影を一部残す。物理では金属の拡散は 0 で、映り込みの弱いステージでは金属が沈む（利用者「Metallic で明度が落ち込む」）。既定 0 = 従来どおり。
+- **`Sheen Metal Tint`**（T-420）。金属部の sheen をアルベド（金属の反射色）で染める（ラメ・金糸の布）。従来は金属でも sheen が白のままだった（利用者「Sheen に Metallic が乗らない」）。エネルギー保存の縮小にも同じ色を使う。既定 0 = 従来どおり。
+
+### Changed
+
+- **`Diffuse Light Limit` を柔らかい肩に揃え、1 灯ごとの上限の既定を入れた**（T-421）。硬いクランプから、上限の 75% まで素通しで以降は漸近する形へ（上限値の意味は同じ）。既定は `Diffuse Light Limit` 0 → 1.2、`Specular Light Limit` 0 → 4。アルベド・追加光の合計・最終出力の上限は既定 OFF のまま（材質の作り方やステージ照明の設計の問題を既定で隠さないため）。**新規材質と、これらを保存していない既存材質は強い光で見た目が変わる。**
+
 ## [0.2.5] - 2026-09-17
 
 ### Changed (Breaking)

@@ -72,6 +72,7 @@ CBUFFER_START(UnityPerMaterial)
     float  _Metallic;
     float  _Smoothness;
     float  _MaskAIsRoughness;
+    float  _OcclusionSource;
     float  _OcclusionStrength;
     float  _CavityStrength;
     float  _DirectOcclusion;
@@ -80,6 +81,7 @@ CBUFFER_START(UnityPerMaterial)
     float  _SpecularIntensity;
     float  _MetalSpecularBoost;
     float  _MetalEnvBoost;
+    float  _MetalDiffuseRetain;
     float  _SpecEnergyConservation;
     float4 _SpecularTint;
 
@@ -148,6 +150,7 @@ CBUFFER_START(UnityPerMaterial)
     float  _SheenRoughness;
     float  _SheenIntensity;
     float  _SheenEnergyConservation;
+    float  _SheenMetalTint;
     float  _ClothAnisotropy;
     float  _ClothTangentSwap;
 
@@ -184,6 +187,10 @@ CBUFFER_START(UnityPerMaterial)
     float  _LightMinBrightness;
     float  _DiffuseLightLimit;
     float  _AdditionalLightBlendMode;
+    float  _AlbedoBrightnessLimit;
+    float  _AdditionalLightTotalLimit;
+    float  _SpecularLightLimit;
+    float  _OutputLuminanceLimit;
     float  _AmbientFlatten;
     float  _AOMultiBounce;
     float  _BentNormalOn;
@@ -316,14 +323,13 @@ CBUFFER_END
 #define sampler_MaskMap        sampler_LinearRepeat
 #define sampler_NPRMap         sampler_LinearRepeat
 #define sampler_FabricMap      sampler_LinearRepeat
+#define sampler_GeometryMap       sampler_LinearRepeat
 #define sampler_AnisotropyMap  sampler_LinearRepeat
 #define sampler_HairShiftMap   sampler_LinearRepeat
 #define sampler_EmissionMap    sampler_LinearRepeat
 #define sampler_BentNormalMap  sampler_LinearRepeat
-#define sampler_CurvatureMap   sampler_LinearRepeat
 #define sampler_HairFlowMap    sampler_LinearRepeat
 #define sampler_ShadeNormalMap sampler_LinearRepeat
-#define sampler_CavityMap      sampler_LinearRepeat
 #define sampler_SSSMap         sampler_LinearRepeat
 #define sampler_StockingMask   sampler_LinearRepeat
 #define sampler_GlitterMask    sampler_LinearRepeat
@@ -352,6 +358,8 @@ TEXTURE2D(_MaskMap);
 TEXTURE2D(_NPRMap);
 // FabricMap: R=Specular  G=Sheen  B=Clearcoat  A=Iridescence（T-419。白が中立）
 TEXTURE2D(_FabricMap);
+// GeometryMap: R=Cavity  G=Curvature（0.5 が平坦） B=Ambient Occlusion（T-422/T-424。焼いても外部製でもよい）
+TEXTURE2D(_GeometryMap);
 // AnisotropyMap: RG=織りの向き（接線空間、0..1 → -1..1） B=強さの倍率（glTF anisotropyTexture。T-419）
 TEXTURE2D(_AnisotropyMap);
 
@@ -370,10 +378,8 @@ float ToonDecodeFaceSdf16(float2 rg)
 TEXTURE2D(_HairShiftMap);
 TEXTURE2D(_EmissionMap);
 TEXTURE2D(_BentNormalMap);
-TEXTURE2D(_CurvatureMap);
 TEXTURE2D(_HairFlowMap);
 TEXTURE2D(_ShadeNormalMap);
-TEXTURE2D(_CavityMap);
 TEXTURE2D(_SSSMap);
 TEXTURE2D(_StockingMask);
 TEXTURE2D(_GlitterMask);

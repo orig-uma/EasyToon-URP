@@ -229,7 +229,7 @@ CASES: list[Case] = [
         name="E003 未宣言のテクスチャをサンプル",
         tool=["shader_lint.py", ".", "--strict"],
         edits=[("ToonPBRCommon.hlsl",
-                "TEXTURE2D(_CurvatureMap);", "TEXTURE2D(_CurvatureMapRenamed);")],
+                "TEXTURE2D(_MaskMap);", "TEXTURE2D(_MaskMapRenamed);")],
         expect="E003",
         why="コンパイルが通らない。静的検査なら1秒で分かる",
         covers="E003",
@@ -1047,10 +1047,9 @@ CASES: list[Case] = [
         # 発火している**ため ── 件数が増えないと試験にならない。
         name="効果ゼロの機能にコストだけ払う",
         tool=["param_check.py", ".", "--materials", "mats"],
-        edits=[("mats/14.kami_.mat",
-                "    - _CavityMap:" + NL + "        m_Texture: {fileID: 2800000",
-                "    - _CavityMap:" + NL + "        m_Texture: {fileID: 0")],
-        expect="_CavityMap が未割り当て",
+        # Cavity Map は T-423 で廃止したので MatCap で試す（今は全材質 Intensity 0 なので 1 件増える）
+        edits=[("mats/14.kami_.mat", r"re:- _MatCapIntensity: [\d.]+", "- _MatCapIntensity: 1")],
+        expect="_MatCapTex が未割り当て",
         why="フェッチを毎画素払うのに絵は変わらない。目視でも実機でも気付けない",
         covers="check_dead_gates",
     ),

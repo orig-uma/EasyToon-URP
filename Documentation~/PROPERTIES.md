@@ -8,7 +8,7 @@
 python gen_properties.py --write
 ```
 
-シェーダー: `Idol.shader` / プロパティ 208 個
+シェーダー: `Idol.shader` / プロパティ 215 個
 
 ⚡ はシェーダーバリアントを生むもの（マテリアル間で値が違うとバッチが分断される）。
 
@@ -61,9 +61,18 @@ python gen_properties.py --write
 | `_MaskMap` | Mask Map | `2D` | `"white" {}` | パック済みの RGBA マスク |
 | `_Metallic` | Metallic | `Range(0,1)` | `0` | R チャンネルを倍率で調整 |
 | `_MaskAIsRoughness` | Mask A Is Roughness | `Float` | `0` | ON = A が Roughness（InstaMat / Substance の標準出力）で、ここで反転して読みます。OFF = A は Smoothness |
-| `_OcclusionStrength` | Occlusion Strength | `Range(0,1)` | `1` | G が間接光をどれだけ落とすか |
 | `_DirectOcclusion` | Direct Occlusion | `Range(0,1)` | `0.3` | 物理的には AO は間接光だけのもの。絵として要るときだけ上げる |
 | `_MicroShadow` | Micro Shadow | `Range(0,1)` | `1` | 斜めから当たる直接光を遮蔽量で削る |
+
+### ジオメトリマップ（Geometry Map）
+
+| プロパティ | 表示名 | 型 | 既定 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `_GeometryMapOn` ⚡ | Geometry Map On | `Float` | `0` | — |
+| `_GeometryMap` | Geometry Map (R=Cavity G=Curvature B=AO) | `2D` | `"white" {}` | — |
+| `_OcclusionSource` | Occlusion Source | `Float` | `0` | Mask G = 作り込んだ遮蔽（細かい皺など）/ Geometry B = Unity で焼いた遮蔽（脇の下・襟の内側など）/ Both = 掛け合わせ |
+| `_CavityStrength` | Cavity Strength | `Range(0,1)` | `0` | R チャンネルが窪みでアルベドと鏡面をどれだけ落とすか。0 でこのチャンネルは無効 |
+| `_OcclusionStrength` | Occlusion Strength | `Range(0,1)` | `1` | 選んだ遮蔽が間接光をどれだけ落とすか。0 で無効 |
 
 ### NPR マップ（NPR Map）
 
@@ -218,8 +227,12 @@ python gen_properties.py --write
 
 | プロパティ | 表示名 | 型 | 既定 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
-| `_DiffuseLightLimit` | Diffuse Light Limit (0 = Off) | `Range(0,5)` | `0` | 1 灯あたりの拡散光の輝度上限。**拡散と透過にだけ**掛かります（鏡面は強い光ほど鋭く光るのが正しいので対象外）。NdotL の階調は残るので、上限に当たった面がのっぺり潰れません |
+| `_DiffuseLightLimit` | Diffuse Light Limit (0 = Off) | `Range(0,5)` | `1.2` | 1 灯あたりの拡散光の輝度上限。**拡散と透過にだけ**掛かります（鏡面は強い光ほど鋭く光るのが正しいので対象外）。NdotL の階調は残るので、上限に当たった面がのっぺり潰れません |
 | `_AdditionalLightBlendMode` | Additional Light Blend Mode | `Float` | `0` | Add: 物理的 ── 何灯も重なると白へ飛びます。Max: 最も強い 1 灯だけが効くので**彩度が残ります**（ライトの多いステージ向けのアニメ的な嘘） |
+| `_AlbedoBrightnessLimit` | Albedo Brightness Limit (1 = Off) | `Range(0.5,1)` | `1` | アルベドの最大成分の上限。1.0 近い白い衣装は 1 灯で飛びます。0.85〜0.9 で余白ができます。色相・彩度は変わりません |
+| `_AdditionalLightTotalLimit` | Additional Light Total Limit (0 = Off) | `Range(0,5)` | `0` | 追加光ぜんぶの合計の輝度上限（Add / Max 合成の後） |
+| `_SpecularLightLimit` | Specular Light Limit (0 = Off) | `Range(0,10)` | `4` | 鏡面・sheen・クリアコートに使う 1 灯あたりの光の輝度上限。Diffuse Light Limit より十分高くしないとハイライトが平たくなります |
+| `_OutputLuminanceLimit` | Output Luminance Limit (0 = Off) | `Range(0,5)` | `0` | 直接光＋間接光への最後の保険。発光は対象外なので Bloom は従来どおり効きます |
 
 ## スペキュラ（Specular）
 
@@ -240,6 +253,7 @@ python gen_properties.py --write
 | :--- | :--- | :--- | :--- | :--- |
 | `_MetalSpecularBoost` | Metal Specular Boost | `Range(0,4)` | `1` | 金属部（Mask Map R × Metallic）だけ Specular Intensity に掛かる倍率。1 で従来どおり。肌のハイライトを絞っても金具を殺さない（逆も）ための分離です |
 | `_MetalEnvBoost` | Metal Env Boost | `Range(0,4)` | `1` | 金属部だけ Env Specular Intensity に掛かる倍率。金属の見た目はほぼ映り込みで決まるので、暗いステージで金具が死ぬときに上げます。クリアコート層には掛かりません |
+| `_MetalDiffuseRetain` | Metal Diffuse Retain | `Range(0,1)` | `0` | 金属部に拡散の陰影を一部残します。物理では金属の拡散は 0 なので、映り込みの弱いステージでは金属が沈みます。トゥーンでは少し残す方が読めます。0 = 物理どおり |
 
 ### スペキュラ（Specular） ／ Secondary Lobe（マット）
 
@@ -265,6 +279,7 @@ python gen_properties.py --write
 | `_SheenRoughness` | Sheen Roughness | `Range(0.02,1)` | `0.3` | 下地の粗さとは独立です。下げるほど縁が細くなります |
 | `_SheenIntensity` | Sheen Intensity | `Range(0,4)` | `0.6` | — |
 | `_SheenEnergyConservation` | Sheen Energy Conservation | `Range(0,1)` | `0` | sheen の指向性アルベドぶん下地を縮めてから足します。0 は足すだけなので、縁で入射より多く返ることがあります |
+| `_SheenMetalTint` | Sheen Metal Tint | `Range(0,1)` | `0` | 金属部の sheen をアルベド（金属の反射色）で染めます（ラメ・金糸）。0 で白のまま |
 | `_ClothAnisotropy` | Cloth Anisotropy | `Range(0,0.9)` | `0` | 織りの方向へ光沢を伸ばします |
 | `_ClothTangentSwap` | Cloth Tangent Swap | `Float` | `0` | 光沢が織りと直交して出るときに切り替えます |
 | `_AnisotropyMapOn` ⚡ | Anisotropy Map On | `Float` | `0` | — |
@@ -310,19 +325,6 @@ python gen_properties.py --write
 | `_MatCapLightAlign` | MatCap Light Align | `Range(0,1)` | `0` | 参照の向きを画面内の光の向きへ回します。ハイライトがカメラに貼り付いて見える弱点が減ります |
 
 ## 質感（Effects）
-
-### ベイクマップ（Bent / Cavity / 曲率）（Baked Maps） ／ キャビティ（くぼみの微細遮蔽）
-
-| プロパティ | 表示名 | 型 | 既定 | 説明 |
-| :--- | :--- | :--- | :--- | :--- |
-| `_CavityMap` | Cavity Map (R) | `2D` | `"white" {}` | 細かい窪み |
-| `_CavityStrength` | Cavity Strength | `Range(0,1)` | `0` | — |
-
-### ベイクマップ（Bent / Cavity / 曲率）（Baked Maps） ／ 曲率マップ
-
-| プロパティ | 表示名 | 型 | 既定 | 説明 |
-| :--- | :--- | :--- | :--- | :--- |
-| `_CurvatureMap` | Curvature Map (R) | `2D` | `"gray" {}` | 焼いた曲率（0.5 = 平坦）。曲率の唯一の供給源で、Curvature Influence（陰・影タブ）がこれを読んで曲がった面の境界を広げます。三角形をまたいで連続なので面は出ません |
 
 ### コートとグリッター（Coat and Glitter） ／ クリアコート
 
@@ -498,4 +500,4 @@ python gen_properties.py --write
 
 ---
 
-説明のあるもの 150 / 208。**残り 58 個は tooltip が書かれていない** ── `ToonPBRShaderGUI.cs` に足すとここにも出ます。
+説明のあるもの 156 / 215。**残り 59 個は tooltip が書かれていない** ── `ToonPBRShaderGUI.cs` に足すとここにも出ます。

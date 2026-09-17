@@ -134,21 +134,37 @@
             #if defined(_FABRICMAP_ON)
                 fabric = SAMPLE_TEXTURE2D(_FabricMap, sampler_FabricMap, uv);
             #endif
+                // Geometry Map（T-422）: R Cavity / G Curvature / B AO。ON の間は個別の 2 枚を読まない
+                float4 geometryMap = float4(1.0, 0.5, 1.0, 1.0);
+            #if defined(_GEOMETRYMAP_ON)
+                geometryMap = SAMPLE_TEXTURE2D(_GeometryMap, sampler_GeometryMap, uv);
+            #endif
 
                 // 窪みの微細遮蔽。**アルベドと鏡面の両方に掛ける。**
                 // EasyPBR はアルベドだけに掛けているが、それだと縫い目や皺の底に
                 // 鏡面がそのまま残って、暗くしたはずの場所が逆に目立つ。
+                // 供給源は Geometry Map の R だけ（個別の Cavity Map は T-423 で廃止）。
+                // Geometry Map が無ければコードごと消える。
                 float cavity = 1.0;
+            #if defined(_GEOMETRYMAP_ON)
                 UNITY_BRANCH
                 if (_CavityStrength > 0.0)
                 {
-                    float raw = SAMPLE_TEXTURE2D(_CavityMap, sampler_CavityMap, uv).r;
-                    cavity = lerp(1.0, raw, _CavityStrength);
+                    cavity = lerp(1.0, geometryMap.r, _CavityStrength);
                     albedo.rgb *= cavity;
                 }
+            #endif
 
                 ToonSurface s;
                 s.cavity     = cavity;
+                // アルベドの明るさ上限（T-421）。白い衣装が 1 灯で飛ぶのを材質側で抑える。
+                // 最大成分で縮めるので色相・彩度は変わらない。1 = OFF
+                UNITY_BRANCH
+                if (_AlbedoBrightnessLimit < 1.0)
+                {
+                    float amax = max(albedo.r, max(albedo.g, albedo.b));
+                    albedo.rgb *= min(1.0, _AlbedoBrightnessLimit / max(amax, 1e-4));
+                }
                 s.albedo     = albedo.rgb;
                 s.alpha      = albedo.a;
                 s.thickness  = mask.b;
@@ -157,7 +173,15 @@
                 // Range 属性はインスペクタのスライダを縛るだけで、実行時の値は縛らない。
                 // 強度 2 だと lerp が外挿になり `2*ao - 1`、AO 0.5 未満で**遮蔽が負**になる。
                 // 負の遮蔽は多重バウンス補正・マイクロシャドウ・鏡面遮蔽の全部を狂わせる。
-                s.occlusion  = saturate(lerp(1.0, mask.g, _OcclusionStrength));
+                // 遮蔽の出どころ（T-422）。Geometry Map が無ければ従来どおり Mask の G
+                float aoSource = mask.g;
+            #if defined(_GEOMETRYMAP_ON)
+                aoSource = (_OcclusionSource < 0.5) ? mask.g
+                         : (_OcclusionSource < 1.5) ? geometryMap.b
+                                                    : mask.g * geometryMap.b;
+            #endif
+                s.occlusion  = saturate(lerp(1.0, aoSource, _OcclusionStrength));
+                s.geomCurvature = geometryMap.g;
                 s.specMask   = npr.r;
                 s.shadowOffset = (npr.g - 0.5) * 2.0;
                 s.sheenMask  = fabric.g;
@@ -252,7 +276,9 @@
                 }
             #endif
 
-                s.diffuseColor = s.albedo * (1.0 - metallic);
+                // 金属の拡散は物理では 0。Metal Diffuse Retain で一部残す（T-420。0 = 従来）
+                s.diffuseColor = s.albedo * (1.0 - metallic * (1.0 - _MetalDiffuseRetain));
+                s.metallic     = metallic;
                 // 非金属の f0 = 0.16 × Reflectance²（0.5 で 0.04 = 従来）× Fabric Map の R（T-419）
                 float f0d = 0.16 * _Reflectance * _Reflectance * fabric.r;
                 s.f0           = lerp(f0d, s.albedo, metallic);
@@ -383,13 +409,13 @@
                 // 曲がりの**大きさ**だけ（凹凸どちらでも散乱の帯は広がる）なので絶対値を取る。
                 // 大きさの校正はベイカー側の Intensity が持つ。無次元 0..1（0=平坦）。
                 // 既定テクスチャ（gray）は 0 になるので、未割り当てなら何も起きない。
+                // 供給源は Geometry Map の G だけ（個別の Curvature Map は T-423 で廃止）
                 c.curvature = 0.0;
+            #if defined(_GEOMETRYMAP_ON)
                 UNITY_BRANCH
                 if (_CurvatureSoftness > 0.0)
-                {
-                    float baked = SAMPLE_TEXTURE2D(_CurvatureMap, sampler_CurvatureMap, uv).r;
-                    c.curvature = abs(baked * 2.0 - 1.0);
-                }
+                    c.curvature = abs(s.geomCurvature * 2.0 - 1.0);
+            #endif
                 c.uv         = uv;
                 c.screenUV   = GetNormalizedScreenSpaceUV(input.positionCS);
                 c.positionSS = input.positionCS.xy;
@@ -481,7 +507,8 @@
                     // ライトループの D 項とで**二重に**求めていた。1回に畳む。
                     c.sheenAlpha = ToonApplyRoughnessKernel(max(_SheenRoughness, 0.02), c.specAAKernel);
 
-                    float3 sc = _SheenColor.rgb * _SheenIntensity * s.sheenMask;
+                    float3 sc = _SheenColor.rgb * _SheenIntensity * s.sheenMask
+                              * lerp(1.0, s.albedo, s.metallic * _SheenMetalTint);
                     c.sheenScale = saturate(1.0
                         - ToonSheenAlbedo(c.NdotV, c.sheenAlpha)
                         * max(max(sc.r, sc.g), sc.b) * _SheenEnergyConservation);
@@ -724,6 +751,10 @@
 
                     LIGHT_LOOP_END
                 #endif
+                // 追加光の合計を丸める（T-421）。Add 合成で何灯も重なったぶんの白飛び対策
+                UNITY_BRANCH
+                if (_AdditionalLightTotalLimit > 0.0)
+                    addAccum = ToonSoftLuminanceLimit(addAccum, _AdditionalLightTotalLimit);
                 color += addAccum;
 
                 mainShadowAtten = mainLight.shadowAttenuation;
@@ -749,6 +780,13 @@
                     color += ToonMatCap(c.specN, realLightDir);
                 }
             #endif
+
+                // ---- 最終出力の輝度上限（T-421）-----------------------------------
+                // 直接光＋間接光＋MatCap まで。**発光の手前**に置く ── 発光は Bloom のために
+                // HDR のまま通したいので対象外。
+                UNITY_BRANCH
+                if (_OutputLuminanceLimit > 0.0)
+                    color = ToonSoftLuminanceLimit(color, _OutputLuminanceLimit);
 
                 // ---- エミッシブ -----------------------------------------------
                 color += s.emission;
