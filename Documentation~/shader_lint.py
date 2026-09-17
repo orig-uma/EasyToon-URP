@@ -1119,10 +1119,22 @@ def lint_shader(shader_path: Path, issues: list[Issue]) -> None:
                 f"キーワード '{kw}' を宣言する #pragma shader_feature / multi_compile が無い。常に無効になる",
             ))
 
+    # **カスタム ShaderGUI が立てるキーワードも「ON にする手段がある」。** Property の
+    # 属性だけ見ると、Intensity > 0 に追従させる `_GLITTER_ON`（T-418）のように
+    # トグルを持たない設計が全部 W102 になる。同じ部屋の Editor スクリプトで
+    # `SetKeyword(..., "_X"` / `EnableKeyword("_X")` と書かれていれば手段ありとみなす。
+    gui_kw: set[str] = set()
+    for r in code_roots(shader_path.parent):
+        if "Editor" not in r.parts:
+            continue
+        for cs in r.glob("*.cs"):
+            t = cs.read_text(encoding="utf-8", errors="replace")
+            gui_kw |= set(re.findall(r'(?:SetKeyword|EnableKeyword)\s*\([^;]*?"(_[A-Z0-9_]+)"', t))
+
     for kw in sorted(feature_kw):
         if kw in BUILTIN_KEYWORDS:
             continue
-        if kw not in property_kw:
+        if kw not in property_kw and kw not in gui_kw:
             issues.append(Issue(
                 "W102", shader_path, 1,
                 f"キーワード '{kw}' を ON にする Property が無い。"

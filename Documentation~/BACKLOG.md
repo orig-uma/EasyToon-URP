@@ -4,7 +4,7 @@
 
 見積もりの目安: **S** = 1ファイル内で完結 / **M** = 複数ファイル + 新規クラス / **L** = Renderer Feature など仕組みの追加
 
-**この文書は 408 項目まで伸びた。着手先を探すときは以下だけ見れば足りる。**
+**この文書は 416 項目まで伸びた。着手先を探すときは以下だけ見れば足りる。**
 実装済みの項目は経緯の記録であって、順に読む必要は無い。
 
 **サマリは必ず更新すること。** 一度「99 項目」「プリセットは T-109」と書いたまま
@@ -76,7 +76,7 @@ python check.py --full       # 約 3 分。キーワード全組（Idol 180 / Ce
 検査の規模 ── 静的検査（E000-E014 / W101-W111 の 26 コード）・実コンパイル（56 組）・
 値の検算（39 種）・自己診断（**91 項目 / カバー率 72 検査**）。
 
-バリアントは **ForwardLit は feature 20 × system 32,768**。
+バリアントは **ForwardLit は feature 7,680 × system 32,768**。
 `param_check` がここの数字と実装を毎回突き合わせるので、
 **キーワードを足したらここも直る**（直さないと診断が赤くなる）。
 
@@ -1564,6 +1564,138 @@ Animation / Timeline から Renderer のマテリアルプロパティとして
 | ~~要判断~~ | ~~**2影**（`_Shadow2*`）~~ | **見送りで確定**（利用者判断）。Ramp Override が機能的に上位互換（N 段・色も自由）で、専用プロパティは操作が楽になるだけ ── プロパティを脂やさない方を取った |
 | 低 | **グレイン** | 手続き的に作れば Blue Noise 不要。3D ライブの遠景では潰れやすい |
 | 低 | 小さなオプション欠け | クリアコートのマスク・反射強度 / 鏡面の f0 直接指定 / 顔 SDF とシャドウマップの混合率 / カットアウト時の影バイアス / 間接光の Tint |
+
+### T-424 Baked Map → Geometry Map（外部で作ったマップも受ける建付け）　[S]
+
+**状況（実装済み）** ── 利用者「BakedMap じゃなくて別の名前にして、外部で作成したマップも受け入れる建付けに」。
+中身は形状由来のグレー（Cavity / Curvature / AO）で、Substance でいう Mesh Maps と同じもの。規約も同じ
+（Curvature 0.5 = 平坦・凸が明るい、AO / Cavity は白 = 遮蔽なし）なので、名前から「Unity で焼いたもの」という
+限定を外した。候補は Mesh Map（Mask Map と字面が近く取り違える）/ Shape Map / Geometry Map で、Geometry Map に。
+GUI は Effects タブの Baked Maps（法線系のベイク）から基本タブの独立節へ（Mask / NPR / Fabric と同じ並び）。
+SETUP の書き出し表と IdolMapTools（テンプレートとパッカー）に `_Geometry` を追加。
+
+### T-423 個別の Cavity Map / Curvature Map を廃止（Geometry Map に一本化）　[S]
+
+**状況（実装済み）** ── 利用者「互換性を失ってよいので従来のキャビティと曲率のマップはなくしませんか。
+命令数もレジスタも減りますよね」。減る: Geometry Map OFF の変種から Cavity と曲率のフェッチ＋分岐が
+コードごと消える（PC 相当 1,727 / 41 → 1,707 / 40、テクスチャ 24 → 22）。効果は小さいが、供給源が 1 つに
+なって GUI と検査と Migrator が単純になる方が大きい。`_CavityMap` / `_CurvatureMap` を shader・CBUFFER 周り・
+GUI・DropDeadWork・SetupCheck・param_check（フェッチ見積もり・dead gate）・self_test から外した。
+**移行**: 材質ファイルには旧プロパティの参照が残る（m_TexEnvs）ので、`LegacyTexPath`（SerializedObject で
+直接読む）で拾って詰める。`Tools > Idol > Cavity・Curvature を Geometry Map へ移行` が全 Idol 材質を一括処理。
+Migrator（Doll / Cel → Idol）は移行元の 3 枚を `PackGeometryMapFromTextures` で詰める ── これまで「バイナリを
+生成しない方針」で AO は移せないと注記するだけだったが、Baking パネルが PNG を書く以上その縛りは無い。
+
+### T-422 Geometry Map（R Cavity / G Curvature / B AO）と Occlusion Source　[M]
+
+**状況（実装済み・要評価）** ── 利用者「ベイクするマップを 1 枚にまとめるのは悪手か。Cavity と Curvature と
+AO あたりはまとめてもよいかも。AO は参照先を切り替えるトグルを付けて、ベイクしたものと Mask Map の
+使いたい方を使う形は避けた方がよいか」。どちらも良い方向: 3 つとも 1 チャンネルのグレーで同じ UV・
+解像度・sRGB OFF。`_GEOMETRYMAP_ON` の間は `_CavityMap` / `_CurvatureMap` を読まない（フェッチ 2 → 1）。
+中立が R 1 / G 0.5 / B 1 で 1 色の既定テクスチャにできないのでトグルで切るが、効きは各チャンネルの
+ノブのまま（利用者確認「個別に無効化できる状態か」→ できる）。`Occlusion Source` は Mask G / Geometry B /
+Both。InstaMAT 由来の Mask Map をベイクが上書きしない構造になる。**AO は従来「保存のみ・Mask G へ
+手で合成」だったが、Baked の B で初めて自動割り当てになる。** パネルは Cavity / Curvature / AO を
+焼くたびに `PackGeometryMap`（材質の `_CavityMap` / `_CurvatureMap` と Baked フォルダの `*_AO.png` から
+`*_Geometry.png` を作って割り当て）。Core のベイカーは触っていない。
+
+### T-421 白飛び対策の 4 段（アルベド / 追加光の合計 / 鏡面 / 最終出力）　[S]
+
+**状況（実装済み・要評価）** ── 利用者「メインライト、AdditionalLight、アルベド、Specular などで
+白飛び対策を入れたい」。既存は `Diffuse Light Limit`（拡散・透過・リムの 1 灯あたり、硬いクランプ）と
+`Additional Light Blend Mode`（Max）だけで、白い衣装のアルベド・追加光の重なり・鏡面・最終出力に
+守りが無かった。`ToonSoftLuminanceLimit`（色相保持、上限の 75% から指数で漸近）を足し、
+`Albedo Brightness Limit` / `Additional Light Total Limit` / `Specular Light Limit` /
+`Output Luminance Limit` の 4 つに使う。鏡面は `ToonSpecularEnergy` として拡散と別の上限を持つ
+（鏡面は強い光ほど鋭く光るのが正しいので、拡散と同じ値で切らない）。最終出力は発光の手前
+（Bloom 用の HDR を残す）。**設計の整理（利用者「慣習的に、適切なノブの分離で」）**: 光が足される
+場所に沿って 入力（Albedo）→ 1 灯ごと（Diffuse / Specular）→ 合成（Blend Mode / Add Total）→
+出力（Output = 保険）。主光源と追加光で 1 灯ごとの上限は分けない（主光源は 1 灯、追加光は合計で守る）。
+`Diffuse Light Limit` も柔らかい肩に揃えた。**既定は 1 灯ごとの 2 つだけ**（Diffuse 1.2 / Specular 4）、
+他は OFF ── アルベドは材質の作り方、合計と出力は照明設計の問題で、既定で掛けると原因が見えなくなる。
+
+### T-420 金属の明度と sheen の金属染め　[S]
+
+**状況（実装済み・要評価）** ── 利用者「Metallic で明度が落ち込む、Sheen に Metallic が乗らない」。
+金属は拡散 0 で、映り込みの弱いステージでは沈む → `Metal Diffuse Retain`（拡散を一部残す）。
+sheen の色は材質値だけで金属でも白 → `Sheen Metal Tint`（金属部をアルベドで染める。エネルギー保存の
+縮小も同じ色）。既定は 0 = 従来。案: Retain 0.25 / Tint 1。
+
+### T-419 衣装の PBR 表現を充実させるマップ構成（第 1 段: NPR Map の縮小と Detail Mask）　[L]
+
+**状況（第 1 段 実装済み）** ── 利用者「PBR 表現を充実させたい。衣装の質感にとことんこだわれる
+シェーダーに。InstaMat と相性の良い形式で、本当に必要なマップだけ」。合意した構成（glTF の
+PBR 拡張の並びに合わせる）:
+- Mask Map（現状のまま。HDRP 互換）: R Metallic / G Occlusion / B Thickness / A Smoothness
+- NPR Map: R SpecMask / G ShadowOffset / **B Detail Mask（新）** / A 未使用（RimMask / RampIndex 廃止）
+- Fabric Map（新、第 2 段）: R Specular（反射率、glTF specularFactor）/ G Sheen / B Clearcoat / A Iridescence
+- Anisotropy Map（新、第 3 段）: RG 向き / B 強さ（glTF anisotropyTexture。布と髪で共用、Hair Flow Map を統合）
+- 第 4 段: InstaMat の Export Preset 表を SETUP.md に。Smoothness を Roughness として読むトグル。
+**第 1 段**: NPR をディテールより前に読み、B をディテールの合成率とノーマル強度に掛ける。`rimMask` /
+`rampIndex` を ToonSurface から削除。`Ramp Index Override` は -1 = 先頭行。RimMask / RampIndex を
+描いたアセットは無い（利用者確認）。並びは変えないので既存の NPR Map はそのまま。
+**第 2 段（実装済み）**: Fabric Map（`_FABRICMAP_ON`、白が中立）。R は `Reflectance`（新、f0 = 0.16 × 値²、
+0.5 = 従来の 0.04）に掛かり、G は sheen の色 × 強さ、B は `Clearcoat Strength`、A は
+`Iridescence Intensity` に掛かる（直接光・環境光の両方）。ToonSurface に sheenMask / coatMask /
+iridMask を追加。
+**第 3 段（実装済み）**: Anisotropy Map（`_ANISOMAP_ON`、Cloth 専用）。RG を接線空間で回して織りの向き、
+B を `Cloth Anisotropy` に掛ける。ToonContext に clothT / clothAniso（光源非依存、1 回）。**Hair Flow Map
+との統合は見送り** ── 髪のは倍角エンコード（cos2θ, sin2θ）の Core ベイク出力で、ミラー UV で向きが
+180 度反転しても同じ値になる設計。glTF の単角と混ぜると髪の焼き直しと Migrator の変換が要り、
+利点（1 枚共用）より失うもの（ミラー耐性）が大きい。
+**第 4 段（実装済み）**: `Mask A Is Roughness`（A を反転して読む）。SETUP.md に InstaMat の Export Preset 表。
+**評価観点**: 実物の InstaMat 出力で Fabric / Aniso を当てた衣装（サテン・エナメル・ベルベット）の見え方。
+Reflectance の目安値（綿 0.35 / サテン 0.55 / エナメル 0.7）は Filament の写像から置いた仮の値。
+
+### T-418 負荷の分析と最初の削減（Glitter をキーワードへ・追加光のコートと粒を省く）　[M]
+
+**状況（実装済み）** ── 利用者「最適化を進めたい。不要な要素や詰められる計算を分析したい」。
+fxc で実測（ForwardLit フラグメント、PC 実行時相当 = Forward+ ＋ カスケード ＋ ソフト影 ＋ HQ Shadow
+＋ 追加光の影 ＋ Cloth）: **2,389 命令 / 一時レジスタ 57**。素（キーワード無し）1,465 / 32。
+1 つずつ外した差: 追加光の影 211、ソフト影 171、Forward+ ループ 137、Cloth 126、カスケード 118。
+一様分岐のゲート（`--branch-cost`）: Glitter 413 命令 / レジスタ 8 が最大で、46 材質すべて OFF。
+**読み**: 命令数より一時レジスタ 57 が実機で効く（占有率）。一様分岐は OFF でも最悪経路の
+レジスタを確保される。追加光が主光源と同じ `ToonShadeLight` を丸ごと回すのも 1 灯あたりが重い。
+**やったこと**: (1) Glitter を `shader_feature_local_fragment _GLITTER_ON` に（トグルは持たず
+`Glitter Intensity > 0` に追従。GUI の ValidateMaterial と Migrator が立てる。`ALLOWED_KEYWORDS` と
+ARCHITECTURE のキーワード方針を 9 個に更新。shader_lint W102 は GUI が立てるキーワードを手段ありと
+みなすよう拡張）。(2) 追加光ではクリアコートと Glitter のフラッシュを省く（`ToonShadeLight` に
+`allowCoat` を追加。定数で畳まれる）。sheen / リム / 2 ローブ目は残す（利用者「ライブステージでの映え
+最優先。提案のすべてから消えるのは反対。クリアコートや Glitter は無くてもいい」）。
+**結果**: PC 相当 **2,389 → 1,917 命令 / レジスタ 57 → 51**、Forward 1,679 → 1,264 / 37 → 31、
+素 1,465 → 1,049 / 32 → 23。Glitter ON の材質は 2,318 / 51（粒の描画は requiem の上着で確認、
+見た目は同じ）。**既存材質は ValidateMaterial（インスペクタ表示か Migrator）でキーワードが揃う。**
+**第 2 段（利用者 OK）**: (3) 追加光の影を硬い 1 タップに（`ToonAdditionalLightShadowHard`。URP の
+ソフトフィルタを追加光に掛けない）。(4) プローブは一番重要な 1 つだけ（Forward は SpecCube0、
+Forward+ はクラスタの先頭）。(5) Stocking / MatCap / Debug をキーワードへ（強度 > 0 に追従）。
+(6) Glitter の近傍探索を 1 セル 1 ハッシュに（Core 0.3.4 `Hash24`。29 → 9 回。粒の配置は変わるが
+密度・大きさの分布は同じ。requiem の上着で確認）。Dissolve は実行時 ON なので一様分岐のまま。
+Cloth の +126 は sheen（Charlie ＋ 異方性の接線縮小）と環境光の sheen 縮小で、布の質感そのもの
+なので触らない。**合計**: PC 相当 2,389 / 57 → **1,625 / 39**、Glitter ON 1,930 / 42、Forward
+1,679 / 37 → 1,077 / 31、素 1,465 / 32 → 862 / 22。
+**第 3 段（利用者「タップ数は調整可能になるとよい」）**: `HQ Shadow Taps`（KeywordEnum 8 / 16 / 32、
+既定 16 = 従来）。展開ループなので数はコンパイル時に決まる（`TOON_SHADOW_TAPS_USED`）。8 は
+1 タップの重み 0.125 が既定の遷移窓 0.086 より太く、ライトを回すと影が反転しうる（硬い影向け）。
+32 は Softness 高めでも粒が出にくい。param_check のフェッチ見積もりもキーワードで数を切り替える。
+**残り**: 影のカスケード 118 とソフト影 171 は主光源の絵そのものなので触らない。次に効くのは
+Forward+ の 1 灯あたり（sheen / リム / 2 ローブ目を残す前提で ~100）。
+
+### T-417 画面空間の影（解決 → 深度ぼかし）で HQ Shadow の粒を消す　[M]　→ 試作の上で撤回
+
+**状況（撤回）** ── 利用者「この距離で Dither が見えるのが本当に気になる」。粒は影の値にしか
+無いので、影だけを全画面 1 枚に解いてから深度差で止まるぼかしを掛け、URP 標準 Screen Space
+Shadows と同じ受け渡し（`_ScreenSpaceShadowmapTexture` ＋ `_MAIN_LIGHT_SHADOWS_SCREEN`）で
+材質に読ませる Renderer Feature を試作した（Resolve 32 タップ Vogel ＋ 分離ぼかし 2 パス）。
+requiem では頬の髪影の粒が消え、輪郭の明るい縁（深度微分の法線）と遠い床の影（最後の
+カスケードの外の判定漏れ）も直った。**しかし負荷の構造が悪い**: 全画面 32 タップ ＋ ぼかし 2 パス
+に加えて、法線テクスチャのために **DepthNormals プリパス（不透明の全物体をもう一度描く）** を
+要求する。キャラが小さく床が広い構図では HQ Shadow（キャラのピクセルだけ 16 タップ）より
+確実に重く、SSAO を使わない運用では最大の負担がプリパスになる。利用者「負荷が高い、なくす」
+で撤回し、ファイルは削除した（このセッションの試作。コミットには載っていない）。
+**得た知見**: 粒を消す正攻法は「影を先に 1 枚に解いてぼかす」で正しいが、Idol の用途
+（キャラ中心・軽さ優先）では割に合わない。再挑戦するなら (1) 法線を深度から再構成して
+プリパスを要求しない、(2) Resolve を半解像度、(3) SSAO 併用時だけ有効、の 3 点が前提。
+粒そのものは T-414（時間方向ディザ）か、遷移窓の側で増幅を抑える方向が残っている。
 
 ### T-416 深度リム（Screen Silhouette）の撤去　[S]
 

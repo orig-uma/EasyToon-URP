@@ -8,7 +8,7 @@
 python gen_properties.py --write
 ```
 
-シェーダー: `Idol.shader` / プロパティ 201 個
+シェーダー: `Idol.shader` / プロパティ 215 個
 
 ⚡ はシェーダーバリアントを生むもの（マテリアル間で値が違うとバッチが分断される）。
 
@@ -39,7 +39,7 @@ python gen_properties.py --write
 
 | プロパティ | 表示名 | 型 | 既定 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
-| `_DetailOn` | Detail On | `Float` | `0` | 独立したタイリングを持つ重ねレイヤー ── タトゥー・チークの印刷・布地の織り目など。RGB = 色 / A = 合成率 |
+| `_DetailOn` | Detail On | `Float` | `0` | 独立したタイリングを持つ重ねレイヤー ── タトゥー・チークの印刷・布地の織り目など。RGB = 色 / A = 合成率。NPR Map の B で効かせる場所を絞れます（色・ノーマルとも） |
 | `_DetailMap` | Detail Map (RGB=color A=blend) | `2D` | `"black" {}` | — |
 | `_DetailColor` | Detail Color | `Color` | `(1,1,1,1)` | RGB はディテールの色。A は混ぜる量 |
 | `_DetailMultiply` | Detail Multiply | `Float` | `0` | OFF = ディテールの色で置き換え（タトゥー・プリント）。ON = 乗算（DCC で焼いた生地の陰・AO） |
@@ -60,9 +60,19 @@ python gen_properties.py --write
 | :--- | :--- | :--- | :--- | :--- |
 | `_MaskMap` | Mask Map | `2D` | `"white" {}` | パック済みの RGBA マスク |
 | `_Metallic` | Metallic | `Range(0,1)` | `0` | R チャンネルを倍率で調整 |
-| `_OcclusionStrength` | Occlusion Strength | `Range(0,1)` | `1` | G が間接光をどれだけ落とすか |
+| `_MaskAIsRoughness` | Mask A Is Roughness | `Float` | `0` | ON = A が Roughness（InstaMat / Substance の標準出力）で、ここで反転して読みます。OFF = A は Smoothness |
 | `_DirectOcclusion` | Direct Occlusion | `Range(0,1)` | `0.3` | 物理的には AO は間接光だけのもの。絵として要るときだけ上げる |
 | `_MicroShadow` | Micro Shadow | `Range(0,1)` | `1` | 斜めから当たる直接光を遮蔽量で削る |
+
+### ジオメトリマップ（Geometry Map）
+
+| プロパティ | 表示名 | 型 | 既定 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `_GeometryMapOn` ⚡ | Geometry Map On | `Float` | `0` | — |
+| `_GeometryMap` | Geometry Map (R=Cavity G=Curvature B=AO) | `2D` | `"white" {}` | — |
+| `_OcclusionSource` | Occlusion Source | `Float` | `0` | Mask G = 作り込んだ遮蔽（細かい皺など）/ Geometry B = Unity で焼いた遮蔽（脇の下・襟の内側など）/ Both = 掛け合わせ |
+| `_CavityStrength` | Cavity Strength | `Range(0,1)` | `0` | R チャンネルが窪みでアルベドと鏡面をどれだけ落とすか。0 でこのチャンネルは無効 |
+| `_OcclusionStrength` | Occlusion Strength | `Range(0,1)` | `1` | 選んだ遮蔽が間接光をどれだけ落とすか。0 で無効 |
 
 ### NPR マップ（NPR Map）
 
@@ -71,6 +81,14 @@ python gen_properties.py --write
 | `_NPRMapOn` | NPR Map On | `Float` | `0` | — |
 | `_NPRMap` | NPR Map | `2D` | `"white" {}` | — |
 | `_NPRShadowOffsetStrength` | NPR Shadow Offset Strength | `Range(0,1)` | `0.4` | G が影の境界をどれだけずらすか |
+
+### ファブリックマップ（Fabric Map）
+
+| プロパティ | 表示名 | 型 | 既定 | 説明 |
+| :--- | :--- | :--- | :--- | :--- |
+| `_FabricMapOn` ⚡ | Fabric Map On | `Float` | `0` | — |
+| `_FabricMap` | Fabric Map | `2D` | `"white" {}` | — |
+| `_Reflectance` | Reflectance | `Range(0,1)` | `0.5` | 非金属の反射率。f0 = 0.16 × 値²（0.5 で 0.04 = 従来の固定値）。綿 0.35 / 絹・サテン 0.55 / エナメル・ビニール 0.7 あたり。Fabric Map の R が掛かります |
 
 ### 発光（Emission）
 
@@ -100,8 +118,8 @@ python gen_properties.py --write
 
 | プロパティ | 表示名 | 型 | 既定 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
-| `_ShadowThreshold` | Shadow Threshold | `Range(0,1)` | `0.5` | 明暗の境界の位置 |
-| `_ShadowSoftness` | Shadow Softness | `Range(0.001,0.5)` | `0.12` | 曲率で広げる前の、境界の基本の幅 |
+| `_ShadowThreshold` | Shadow Threshold | `Range(0,1)` | `0.2` | 明暗の境界の位置 |
+| `_ShadowSoftness` | Shadow Softness | `Range(0.001,0.5)` | `0.2` | 曲率で広げる前の、境界の基本の幅 |
 | `_CurvatureSoftness` | Curvature Softness | `Range(0,4)` | `0` | 曲がった面ほど境界を広げる度合い。幅 = Base Softness × (1 + 曲率 × Influence)。曲率は焼いた Curvature Map（質感タブ > ベイクしたマップ）から取ります ── 無ければ何も起きません |
 
 ### 拡散の伝達関数（Diffuse Transfer） ／ シェーディング法線
@@ -110,22 +128,23 @@ python gen_properties.py --write
 | :--- | :--- | :--- | :--- | :--- |
 | `_ShadeNormalMap` | Shade Normal Map | `2D` | `"bump" {}` | 拡散の伝達だけに使う、なめらかな法線 |
 | `_ShadeNormalStrength` | Shade Normal Strength | `Range(0,1)` | `0` | — |
-| `_DiffuseWrap` | Diffuse Wrap | `Range(0,1)` | `0.25` | 光を明暗境界の先まで回り込ませます。エネルギー保存形なので伝達の上限が 1/(1+wrap) まで下がります（上げるほど天井が下がる） |
+| `_DiffuseWrap` | Diffuse Wrap | `Range(0,1)` | `0.5` | 光を明暗境界の先まで回り込ませます。エネルギー保存形なので伝達の上限が 1/(1+wrap) まで下がります（上げるほど天井が下がる） |
 
 ### 拡散の伝達関数（Diffuse Transfer） ／ リアルタイム影の受け
 
 | プロパティ | 表示名 | 型 | 既定 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
 | `_ReceiveShadowStrength` | Receive Shadow Strength | `Range(0,1)` | `0.7` | 最後に一度だけ掛かります。HQ 影とマイクロシャドウがここに畳まれているので、下げるとまとめて薄くなります |
-| `_ShadowAttenSoftness` | Shadow Atten Softness | `Range(0.001,1)` | `0.35` | 遷移の幅。中心は「半分遮蔽」に固定なので、影の大きさは変わらず柔らかさだけが変わります |
+| `_ShadowAttenSoftness` | Shadow Atten Softness | `Range(0.001,1)` | `0.7` | 遷移の幅。中心は「半分遮蔽」に固定なので、影の大きさは変わらず柔らかさだけが変わります |
 | `_ShadowEdgeAA` | Shadow Edge AA | `Range(0,2)` | `1` | 境界を 1 画素ぶん広げてジャギを隠します |
 
 ### HQ セルフシャドウ（HQ Self Shadow）
 
 | プロパティ | 表示名 | 型 | 既定 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
-| `_HQShadowOn` ⚡ | HQ Shadow On | `Float` | `0` | 主光源のみ。全機能の中でテクスチャフェッチが一番多い |
-| `_HQShadowSoftness` | HQ Shadow Softness (texels) | `Range(0,3)` | `0.3` | フィルタ半径 = 1 + 値 × 6 テクセル（メートルではありません）。タップは 16 固定なので、1.5 あたりから粒（ディザのノイズ）が見え始めます ── きれいさより抽象化を優先したいときの領域。シャドウマップの解像度を下げれば同じ値でもワールドでの半影は広がります（タダで柔らかくなる） |
+| `_HQShadowOn` ⚡ | HQ Shadow On | `Float` | `1` | 主光源のみ。全機能の中でテクスチャフェッチが一番多い |
+| `_HQShadowSoftness` | HQ Shadow Softness (texels) | `Range(0,3)` | `1` | フィルタ半径 = 1 + 値 × 6 テクセル（メートルではありません）。16 タップだと 1.5 あたりから粒（ディザのノイズ）が見え始めます ── HQ Shadow Taps を上げるか、粒を許容するか。シャドウマップの解像度を下げれば同じ値でもワールドでの半影は広がります（タダで柔らかくなる） |
+| `_HQShadowTaps` ⚡ | HQ Shadow Taps | `Float` | `1` | — |
 | `_ReceiverNormalBias` | Receiver Normal Bias | `Range(0,4)` | `1` | — |
 | `_BlueNoiseTex` | Blue Noise Tex (dither) | `2D` | `"gray" {}` | — |
 
@@ -143,7 +162,7 @@ python gen_properties.py --write
 | `_UseRampMap` | Use Ramp Map | `Float` | `0` | — |
 | `_RampMap` | Ramp Map | `2D` | `"white" {}` | — |
 | `_RampRowCount` | Ramp Row Count | `Float` | `8` | テクスチャに縦へ何本のランプを並べてあるか |
-| `_RampIndexOverride` | Ramp Index Override (-1 = use NPR.a) | `Float` | `-1` | -1 で NPR マップの A から画素ごとに行を選びます |
+| `_RampIndexOverride` | Ramp Index Override | `Float` | `-1` | この材質が使うランプの行（-1 で先頭行） |
 | `_RampStrength` | Ramp Strength | `Range(0,1)` | `1` | 1 でランプだけが影の色を決めます。1 未満では HSV の影色が混ざり、その設定が下に出ます |
 
 ### 顔（SDF）（Face (SDF)）
@@ -208,8 +227,12 @@ python gen_properties.py --write
 
 | プロパティ | 表示名 | 型 | 既定 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
-| `_DiffuseLightLimit` | Diffuse Light Limit (0 = Off) | `Range(0,5)` | `0` | 1 灯あたりの拡散光の輝度上限。**拡散と透過にだけ**掛かります（鏡面は強い光ほど鋭く光るのが正しいので対象外）。NdotL の階調は残るので、上限に当たった面がのっぺり潰れません |
+| `_DiffuseLightLimit` | Diffuse Light Limit (0 = Off) | `Range(0,5)` | `1.2` | 1 灯あたりの拡散光の輝度上限。**拡散と透過にだけ**掛かります（鏡面は強い光ほど鋭く光るのが正しいので対象外）。NdotL の階調は残るので、上限に当たった面がのっぺり潰れません |
 | `_AdditionalLightBlendMode` | Additional Light Blend Mode | `Float` | `0` | Add: 物理的 ── 何灯も重なると白へ飛びます。Max: 最も強い 1 灯だけが効くので**彩度が残ります**（ライトの多いステージ向けのアニメ的な嘘） |
+| `_AlbedoBrightnessLimit` | Albedo Brightness Limit (1 = Off) | `Range(0.5,1)` | `1` | アルベドの最大成分の上限。1.0 近い白い衣装は 1 灯で飛びます。0.85〜0.9 で余白ができます。色相・彩度は変わりません |
+| `_AdditionalLightTotalLimit` | Additional Light Total Limit (0 = Off) | `Range(0,5)` | `0` | 追加光ぜんぶの合計の輝度上限（Add / Max 合成の後） |
+| `_SpecularLightLimit` | Specular Light Limit (0 = Off) | `Range(0,10)` | `4` | 鏡面・sheen・クリアコートに使う 1 灯あたりの光の輝度上限。Diffuse Light Limit より十分高くしないとハイライトが平たくなります |
+| `_OutputLuminanceLimit` | Output Luminance Limit (0 = Off) | `Range(0,5)` | `0` | 直接光＋間接光への最後の保険。発光は対象外なので Bloom は従来どおり効きます |
 
 ## スペキュラ（Specular）
 
@@ -230,6 +253,7 @@ python gen_properties.py --write
 | :--- | :--- | :--- | :--- | :--- |
 | `_MetalSpecularBoost` | Metal Specular Boost | `Range(0,4)` | `1` | 金属部（Mask Map R × Metallic）だけ Specular Intensity に掛かる倍率。1 で従来どおり。肌のハイライトを絞っても金具を殺さない（逆も）ための分離です |
 | `_MetalEnvBoost` | Metal Env Boost | `Range(0,4)` | `1` | 金属部だけ Env Specular Intensity に掛かる倍率。金属の見た目はほぼ映り込みで決まるので、暗いステージで金具が死ぬときに上げます。クリアコート層には掛かりません |
+| `_MetalDiffuseRetain` | Metal Diffuse Retain | `Range(0,1)` | `0` | 金属部に拡散の陰影を一部残します。物理では金属の拡散は 0 なので、映り込みの弱いステージでは金属が沈みます。トゥーンでは少し残す方が読めます。0 = 物理どおり |
 
 ### スペキュラ（Specular） ／ Secondary Lobe（マット）
 
@@ -255,8 +279,11 @@ python gen_properties.py --write
 | `_SheenRoughness` | Sheen Roughness | `Range(0.02,1)` | `0.3` | 下地の粗さとは独立です。下げるほど縁が細くなります |
 | `_SheenIntensity` | Sheen Intensity | `Range(0,4)` | `0.6` | — |
 | `_SheenEnergyConservation` | Sheen Energy Conservation | `Range(0,1)` | `0` | sheen の指向性アルベドぶん下地を縮めてから足します。0 は足すだけなので、縁で入射より多く返ることがあります |
+| `_SheenMetalTint` | Sheen Metal Tint | `Range(0,1)` | `0` | 金属部の sheen をアルベド（金属の反射色）で染めます（ラメ・金糸）。0 で白のまま |
 | `_ClothAnisotropy` | Cloth Anisotropy | `Range(0,0.9)` | `0` | 織りの方向へ光沢を伸ばします |
 | `_ClothTangentSwap` | Cloth Tangent Swap | `Float` | `0` | 光沢が織りと直交して出るときに切り替えます |
+| `_AnisotropyMapOn` ⚡ | Anisotropy Map On | `Float` | `0` | — |
+| `_AnisotropyMap` | Anisotropy Map (RG=dir B=strength) | `2D` | `"white" {}` | — |
 
 ### 異方性ハイライト（髪）（Anisotropic (Hair)）
 
@@ -299,19 +326,6 @@ python gen_properties.py --write
 
 ## 質感（Effects）
 
-### ベイクマップ（Bent / Cavity / 曲率）（Baked Maps） ／ キャビティ（くぼみの微細遮蔽）
-
-| プロパティ | 表示名 | 型 | 既定 | 説明 |
-| :--- | :--- | :--- | :--- | :--- |
-| `_CavityMap` | Cavity Map (R) | `2D` | `"white" {}` | 細かい窪み |
-| `_CavityStrength` | Cavity Strength | `Range(0,1)` | `0` | — |
-
-### ベイクマップ（Bent / Cavity / 曲率）（Baked Maps） ／ 曲率マップ
-
-| プロパティ | 表示名 | 型 | 既定 | 説明 |
-| :--- | :--- | :--- | :--- | :--- |
-| `_CurvatureMap` | Curvature Map (R) | `2D` | `"gray" {}` | 焼いた曲率（0.5 = 平坦）。曲率の唯一の供給源で、Curvature Influence（陰・影タブ）がこれを読んで曲がった面の境界を広げます。三角形をまたいで連続なので面は出ません |
-
 ### コートとグリッター（Coat and Glitter） ／ クリアコート
 
 | プロパティ | 表示名 | 型 | 既定 | 説明 |
@@ -336,7 +350,7 @@ python gen_properties.py --write
 | `_GlitterAlbedoTint` | Glitter Albedo Tint | `Range(0,1)` | `0` | 粒の色にアルベドを掛けます。1 で生地と同じ色のラメ（Sparkle と共通） |
 | `_GlitterRim` | Glitter Rim | `Range(0,4)` | `1` | リムの帯をどれだけスパンコールに分解するか。1 で帯が円盤の集まりに、2 以上で明るく、0 で滑らかな帯 |
 | `_GlitterSpecular` | Glitter Specular | `Range(0,4)` | `1` | スペキュラ（GGX・sheen・髪・映り込み）をどれだけスパンコールに分解するか。Glitter Rim と同じ尺度 |
-| `_GlitterIntensity` | Glitter Intensity | `Range(0,50)` | `0` | 0 で機能ごとスキップします（一様分岐 ── バリアント非増・フェッチも無し）。粒のきらめきの強さです |
+| `_GlitterIntensity` | Glitter Intensity | `Range(0,50)` | `0` | 0 で機能ごとコンパイルから外れます（キーワード _GLITTER_ON がこの値に追従）。粒のきらめきの強さです |
 | `_GlitterScale` | Glitter Scale (Scale) | `Range(10,1000)` | `100` | UV あたりのセル数。上げるほど細かく密に |
 | `_GlitterSize` | Glitter Size | `Range(0.0005,0.05)` | `0.005` | セル内の粒の半径 |
 | `_GlitterTilt` | Glitter Tilt | `Range(0,2)` | `0.8` | 粒ごとの法線の傾け。強いほど色々な角度でフラッシュします |
@@ -378,7 +392,7 @@ python gen_properties.py --write
 | プロパティ | 表示名 | 型 | 既定 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
 | `_RimColor` | Rim Color | `Color` | `(1.0, 0.75, 0.5, 1)` | — |
-| `_RimIntensity` | Rim Intensity | `Range(0,8)` | `1.5` | NPR マップの B でも絞られるので、部位ごとにマスクできます。ライトのエネルギーに比例し（ステージ照明の色が縁に乗る）、光が回り込んだ側だけに出ます |
+| `_RimIntensity` | Rim Intensity | `Range(0,8)` | `1.5` | ライトのエネルギーに比例し（ステージ照明の色が縁に乗る）、光が回り込んだ側だけに出ます |
 | `_RimFresnelThickness` | Rim Fresnel Thickness | `Range(0,1)` | `0.3` | 0 で極細（指数 12）、1 で極太（0.5）。Doll と同じ写像です |
 | `_RimReceiveShadow` | Rim Receive Shadow | `Range(0,1)` | `1` | 落ち影の中でリムを消します。見るのは落ち影だけで NdotL の陰は含みません（リムは「そこに光が届いているか」の話なので） |
 
@@ -486,4 +500,4 @@ python gen_properties.py --write
 
 ---
 
-説明のあるもの 148 / 201。**残り 53 個は tooltip が書かれていない** ── `ToonPBRShaderGUI.cs` に足すとここにも出ます。
+説明のあるもの 156 / 215。**残り 59 個は tooltip が書かれていない** ── `ToonPBRShaderGUI.cs` に足すとここにも出ます。

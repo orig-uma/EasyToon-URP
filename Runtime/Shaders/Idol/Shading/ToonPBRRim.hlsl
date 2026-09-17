@@ -23,10 +23,9 @@ float2 ToonRimShape(ToonSurface s, ToonContext c)
     GetFresnelTerms(saturate(c.NdotV), _RimIntensity, _RimFresnelThickness,
                     _FuzzIntensity, _FuzzPower, rimFresnel, fuzzFresnel);
 
-    // マスクは視線にもライトにも依らないのでここで掛けておく。
-    // **産毛にはリムマスクを掛けない**（Doll と同じ）── 産毛は肌の全面に生えて
-    // いるもので、リムマスク（NPR Map の B）は輪郭光の出方を描くためのもの。
-    return float2(rimFresnel * s.rimMask, fuzzFresnel);
+    // リムマスク（旧 NPR Map の B）は T-419 で廃止した ── 描かれたアセットが無く、
+    // 部位ごとの調整は材質の Rim Intensity で足りる。B は Detail Mask に転用。
+    return float2(rimFresnel, fuzzFresnel);
 }
 
 /// <param name="lightEnergy">

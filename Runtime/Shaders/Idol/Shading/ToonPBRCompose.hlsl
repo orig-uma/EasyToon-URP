@@ -43,6 +43,7 @@ float3 ToonComposeLight(ToonLightTerms t, ToonContext c, Light light, float3 ext
     col += t.rim * c.rimGrain;
 
     flash = 0.0;
+#if defined(_GLITTER_ON)
     float atten = light.distanceAttenuation;
     if (sp.glitterActive)
     {
@@ -52,6 +53,7 @@ float3 ToonComposeLight(ToonLightTerms t, ToonContext c, Light light, float3 ext
                                    _GlitterIridescence, _GlitterIridescenceShift,
                                    _GlitterBaseReflection, e);
     }
+#endif
     return col;
 }
 

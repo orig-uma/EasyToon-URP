@@ -349,7 +349,10 @@ def fetch_count(v: dict[str, float], kw: set[str],
         ("_BaseMap", 1),
         ("_MaskMap", 1),
         ("_NPRMap", 1 if on("_NPRMapOn") else 0),
-        ("_CavityMap", 1 if on("_CavityStrength", 0.0) else 0),
+        ("_FabricMap", 1 if on("_FabricMapOn") else 0),
+        ("_AnisotropyMap", 1 if (st == 4 and on("_AnisotropyMapOn")) else 0),
+        # Cavity / Curvature / AO は Geometry Map の 1 枚（個別マップは T-423 で廃止）
+        ("_GeometryMap", 1 if "_GEOMETRYMAP_ON" in kw else 0),
         ("_EmissionMap", 1 if on("_EmissionOn") else 0),
         ("_BumpMap", 1 if on("_NormalMapOn") else 0),
         ("_ShadeNormalMap", 1 if on("_ShadeNormalStrength", 0.0) else 0),
@@ -358,13 +361,14 @@ def fetch_count(v: dict[str, float], kw: set[str],
                           and (v.get("_SubsurfaceStrength", 0.0)
                                + v.get("_TransmissionStrength", 0.0)) > 0.0) else 0),
         ("_BentNormalMap", 1 if on("_BentNormalOn") else 0),
-        ("_CurvatureMap", 1 if on("_CurvatureSoftness", 0.0) else 0),
         ("_RampMap", 1 if on("_UseRampMap") else 0),
         ("_FaceSDFMap", 1 if st == 2 else 0),
         ("_HairShiftMap", 1 if st == 3 else 0),
         ("_HairFlowMap", 1 if (st == 3 and on("_HairFlowStrength", 0.0)) else 0),
         ("環境反射（プローブ）", 2),
-        ("影フィルタ", defines["TOON_SHADOW_TAPS"] if hq else 1),
+        # タップ数は材質の HQ Shadow Taps（キーワード）で 8 / 16 / 32。無指定は既定の 16（T-418）
+        ("影フィルタ", (8 if "_HQSHADOWTAPS_8" in kw else 32 if "_HQSHADOWTAPS_32" in kw
+                       else defines["TOON_SHADOW_TAPS"]) if hq else 1),
     ]
     return rows
 
@@ -1447,8 +1451,6 @@ def check_dead_gates(root: Path, materials_dir: Path | None) -> list[Finding]:
     GATES = [
         ("_MatCapIntensity", "_MatCapTex", False,
          "既定が黒なので**加算値が 0**。絵は変わらないがフェッチと約 26 命令を払う"),
-        ("_CavityStrength", "_CavityMap", False,
-         "既定が白なので**窪みが 1（無変化）**。絵は変わらないがフェッチを払う"),
         ("_NPRMapOn", "_NPRMap", True,
          "既定が白だと **G が 1**（基準は 0.5）になり、**影が最大まで遅れて出なくなる**"),
         ("_UseRampMap", "_RampMap", True,
@@ -1824,6 +1826,12 @@ ALLOWED_KEYWORDS = {
     "_ALPHATEST_ON",
     "_HQ_SHADOW_ON",
     "_OUTLINE_ON",
+    "_FABRICMAP_ON",    # T-419: Fabric Map（衣装の PBR 拡張）。割り当てがあるときだけ読む
+    "_ANISOMAP_ON",     # T-419: Anisotropy Map（布の織りの向き）。同上
+    "_GEOMETRYMAP_ON",     # T-422: Geometry Map（R Cavity / G Curvature / B AO を 1 枚に）
+    "_GLITTER_ON",      # T-418: Glitter Intensity > 0 に追従。静的な設定なので一様分岐からキーワードへ
+    "_STOCKING_ON", "_MATCAP_ON", "_DEBUG_ON",   # 同上（Stocking / MatCap Intensity > 0、Debug Mode > 0）
+    "_HQSHADOWTAPS_8", "_HQSHADOWTAPS_16", "_HQSHADOWTAPS_32",   # T-418: HQ Shadow Taps（KeywordEnum）
     "_SURFACETYPE_DEFAULT", "_SURFACETYPE_SKIN", "_SURFACETYPE_FACE",
     "_SURFACETYPE_HAIR", "_SURFACETYPE_CLOTH",
 }
@@ -2022,6 +2030,35 @@ def _check_asmdef_deps(root: Path) -> list[Finding]:
             f" git URL 配布のパッケージは dependencies に書けない"
             f"（UPM がレジストリ解決に失敗してインストール自体が拒否される）ので、"
             f" versionDefines で定義したシンボルを defineConstraints に入れること。"))
+
+    # **下限は 2 か所にあり、必ず同じ値でなければならない。** Installer の
+    # `CoreMinVersion`（古い Core を更新する条件）と、Editor asmdef の
+    # `versionDefines` の式（この版以上の Core があるときだけ本体をコンパイル）。
+    # asmdef だけ古いままだと、旧 Core で本体がコンパイルされて新 API 参照で
+    # エラー → ドメインリロード未完了 → Installer が走らず**Core が追従しない**
+    # （0.2.3 で Installer だけ 0.3.3 に上げて実際に起きた）。逆なら本体が
+    # 除外されたまま Installer は何もしない。
+    inst = next(iter(pkg_root.rglob("EasyShaderCoreInstaller.cs")), None)
+    if inst is not None:
+        m = re.search(r'CoreMinVersion\s*=\s*"([^"]+)"', inst.read_text(encoding="utf-8", errors="replace"))
+        for asm in sorted(pkg_root.rglob("*.asmdef")):
+            try:
+                data = json.loads(asm.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                continue
+            for vd in data.get("versionDefines") or []:
+                if vd.get("name") != "com.origuma.easyshader-core":
+                    continue
+                expr = str(vd.get("expression", "")).strip()
+                if m is None or expr != m.group(1):
+                    out.append(Finding(
+                        "error", "設計ルール 4", "Core の必要バージョンが 2 か所でずれている",
+                        f"{asm.name} の versionDefines 式 '{expr}' と Installer の"
+                        f" CoreMinVersion '{m.group(1) if m else '?'}' が違う。"
+                        f" asmdef が古いままだと、旧 Core のプロジェクトで本体 Editor が"
+                        f" コンパイルされて新 API 参照でエラーになり、ドメインリロードが"
+                        f" 完了せず Installer が走らない ── **Core が更新されない。**"
+                        f" 両方を同じ値（必要最低バージョン）にすること。"))
 
     if guid_refs:
         # **黙って飛ばさない。** GUID 参照は名前で解決できないので未検査。

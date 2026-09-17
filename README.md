@@ -35,7 +35,7 @@ https://github.com/orig-uma/EasyToon-URP.git
 特定バージョンを指定する場合:
 
 ```
-https://github.com/orig-uma/EasyToon-URP.git#v0.2.3
+https://github.com/orig-uma/EasyToon-URP.git#v0.2.6
 ```
 
 依存する共通基盤パッケージ [EasyShaderCore](https://github.com/orig-uma/EasyShaderCore-URP)（`com.origuma.easyshader-core`）は、
@@ -43,7 +43,7 @@ https://github.com/orig-uma/EasyToon-URP.git#v0.2.3
 手動手順つきの案内ウィンドウが表示される。手動で先に入れる場合:
 
 ```
-https://github.com/orig-uma/EasyShaderCore-URP.git#v0.3.3
+https://github.com/orig-uma/EasyShaderCore-URP.git#v0.3.4
 ```
 
 ### Embedded

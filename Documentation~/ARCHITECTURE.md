@@ -92,12 +92,21 @@ NdotL
 
 ### キーワード方針
 
-**8 個のみ。** 追加は `param_check` の `ALLOWED_KEYWORDS` へ書くのが手続き。
+**18 個のみ。** 追加は `param_check` の `ALLOWED_KEYWORDS` へ書くのが手続き。
 
 ```
-_ALPHATEST_ON  _HQ_SHADOW_ON  _OUTLINE_ON
+_ALPHATEST_ON  _HQ_SHADOW_ON  _OUTLINE_ON  _FABRICMAP_ON  _ANISOMAP_ON  _GEOMETRYMAP_ON
+_GLITTER_ON  _STOCKING_ON  _MATCAP_ON  _DEBUG_ON
+_HQSHADOWTAPS_{8,16,32}
 _SURFACETYPE_{DEFAULT,SKIN,FACE,HAIR,CLOTH}
 ```
+
+`_HQSHADOWTAPS_*` は `HQ Shadow Taps`（KeywordEnum）で、HQ Shadow のタップ数を材質ごとに選ぶ（T-418）。
+
+`_GLITTER_ON` / `_STOCKING_ON` / `_MATCAP_ON` / `_DEBUG_ON` はトグルを持たず、それぞれ
+`Glitter Intensity` / `Stocking Intensity` / `MatCap Intensity` > 0、`Debug Mode` > 0 に追従する（T-418）。Glitter は材質の
+静的な設定で、一様分岐のままだと OFF の材質でも最悪経路のレジスタ（8 本）を確保され占有率を
+下げていた（実測: PC 構成 2,389 → 1,917 命令 / レジスタ 57 → 51）。
 
 ### ステンシルレイアウト（前髪透過）
 
@@ -194,7 +203,7 @@ Idol の 6 つに従う。現状:
 2. キーワードは上表のみ — **満たす**（8 個。許可リストで機械的に守る）
 3. Core は純粋関数のみ — **満たす**（共有は純関数 4 つ: IGN / GGX の D・V・F。T-340）
 4. include 順 / `Doll/` 禁止 — **満たす**
-5. 未ベイク・既定値で安全にスキップ — **満たす**（2D 21 個すべて既定値あり。ブルーノイズは .shader.meta の既定テクスチャ）
+5. 未ベイク・既定値で安全にスキップ — **満たす**（2D 22 個すべて既定値あり。ブルーノイズは .shader.meta の既定テクスチャ）
 6. RendererFeature は Render Graph — **満たす**（2 つとも）
 
 ## 検証

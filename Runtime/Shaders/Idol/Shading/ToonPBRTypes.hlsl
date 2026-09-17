@@ -16,6 +16,8 @@ struct ToonSurface
     float3 diffuseColor;        // albedo * (1 - metallic)
     float  metalSpecBoost;      // lerp(1, _MetalSpecularBoost, metallic)。非金属では 1
     float  metalEnvBoost;       // lerp(1, _MetalEnvBoost, metallic)。同上
+    float  metallic;            // Mask R × Metallic（sheen の金属染めに使う。T-420）
+    float  geomCurvature;      // Geometry Map の G（0.5 = 平坦）。コンテキストが読む（T-422）
     float3 f0;
     float  perceptualRoughness;
     float  roughness;
@@ -24,8 +26,9 @@ struct ToonSurface
     float  thickness;
     float  specMask;
     float  shadowOffset;        // -1 .. +1
-    float  rimMask;
-    float  rampIndex;
+    float  sheenMask;           // Fabric Map G。1 = 材質値のまま（T-419）
+    float  coatMask;            // Fabric Map B
+    float  iridMask;            // Fabric Map A
     float3 emission;
     float3 shadowColor;         // 影側の色。フラグメントで1回だけ求める
 };
@@ -88,5 +91,7 @@ struct ToonContext
     // 正面・上向きの陰の持ち上げ（FR-31）。**法線と向きだけで決まるので光源非依存。**
     // 逆光で消す係数だけがライトごとに変わる。
     float  sheenScale;          // 布の下地の縮小率（sheen のエネルギー保存）
+    float3 clothT;              // 織りの向き（Cloth）。接線か Anisotropy Map の向き。光源非依存（T-419）
+    float  clothAniso;          // Cloth Anisotropy × Anisotropy Map の B
 };
 

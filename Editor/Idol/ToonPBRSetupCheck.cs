@@ -513,9 +513,11 @@ namespace ToonNPR.EditorTools
             {
                 ("_BumpMap",        "_NormalMapOn",          "Normal Map"),
                 ("_NPRMap",         "_NPRMapOn",             "NPR Map"),
+                ("_FabricMap",      "_FabricMapOn",          "Fabric Map"),
+                ("_GeometryMap",       "_GeometryMapOn",           "Geometry Map"),
+                ("_AnisotropyMap",  "_AnisotropyMapOn",      "Anisotropy Map"),
                 ("_BentNormalMap",  "_BentNormalOn",         "Bent Normal"),
                 ("_ShadeNormalMap", "_ShadeNormalStrength",  "Shade Normal"),
-                ("_CurvatureMap",   "_CurvatureSoftness",    "Curvature Map"),
                 ("_SSSMap",         "_SSSMapStrength",       "SSS Map"),
                 ("_HairFlowMap",    "_HairFlowStrength",     "Hair Flow"),
             };

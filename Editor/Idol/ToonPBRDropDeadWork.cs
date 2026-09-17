@@ -50,8 +50,6 @@ namespace ToonNPR.EditorTools
         {
             new Gate { Strength = "_MatCapIntensity", Tex = "_MatCapTex",  Cost = 26,
                        Why = "既定 \"black\" を掛けるので寄与は 0" },
-            new Gate { Strength = "_CavityStrength",  Tex = "_CavityMap",  Cost = 12,
-                       Why = "既定 \"white\" なので乗算は常に ×1" },
         };
 
         [MenuItem("Tools/Idol/絵に出ない計算を止める")]

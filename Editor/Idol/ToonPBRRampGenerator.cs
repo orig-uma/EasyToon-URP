@@ -190,7 +190,7 @@ namespace ToonNPR.EditorTools
                 if (m == null) continue;
                 m.SetTexture("_RampMap", asset.texture);
                 m.SetFloat("_UseRampMap", 1f);
-                // 生成物は常に 1 行。多段ランプ（NPR.a で行選択）は外部テクスチャの領分。
+                // 生成物は常に 1 行。多段ランプ（Ramp Index Override で行選択）は外部テクスチャの領分。
                 m.SetFloat("_RampRowCount", 1f);
                 EditorUtility.SetDirty(m);
             }

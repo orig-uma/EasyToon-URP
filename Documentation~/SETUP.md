@@ -47,9 +47,27 @@ Tools > Idol > セットアップ診断
 | Reflection Probe | 必須 | 背景を焼いたもの。空のプローブだと金属が死ぬ |
 | MaskMap | 任意 | sRGB **OFF**。未設定（白）でも動く |
 | NPRMap | 任意 | sRGB **OFF**。G（影オフセット）が一番効く |
+| FabricMap | 任意 | sRGB **OFF**。R 反射率 / G Sheen / B Clearcoat / A Iridescence の倍率。白が中立（T-419） |
+| BakedMap | 任意 | sRGB **OFF**。R Cavity / G Curvature / B AO。Baking タブが自動で詰める（T-422） |
+| AnisotropyMap | 任意（Cloth） | sRGB **OFF**。RG 織りの向き / B 強さ。glTF anisotropyTexture と同じ（T-419） |
 | Face SDF | 顔を使うなら必須 | sRGB OFF・**非圧縮**。16bit 1ch（R×256+G）の一方式。Baking タブで焼く（Core の `FACE_SDF_BAKING.md` が仕様）|
 | Hair Shift Noise | 任意 | 未設定時は "gray" |
 | Ramp | 任意 | `Use Ramp Map` を ON にしたときだけ |
+
+### InstaMat / Substance から書き出す（Export Preset）
+
+テクスチャはチャンネル単位で詰める。Export Preset を 1 つ作れば Idol の 4 枚がそのまま出る。
+**全部 sRGB OFF（Linear）**。並びは glTF の拡張と同じなので、glTF 用のプリセットが下敷きにできる。
+
+| 出力ファイル | R | G | B | A | 備考 |
+|---|---|---|---|---|---|
+| `<name>_Mask` | Metallic | Ambient Occlusion | Thickness（無ければ白） | **Roughness** | 材質で `Mask A Is Roughness` を ON にする（反転不要）。Smoothness で出すなら OFF |
+| `<name>_NPR` | 白（鏡面マスク） | 0.5 灰（影オフセット） | Detail Mask（無ければ白） | 白 | R と G は手描き用。InstaMat からは中立値で出しておき、後から Unity 側や 2D ツールで塗る |
+| `<name>_Fabric` | Specular（glTF specularFactor） | Sheen（glTF sheen の強さ） | Clearcoat（glTF clearcoatFactor） | Iridescence（glTF iridescenceFactor） | 使わないチャンネルは白 |
+| `<name>_Geometry` | 白（Cavity。あれば入れる） | Curvature | Ambient Occlusion | 白 | Mesh Maps をそのまま。Unity の Baking タブで焼く場合は不要 |
+| `<name>_Aniso` | Anisotropy 向き X | Anisotropy 向き Y | Anisotropy 強さ | 白 | glTF anisotropyTexture そのまま。Surface Type Cloth のみ |
+
+Base Color は sRGB ON、Normal は OpenGL 向き（Unity 標準）。Hair Flow は InstaMat では作らず Baking タブで焼く（倍角エンコードのため）。
 
 ### マップは自分で描かなくてよい（**Baking タブ**）
 
@@ -95,7 +113,7 @@ Idol の Baking タブで焼き直してください。テクスチャは**非�
 ### 陰の質感で最初に触るもの
 
 **`Curvature Softness` は既定 0 です。** 曲率の供給源は Baking タブで焼く
-**Curvature Map** だけなので（画面微分の推定は T-381 で撤去）、焼かずに上げても
+**Geometry Map の G（Curvature）** だけなので（画面微分の推定は T-381 で撤去）、焼かずに上げても
 何も起きません。焼くと Influence が 0 なら 1 に立ちます。
 
 **`Shade Normal` も既定 OFF です**（強度 0）。値が入るのは Baking タブで焼いたときだけで、
@@ -278,7 +296,7 @@ URP の SSAO（Renderer Feature）を入れると、このシェーダーも AO 
 | ライト方向上書き | Light Direction Override | 背景と影の向きが意図的にずれる |
 | 瞳の描画順 | §3.6 参照 | 前髪越しにハイライトが出る |
 | 顔のシャドウキャスタ除外 | §3.7 参照 | 鼻の自己影が消える |
-| Cavity（窪みの微細遮蔽） | Mask Map > Cavity Map + Strength | 縫い目・ベルト・靴の皺が締まり、そこの鏡面が引く |
+| Cavity（窪みの微細遮蔽） | Effects タブ > Baked Maps > Geometry Map（R）+ Cavity Strength | 縫い目・ベルト・靴の皺が締まり、そこの鏡面が引く |
 | 布の sheen のエネルギー保存 | Cloth > Sheen Energy Conservation を 1 | 縁の明るさは残り、その下の下地が沈む |
 | 追加光源の影色 | Shadow Color > from Add. Lights を 0 | リム光の色が正面の影に被らなくなる |
 
@@ -324,7 +342,7 @@ Tonemapping だけ注意。**Neutral を使う。** ACES は影の階調を潰�
 | 症状 | 原因 |
 |---|---|
 | 顔だけ黒い／ちらつく | `FaceDirectionBinder` が無く `_HeadForward` が未設定（§1 参照）。付いているのに壊れる場合は `Forward / Right Axis` が真上／真下を向いている（コンソールに警告が出る） |
-| リムが出ない | 主光源が被写体の向こう側に無い（リムは光が回り込んだ側だけに出る）／`Rim Intensity` が 0／NPR Map の B が 0 |
+| リムが出ない | 主光源が被写体の向こう側に無い（リムは光が回り込んだ側だけに出る）／`Rim Intensity` が 0 |
 | 金属が真っ黒 | Reflection Probe が無い／背景を置く前に Bake した |
 | キャラだけ浮く | ライト2灯の向きが揃っていない |
 | 影が階段状 | Shadow Distance が長すぎる |

@@ -53,6 +53,19 @@ float3 ToonLightEnergy(Light light)
     return light.color * light.distanceAttenuation;
 }
 
+// 肩の柔らかい輝度上限（T-421）。色相は保ち、輝度だけを丸める。
+// knee = 上限の 75% までは素通し、そこから上限へ指数で漸近する。硬いクランプだと
+// 上限に当たった面が一様に塗り潰されるが、これなら階調が残る。
+float3 ToonSoftLuminanceLimit(float3 col, float limit)
+{
+    float lum   = max(Luminance601(col), 1e-4);
+    float knee  = limit * 0.75;
+    float range = max(limit - knee, 1e-4);
+    float over  = max(lum - knee, 0.0);
+    float outL  = min(lum, knee) + range * (1.0 - exp(-over / range));
+    return col * (outL / lum);
+}
+
 // 白飛び防止（T-350）。**拡散・透過・リムにだけ**上限を掛ける ── 鏡面は
 // 「強い光源ほど鋭く光る」のが正しく、抑えると金属や瞳が死ぬ。
 // Doll は伝達関数を通した後の拡散光を抑えるが、こちらは**光源側**を
@@ -62,15 +75,32 @@ float3 ToonDiffuseEnergy(float3 lightEnergy)
 {
     float3 e = lightEnergy;
     UNITY_BRANCH
+    // 硬いクランプから柔らかい肩へ（T-421）。上限値の意味は同じで、上限の 75% までは素通し。
+    // 他の 4 つの上限と挙動を揃える（硬いと上限に当たった面が一様に塗り潰される）。
     if (_DiffuseLightLimit > 0.0)
-        e = ApplyLuminanceClamp(lightEnergy, _DiffuseLightLimit);
+        e = ToonSoftLuminanceLimit(lightEnergy, _DiffuseLightLimit);
+    return e;
+}
+
+// 鏡面・sheen・コートに使う光のエネルギー。Specular Light Limit で 1 灯あたりを丸める（T-421）。
+// 拡散と別にするのは、鏡面は強い光ほど鋭く光るのが正しく、上限を別に持ちたいため。
+float3 ToonSpecularEnergy(float3 lightEnergy)
+{
+    float3 e = lightEnergy;
+    UNITY_BRANCH
+    if (_SpecularLightLimit > 0.0)
+        e = ToonSoftLuminanceLimit(lightEnergy, _SpecularLightLimit);
     return e;
 }
 
 // 返り値は成分ごと（ToonLightTerms）。畳むのは ToonComposeLight（T-410）。
 // rimShape: ToonRimShape の結果（視線だけで決まるのでフラグメントで 1 回）。
+/// <param name="allowCoat">
+/// クリアコートを評価するか。主光源は true、追加光は false（T-418）。呼び出し側で定数を渡す
+/// ので、false の側は分岐ごとコンパイル時に消える（追加光 1 灯あたりの命令を減らす）。
+/// </param>
 ToonLightTerms ToonShadeLight(ToonSurface s, ToonContext c, Light light, float3 diffuseL,
-                              float shadowColorScale, float attenAA, float2 rimShape,
+                              float shadowColorScale, float attenAA, float2 rimShape, bool allowCoat,
                               out float litOut, out float castOut)
 {
     float3 L = light.direction;   // 鏡面・透過に使う実際の向き
@@ -221,9 +251,8 @@ UNITY_BRANCH
 if (_UseRampMap > 0.5)
 {
     float rows = max(1.0, _RampRowCount);
-    float index = (_RampIndexOverride >= 0.0)
-                ? _RampIndexOverride
-                : round(saturate(s.rampIndex) * (rows - 1.0));
+    // 行は材質で選ぶ（画素ごとの RampIndex は T-419 で廃止。-1 は先頭行）
+    float index = max(_RampIndexOverride, 0.0);
     float2 rampUV = float2(lit, (index + 0.5) / rows);
     // 同じ理由で LOD 0 固定。U は光の当たり具合で、画面上の微分に意味が無い。
     // ミップに落ちるとランプが滲んで境界が甘くなるので、そもそも 0 が正しい。
@@ -350,8 +379,11 @@ if (_UseRampMap > 0.5)
 
     // クリアコート。下地の鏡面を (1 - Fc) で減衰させてエネルギーを保存する。
     // 強度 0 のときは分岐ごと飛ぶのでコストは掛からない（T-037 の方針）。
+    // 追加光（allowCoat = false）では評価しない（T-418）。
+    // コートの強さは Fabric Map の B（場所ごと。T-419）を掛けた値
+    float coatStrength = _ClearcoatStrength * s.coatMask;
     UNITY_BRANCH
-    if (_ClearcoatStrength > 0.0)
+    if (allowCoat && coatStrength > 0.0)
     {
         float coatPerceptual = saturate(1.0 - _ClearcoatSmoothness);
         float coatRoughness  = max(coatPerceptual * coatPerceptual, 0.002);
@@ -359,9 +391,9 @@ if (_UseRampMap > 0.5)
         float LdotH = saturate(dot(L, H));
         float Dc = ToonD_GGX(NdotH, coatRoughness);
         float Vc = ToonV_Kelemen(LdotH);
-        float Fc = (0.04 + 0.96 * pow(1.0 - LdotH, 5.0)) * _ClearcoatStrength;
+        float Fc = (0.04 + 0.96 * pow(1.0 - LdotH, 5.0)) * coatStrength;
 
-        float3 coatTint = ToonIridescence(NdotV, _IridescenceIntensity,
+        float3 coatTint = ToonIridescence(NdotV, _IridescenceIntensity * s.iridMask,
                                          _IridescenceThickness, _IridescenceShift);
 
         // **下地は鏡面も拡散も (1 - Fc) で減衰させる。**
@@ -388,10 +420,9 @@ if (_UseRampMap > 0.5)
     //
     // 織り方向に伸ばすのは、ハーフベクトルの接線成分を縮めることで行う。
     // Charlie の分布式には手を入れずに済み、異方性 0 で従来と完全に一致する。
-    // 接線はメッシュのものを使う。専用のフローマップも考えられるが、
-    // テクスチャ側の契約が増えるうえ手元に該当アセットが無いので見送った。
-    float3 weave  = (_ClothTangentSwap > 0.5) ? c.B : c.T;
-    float3 Hcloth = normalize(H - weave * dot(H, weave) * _ClothAnisotropy);
+    // 向きと強さはコンテキストで 1 回求めたもの（接線か Anisotropy Map。T-419）。
+    float3 weave  = c.clothT;
+    float3 Hcloth = normalize(H - weave * dot(H, weave) * c.clothAniso);
     float  NdotHc = saturate(dot(N, Hcloth));
 
     // シーンにも同じカーネルを掛ける。**布の皺は法線が画素内で最も振れる場所**で、
@@ -400,7 +431,9 @@ if (_UseRampMap > 0.5)
     float Dc = ToonD_Charlie(NdotHc, c.sheenAlpha);
     float Vc = ToonV_Ashikhmin(NdotV, NdotLs);
 
-    float3 sheenColor = _SheenColor.rgb * _SheenIntensity;
+    float3 sheenColor = _SheenColor.rgb * _SheenIntensity * s.sheenMask;   // Fabric Map の G（T-419）
+    // 金属部は sheen を反射色（アルベド）で染める（T-420。ラメ・金糸）。0 で白のまま
+    sheenColor *= lerp(1.0, s.albedo, s.metallic * _SheenMetalTint);
 
     // **sheen が持っていくぶん、下地を縮めてから足す。** 縮めないと
     // 布だけエネルギーが増える。既定は 0（従来どおり足すだけ）で、
@@ -474,9 +507,10 @@ if (_UseRampMap > 0.5)
 
     ToonLightTerms t = (ToonLightTerms)0;
     t.diffuse  = (diffuse * directAO + transmission) * ToonDiffuseEnergy(lightEnergy);
-    t.specular = specular  * lightEnergy;
-    t.sheen    = sheenTerm * lightEnergy;
-    t.coat     = coat      * lightEnergy;
+    float3 specEnergy = ToonSpecularEnergy(lightEnergy);
+    t.specular = specular  * specEnergy;
+    t.sheen    = sheenTerm * specEnergy;
+    t.coat     = coat      * specEnergy;
     // リムもこのライトの成分。形（rimShape）は視線だけで決まり、どの光が縁を照らすかは
     // ライトごと（T-351）。落ち影の反映もここで済む。
     t.rim      = ToonRimLight(rimShape, c, light.direction, ToonDiffuseEnergy(lightEnergy), castShadow);
@@ -618,17 +652,18 @@ float3 ToonShadeIndirect(ToonSurface s, ToonContext c, float mainLit, float main
     indirectSpecular *= c.specGrain;
 
     // コートの映り込み。下地より鋭いので別 mip を引く。
+    float coatStrength = _ClearcoatStrength * s.coatMask;   // Fabric Map の B（T-419）
     UNITY_BRANCH
-    if (_ClearcoatStrength > 0.0)
+    if (coatStrength > 0.0)
     {
         float coatPr = saturate(1.0 - _ClearcoatSmoothness);
 
         // **底は saturate で守る。** 根本原因（`c.NdotV` が 1 を超えていた）は
         // 生成側で直したが、負の底の pow は NaN になるので二重に守っておく
         // ── ここは NaN が出ると瞳の中心が黒or白に飛ぶ、最も目立つ場所。
-        float Fc = (0.04 + 0.96 * pow(saturate(1.0 - c.NdotV), 5.0)) * _ClearcoatStrength;
+        float Fc = (0.04 + 0.96 * pow(saturate(1.0 - c.NdotV), 5.0)) * coatStrength;
 
-        float3 coatTint = ToonIridescence(c.NdotV, _IridescenceIntensity,
+        float3 coatTint = ToonIridescence(c.NdotV, _IridescenceIntensity * s.iridMask,
                                          _IridescenceThickness, _IridescenceShift);
 
         // 直接光側と同じく**下地は鏡面も拡散も減衰させる**。

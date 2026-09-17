@@ -2,11 +2,66 @@
 
 ## [Unreleased]
 
-## [0.2.3] - 2026-09-15
+## [0.2.6] - 2026-09-18
 
 ### Changed (Breaking)
 
-- **Baking タブ > Face SDF の表示名を Baker の設定名に揃えた**（T-403 と同じ規則）。`Cast Shadow` → `Use Cast Shadow`、`Line Softness` → `DF Spread`、プロキシ関連は `Proxy Mode / Proxy Shape / Proxy Taper / Proxy Flatten / Proxy Detail / Proxy Detail Angle / Proxy Manual Fit / Proxy Center Transform / Proxy Center Offset / Proxy Center WS / Proxy Radii`。単位（m・texel）はツールチップへ。
+- **個別の `Cavity Map` / `Curvature Map` を廃止し、Geometry Map（R Cavity / G Curvature / B AO）に一本化した**（T-423）。Cavity と Curvature の供給源は Geometry Map だけになる。`Cavity Strength` / `Curvature Softness` はそのまま。**既存の Idol 材質は `Tools > Idol > Cavity・Curvature を Geometry Map へ移行` を一度実行する**（材質に残っている旧参照か、Baked フォルダの `*_Cavity.png` / `*_Curvature.png` / `*_AO.png` から 1 枚に詰めて割り当てる）。実行するまで Cavity と曲率は効かない。Doll / Cel からの移行（Migrator）は Cavity / Curvature / AO を自動で Geometry Map に詰める ── **AO が初めて自動で移るようになった**（従来は「移せない」と注記するだけだった）。Geometry Map が無い材質では Cavity / 曲率のコードごと消える（PC 実行時相当 1,727 → 1,707 命令、レジスタ 41 → 40、テクスチャ 24 → 22 枚）。
+
+### Added
+
+- **Baked Map を `Geometry Map` に改名し、基本タブの独立した節にした**（T-424）。Unity で焼いたものに限らず、InstaMAT / Substance の Mesh Maps（Curvature / Ambient Occlusion）を詰めたものも同じ規約で使える、という建付けにするため。プロパティは `_GeometryMap` / `_GeometryMapOn`、キーワードは `_GEOMETRYMAP_ON`、`Occlusion Source` の選択肢は Mask G / Geometry B / Both、Baking タブの出力は `*_Geometry.png`。
+
+- **`Geometry Map`（R Cavity / G Curvature / B Ambient Occlusion）と `Occlusion Source`**（T-422）。ベイクしたグレー 3 枚を 1 枚にまとめる。`Geometry Map On`（キーワード `_GEOMETRYMAP_ON`）の間は個別の Cavity Map / Curvature Map を読まず、フェッチが 2 → 1（AO も含めれば 3 → 1）。各チャンネルの効きは従来どおり `Cavity Strength` / `Curvature Softness` / `Occlusion Strength`。Baking タブは Cavity / Curvature / AO を焼くたびに自動で詰め直し、**AO が初めて自動で割り当たる**（従来は保存のみで Mask Map の G へ手で合成が必要だった）。遮蔽は `Occlusion Source` で Mask G / Geometry B / Both（掛け合わせ）を選ぶ。既存の個別マップはそのまま使える。
+
+- **白飛び対策を 4 段追加**（T-421）: `Albedo Brightness Limit`（アルベドの最大成分の上限）、`Additional Light Total Limit`（追加光の合計）、`Specular Light Limit`（鏡面・sheen・コートに使う 1 灯あたりの光）、`Output Luminance Limit`（直接光＋間接光の最終出力。発光は対象外）。どれも色相を保って輝度だけを柔らかい肩（上限の 75% まで素通し）で丸める。既存の `Diffuse Light Limit`（拡散の 1 灯あたり）と `Additional Light Blend Mode` と合わせて、アルベド → 1 灯ごと → 追加光の合計 → 最終出力の順に効く。既定はすべて OFF。
+
+- **`Metal Diffuse Retain`**（T-420）。金属部（Mask R × Metallic）に拡散の陰影を一部残す。物理では金属の拡散は 0 で、映り込みの弱いステージでは金属が沈む（利用者「Metallic で明度が落ち込む」）。既定 0 = 従来どおり。
+- **`Sheen Metal Tint`**（T-420）。金属部の sheen をアルベド（金属の反射色）で染める（ラメ・金糸の布）。従来は金属でも sheen が白のままだった（利用者「Sheen に Metallic が乗らない」）。エネルギー保存の縮小にも同じ色を使う。既定 0 = 従来どおり。
+
+### Changed
+
+- **`Diffuse Light Limit` を柔らかい肩に揃え、1 灯ごとの上限の既定を入れた**（T-421）。硬いクランプから、上限の 75% まで素通しで以降は漸近する形へ（上限値の意味は同じ）。既定は `Diffuse Light Limit` 0 → 1.2、`Specular Light Limit` 0 → 4。アルベド・追加光の合計・最終出力の上限は既定 OFF のまま（材質の作り方やステージ照明の設計の問題を既定で隠さないため）。**新規材質と、これらを保存していない既存材質は強い光で見た目が変わる。**
+
+## [0.2.5] - 2026-09-17
+
+### Changed (Breaking)
+
+- **NPR Map の B を Detail Mask に、A を未使用にした**（T-419）。旧 B（リムマスク）と旧 A（画素ごとのランプ行）は廃止。リムの部位調整は材質の `Rim Intensity`、ランプの行は `Ramp Index Override`（-1 = 先頭行）で行う。B は Detail Map の合成率とノーマル強度に掛かる（レースの部分だけ織りを入れる、など）。既存の NPR Map はそのまま読める（並びは変えていない）。旧 B に白以外を塗っていた材質だけ、ディテールがその場所で弱まる。
+
+### Added
+
+- **`Mask A Is Roughness`**（T-419）。Mask Map の A を Roughness として読む（反転）トグル。InstaMat / Substance の標準出力を反転せずに入れられる。SETUP.md に InstaMat の Export Preset 表（Mask / NPR / Fabric / Aniso の各チャンネル）を追加。
+
+- **`Anisotropy Map`（RG 向き / B 強さ）**（T-419）。Surface Type Cloth の織りの向きを場所ごとに指定する。glTF の anisotropyTexture と同じ並び（RG は接線空間の向きを 0..1 で、B は `Cloth Anisotropy` の倍率）。(0.5, 0.5) はメッシュの接線のまま。`Anisotropy Map On` で読む（キーワード `_ANISOMAP_ON`）。髪の Hair Flow Map は倍角エンコードのベイク出力で形式が違うため統合せず、従来どおり。
+
+- **`Fabric Map`（R Specular / G Sheen / B Clearcoat / A Iridescence）と `Reflectance`**（T-419）。衣装の質感を場所ごとに変える倍率マップ。並びは glTF の拡張と同じで InstaMat の書き出しプリセットがそのまま使える。白が中立。`Reflectance` は非金属の反射率で f0 = 0.16 × 値²（0.5 = 従来の 0.04。綿 0.35 / サテン 0.55 / エナメル 0.7）。`Fabric Map On` で読む（キーワード `_FABRICMAP_ON`。使わない材質のコストは変わらない）。
+
+- **`HQ Shadow Taps`**（T-418）: HQ Shadow のタップ数を材質ごとに 8 / 16 / 32 から選ぶ（KeywordEnum、既定 16 = 従来）。32 は Softness を上げても粒が出にくい（読みは 2 倍）。8 は一番軽いが 1 タップの重みが既定の遷移窓より太く、ライトを回すと影が反転しうるので硬い影向け。
+
+### Changed
+
+- **Glitter をキーワード `_GLITTER_ON` に移した**（T-418）。トグルは増やさず `Glitter Intensity > 0` に追従する（材質 GUI の ValidateMaterial と Migrator が立てる）。一様分岐のままだと OFF の材質でも最悪経路の一時レジスタ（8 本）を確保され、GPU の占有率を下げていた。実測（fxc、ForwardLit フラグメント、PC 実行時相当）: **2,389 → 1,917 命令 / 一時レジスタ 57 → 51**。Forward は 1,679 → 1,264。**既存の材質はインスペクタで一度表示するか `Tools > Idol > EasyToon・EasyPBR から移行` を通すとキーワードが揃う**（Intensity > 0 なのに粒が出ないときはこれ）。
+- **追加光ではクリアコートと Glitter のフラッシュを評価しない**（T-418）。ステージの追加光で要るのは色・光沢・sheen・リムで、コートの薄い層と粒のきらめきは主光源だけで足りる。sheen / リム / 2 ローブ目は追加光でも従来どおり。
+- **追加光の影を硬い 1 タップにした**（T-418、`ToonAdditionalLightShadowHard`）。URP は追加光にも主光源と同じソフトフィルタ（最大 16 タップ）を掛けていた。ステージの追加光は数が多く、影の縁の柔らかさは主光源ほど目立たない。点光源の面選択・距離フェード・Shadow Strength・ライトクッキーは従来どおり。
+- **環境反射のプローブは一番重要な 1 つだけ読む**（T-418）。以前は Forward で 2 枚、Forward+ で重みが埋まるまで複数を混ぜていたが、ステージはプローブ 1 つが普通で、混合の判定と 2 枚目の読みだけで 200 命令超を払っていた。影響範囲の外は従来どおり空へ滑らかに戻る。**プローブを重ねて置く配置では境界の混ざり方が変わる。**
+- **Stocking / MatCap / Debug をキーワード `_STOCKING_ON` / `_MATCAP_ON` / `_DEBUG_ON` に移した**（T-418）。Glitter と同じく、それぞれ `Stocking Intensity` / `MatCap Intensity` > 0、`Debug Mode` > 0 に追従（GUI の ValidateMaterial と Migrator が立てる）。
+- **Glitter の近傍探索を 1 セル 1 ハッシュに**（Core 0.3.4）。粒の配置は以前と変わる（密度・大きさの分布は同じ）。インストーラの Core ピンを v0.3.4 に。
+- **T-418 の合計**（fxc、ForwardLit フラグメント、命令 / 一時レジスタ）: PC 実行時相当 **2,389 / 57 → 1,625 / 39**、Glitter ON の材質 2,389 / 57 → 1,930 / 42、Forward 1,679 / 37 → 1,077 / 31、素 1,465 / 32 → 862 / 22。
+
+## [0.2.4] - 2026-09-16
+
+### Fixed
+
+- **旧 EasyShaderCore が入ったプロジェクトで本パッケージを更新しても Core が更新されなかった問題を修正。** Installer の必要最低バージョンは 0.3.3 に上げたのに、本体 Editor asmdef の `versionDefines` 式が `0.3.0` のままだった。旧 Core（0.3.1）では本体がコンパイル対象に残り、Core の新 API（プロキシ設定）参照でエラー → ドメインリロードが完了せず Installer が走らない、という 0.2.0 で直したはずの形が再発していた。式を `0.3.3` に揃え、`param_check.py`（設計ルール 4）に「Installer の `CoreMinVersion` と asmdef の式が一致すること」の検査を足して再発を止める。**Installer で Core を 0.3.3 に上げても Unity 側で一度エラーが出ていたプロジェクトは、本パッケージをこの版に更新してから Unity を再起動すること。**
+
+### Changed
+
+- **影まわりの既定値を「汚い影を出さない」方向へ変更**（利用者が複数モデルで検証した値）。`Shadow Threshold` 0.5 → 0.2、`Shadow Softness` 0.12 → 0.2、`Diffuse Wrap` 0.25 → 0.5、`Shadow Atten Softness` 0.35 → 0.7、`HQ Shadow On` 0 → 1、`HQ Shadow Softness` 0.3 → 1。既存マテリアルの値は変わらない（新規作成時の既定のみ）。
+
+## [0.2.3] - 2026-09-15
+
+### Changed (Breaking)
 
 - **深度リム（Screen Silhouette）を撤去した**（T-416）。`Rim Mode` と、深度モードでだけ効いていた `Rim Width` / `Rim Threshold` / `Rim Softness` / `Rim Fresnel Power` / `Rim Backlight Bias` / `Rim Directionality` / `Rim Depth Blend` を削除。リムはフレネル（EasyPBR(Doll) と同じ Core の式）だけになり、Fresnel モードだった材質の見た目は変わらない（深度モードだった材質はフレネルに切り替わる）。シェーダーはシーン深度を読まなくなったので、URP Asset の Depth Texture は不要。`Rim Fresnel Thickness (PBR)` は `Rim Fresnel Thickness` に改名（プロパティ名は同じ）。移行ツールの `_RimThickness` は `_RimFresnelThickness` へ素通しに変更。
 - **接地硬化（PCSS）を撤去した**（T-415）。`Shadow Contact Hardening (PCSS)` と `Shadow Penumbra Scale` を削除し、HQ セルフシャドウは回転 Vogel 16 タップの固定半径（`HQ Shadow Softness`）だけになる。8 タップのブロッカー探索で半影の幅を変えていたが、キャラの自己遮蔽では真の半影が 1 テクセルに届かず、推定の分散が「まだら」やちらつきになっていた。シャドウマップのフェッチが最大 8 回減る。プリセット窓の「接地硬化を切る」「可動域を狭める」「接地硬化 OFF」の行も削除。材質に残った値は使われない。
@@ -22,6 +77,8 @@
 - **Detail Map に乗算モード `Detail Multiply`**（T-404）。従来は「その色で置く」だけだったが、生地の陰（AO）は「元の色を暗くする」ので乗算が要る。強さは Detail Color の A。DCC で焼いた AO や生地の陰を、どのアルベドにも掛けられる。
 
 ### Changed
+
+- **Baking タブ > Face SDF の表示名を Baker の設定名に揃えた**（T-403 と同じ規則）。`Cast Shadow` → `Use Cast Shadow`、`Line Softness` → `DF Spread`、プロキシ関連は `Proxy Mode / Proxy Shape / Proxy Taper / Proxy Flatten / Proxy Detail / Proxy Detail Angle / Proxy Manual Fit / Proxy Center Transform / Proxy Center Offset / Proxy Center WS / Proxy Radii`。単位（m・texel）はツールチップへ。
 
 - **ライト応答を成分で返し、畳む段を 1 か所にした**（T-410）。`ToonShadeLight` は拡散 / 鏡面 / sheen / クリアコート / リムを `ToonLightTerms` で返し、新設の `ToonComposeLight` がそれを畳む。粒への分解（Glitter Specular → 鏡面と sheen、Glitter Rim → リム）、スパンコールのフラッシュ、影の床は、主光源も追加光源もここで一律に掛かる。これまで鏡面は Lighting、リムと粒は ForwardPass に散っていて、粒を足すたびに掛け忘れが出ていた（利用者「リムにも sheen にも乗らない」）。**環境反射も粒に分解する**ようにした（粒は小さな鏡なので映り込みも粒ごと。物理的にこちらが正しい）。クリアコートは粒の上に載る滑らかな薄膜なので、直接光でも映り込みでも粒にしない。粒 0 のときの絵は変わらない。
 - **ディテール法線を鋭いローブから外した**（T-401）。Detail Normal Map は影のグラデーション・sheen・リム・環境光に効き、GGX の鏡面・環境反射・MatCap・グリッターはベースの法線（法線マップまで）を見る。細かい織り目の法線が鋭いハイライトや映り込みを通ると起伏ごとに点が立って網点印刷のようになり、三角形ごとにミップ段が違うぶん「点の三角形」と「平らな三角形」が隣り合って見えていた。柔らかい拡散を通せば半影にだけ生地の目が浮く。
