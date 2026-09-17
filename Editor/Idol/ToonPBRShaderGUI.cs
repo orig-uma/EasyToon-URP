@@ -2241,7 +2241,10 @@ namespace ToonNPR.EditorTools
                 // ── **自分で作った罠は自分で塞ぐこと。**
                 if (gate.floatValue <= 0f && tex.textureValue != null)
                 {
-                    sleeping += "・" + gateName + "\n";
+                    // **Dissolve は言わない。** Dissolve Amount は強度ではなく進行度で、0 が平常
+                    //（実行時に Timeline / DissolveController が上げる）。テクスチャを入れて 0 のままなのが
+                    // 正しい使い方なので、警告すると常時出て邪魔になるだけ（利用者指摘）。
+                    if (gateName != "_DissolveAmount") sleeping += "・" + gateName + "\n";
                     continue;
                 }
 

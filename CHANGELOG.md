@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+## [0.2.7] - 2026-09-18
+
+### Changed
+
+- **`Share By Base Map` を Shade Normal / Bent Normal / SSS にも広げた**（T-427）。同じ Base Map を使う材質で 1 枚を焼いて全員に割り当てる。**機能を ON にするのは選択中の材質だけ** ── 顔だけ選んで Shade Normal を焼いても、同じ Base Map の耳や首で勝手に効き始めない（テクスチャは入るが強さは元のまま）。トグルは Bake Target の節へ移した（Geometry Map と向きのマップの両方に効くため）。Face SDF と Hair Flow は常に材質ごと。
+
+- **Baking タブを整理した**（T-426）。並びを「対象 → Geometry Map（Cavity / Curvature / AO。共有できるもの）→ 材質ごとのマップ（Shade Normal / Bent Normal / SSS）→ 部位専用（Face SDF / Hair Flow）」にし、Geometry Map の節に `Share By Base Map`・`Delete Source Files`（既定 ON）・「Cavity / Curvature / AO をまとめてベイク」・「残っている中間ファイルから詰め直す」をまとめた（以前は AO の折りたたみの中にあった）。`Delete Source Files` は詰めた後に Baked フォルダの `*_Cavity` / `*_Curvature` / `*_AO` を消す。1 種類だけ焼き直すときは、他のチャンネルを今の Geometry Map から引き継ぐので失われない。古い表記を直した: AO の「手で合成が要る」、Cavity の「_CavityStrength まで Baker が入れます」、Curvature の「Curvature Influence」（正しくは Curvature Softness）、保存先の説明（Source Root の隣 → マテリアルの隣の Baked フォルダ）。
+
+- **Geometry 系のベイク（Cavity / Curvature / AO）を、同じ Base Map を使う材質で 1 枚にまとめるようにした**（T-425、Core 0.3.5）。Baking タブの `Share By Base Map`（既定 ON）が、Source Root 配下で同じ Base Map を使う Idol 材質をグループにして 1 回だけ焼き、できた Geometry Map を全材質に割り当てる。材質ごとに焼くと各テクスチャの大半が空白のまま材質の数だけ増えていた（requiem は 46 材質が 8 アトラスを共有。上着のアトラスは 11 材質で 1 枚、UV の重なり 0.05%）。グループ内で UV が 2% 以上重なると警告する（Base Map を共有していないのに同居している材質の検出）。詰めた Geometry Map の取り込みは非圧縮から高品質圧縮（BC7）に変えた（VRAM 1/4）。Face SDF と Hair Flow は従来どおり材質ごと。インストーラの Core ピンと必要最低バージョンを 0.3.5 に。
+
+### Fixed
+
+- **焼いた Shade Normal / Bent Normal が Normal Map として取り込まれていなかった。** Core のベイカーは全種類を Default・非圧縮で取り込むが、Idol は `UnpackNormal` で読み、プロパティも `[Normal]` なので、インスペクタに「Normal Map として取り込まれていません」の警告が出ていた。Baking タブが焼いた直後に取り込みを Normal Map（圧縮あり。PC は BC5）へ直す。非圧縮の 1/4 になる。
+
+- **ベイク完了のポップアップが、焼いた枚数を誤解させていた。** 「N 個のマテリアル中 N 個にベイクしました」は Share By Base Map のとき N 枚できたように読めた（実際はグループごとに 1 枚）。「テクスチャを X 枚焼き、Y 個のマテリアルに割り当てました（選択 N 個）」に変えた。
+
+- **材質 GUI の「テクスチャはありますが強度が 0 なので出ません」から Dissolve を外した。** `Dissolve Amount` は強度ではなく進行度で、0 が平常（実行時に上げる）。テクスチャを入れて 0 のままが正しい使い方なのに、警告が常時出ていた。
+
 ## [0.2.6] - 2026-09-18
 
 ### Changed (Breaking)
