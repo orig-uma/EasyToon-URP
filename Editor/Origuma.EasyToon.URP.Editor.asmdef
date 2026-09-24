@@ -21,7 +21,7 @@
     "versionDefines": [
         {
             "name": "com.origuma.easyshader-core",
-            "expression": "0.3.3",
+            "expression": "0.3.5",
             "define": "EASYSHADERCORE_PRESENT"
         }
     ],

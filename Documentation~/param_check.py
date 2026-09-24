@@ -1830,6 +1830,7 @@ ALLOWED_KEYWORDS = {
     "_ANISOMAP_ON",     # T-419: Anisotropy Map（布の織りの向き）。同上
     "_GEOMETRYMAP_ON",     # T-422: Geometry Map（R Cavity / G Curvature / B AO を 1 枚に）
     "_GLITTER_ON",      # T-418: Glitter Intensity > 0 に追従。静的な設定なので一様分岐からキーワードへ
+    "_CLEARCOAT_ON",    # T-437: Clearcoat Strength > 0 に追従（同上。OFF の材質で 184 命令）
     "_STOCKING_ON", "_MATCAP_ON", "_DEBUG_ON",   # 同上（Stocking / MatCap Intensity > 0、Debug Mode > 0）
     "_HQSHADOWTAPS_8", "_HQSHADOWTAPS_16", "_HQSHADOWTAPS_32",   # T-418: HQ Shadow Taps（KeywordEnum）
     "_SURFACETYPE_DEFAULT", "_SURFACETYPE_SKIN", "_SURFACETYPE_FACE",

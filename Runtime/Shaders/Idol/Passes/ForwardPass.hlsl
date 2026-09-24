@@ -191,7 +191,8 @@
 
                 float metallic   = mask.r * _Metallic;
                 // A を Roughness として書き出したマップ（InstaMat の標準）はここで反転（T-419）
-                float maskSmooth = (_MaskAIsRoughness > 0.5) ? 1.0 - mask.a : mask.a;
+                // _MaskInvertA = トグル × 割り当て済み（T-435）。マップ無しで反転すると白 → 0 で全面マットになる
+                float maskSmooth = (_MaskInvertA > 0.5) ? 1.0 - mask.a : mask.a;
                 float smoothness = maskSmooth * _Smoothness;
 
                 s.emission = dissolveEmission;
@@ -230,15 +231,36 @@
                     normalTS = UnpackNormalScale(
                         SAMPLE_TEXTURE2D(_BumpMap, sampler_BumpMap, uv), _BumpScale);
                     baseNormalWS = normalize(mul(normalTS, tbn));
+                    // Normal Cavity（T-434）。Specular / Sheen Normal Flatten で法線を均すと、細かい凹凸は
+                    // ハイライトから**見えなくなる**。向きは均したまま、傾き（= 凹凸の斜面）で量だけ落として返す:
+                    // ハイライトを割らずに、凹凸の陰だけがハイライトの中に残る。既存の cavity の経路に畳むので
+                    // 鏡面・sheen・クリアコート・環境反射に一括で効き、アルベドは動かない（掛けた後なので）。
+                    // 高さではなく傾きなので、落ちるのは谷底ではなく斜面。
+                    s.cavity *= saturate(1.0 - _NormalCavity * length(normalTS.xy));
                 }
                 UNITY_BRANCH
                 if (_DetailOn > 0.5)
                 {
                     // 強さに Detail Mask（NPR Map の B）も掛ける（T-419）
+                    float2 dBase = uv;
+                    // 回転（T-431）。UV を R で回すと模様は面の上で逆向きに回るので、
+                    // 引いた法線の xy は Rᵀ で面の軸へ戻す。**戻さないと模様だけ回って陰影の向きが回らない。**
+                    float2 dRot; // x = sin, y = cos
+                    sincos(_DetailNormalRotation * (PI / 180.0), dRot.x, dRot.y);
+                    dBase = float2(dBase.x * dRot.y - dBase.y * dRot.x,
+                                   dBase.x * dRot.x + dBase.y * dRot.y);
                     float3 dTS = UnpackNormalScale(
                         SAMPLE_TEXTURE2D(_DetailNormalMap, sampler_DetailNormalMap,
-                                         uv * _DetailMap_ST.xy + _DetailMap_ST.zw),
+                                         dBase * _DetailNormalMap_ST.xy + _DetailNormalMap_ST.zw),
                         _DetailNormalScale * detailMask);
+                    dTS.xy = float2(dTS.x * dRot.y + dTS.y * dRot.x,
+                                   -dTS.x * dRot.x + dTS.y * dRot.y);
+                    // Detail Cavity（T-434）。ディテール法線は鏡面に入れない契約（T-401）なので、織り目は
+                    // 鏡面から**完全に見えない** ── 平らな面のように均一に光る。法線の傾き（= 目の斜面）で
+                    // cavity を落として、鏡面・sheen・クリアコート・環境反射にだけ織り目の陰を返す。
+                    // 向きを変えずに量だけ落とすので点は立たない。アルベドには掛からない（掛けた後なので）。
+                    // 高さではなく傾きなので、落ちるのは谷底ではなく斜面 ── 周期の細かい織り目では区別が付かない。
+                    s.cavity *= saturate(1.0 - _DetailCavity * length(dTS.xy));
                     // whiteout ブレンド（xy 加算・z 乗算。Doll と同じ）
                     normalTS = normalize(float3(normalTS.xy + dTS.xy, normalTS.z * dTS.z));
                     normalWS = normalize(mul(normalTS, tbn));
@@ -247,6 +269,20 @@
                 {
                     normalWS = baseNormalWS;
                 }
+
+                // --- リム用の法線（T-432）-----------------------------------
+                // リムは N·V が 0 に近い所で急に立つので、細かい凹凸の斜面 1 つ 1 つに縁が出る。
+                // Flatten でノーマルマップの傾きをメッシュの法線へ寄せる: 傾きが一律に縮むので、
+                // **浅い凹凸から先に縁の閾値を割って消え、傾きの大きい深いしわは残る。**
+                // ミップで均す案（Rim Normal Blur）は不採用 ── ミップの段はメッシュの UV 密度と面の向きで
+                // 変わるので、距離を変えるとメッシュごとに縁の出方が食い違う（利用者判断）。
+                // ディテール法線は量で別に絞る。既定（Flatten 0 / Detail 1）は従来と同じ法線。
+                float3 rimBaseWS = lerp(baseNormalWS, geomNormalWS, _RimNormalFlatten);
+                s.rimN = normalize(rimBaseWS + (normalWS - baseNormalWS) * _RimDetailNormal);
+                // 鏡面と sheen も同じ考え方（T-434）。既定（0 / 0 / 1）は従来と同じ法線
+                s.specFlatN = normalize(lerp(baseNormalWS, geomNormalWS, _SpecularNormalFlatten));
+                s.sheenN    = normalize(lerp(baseNormalWS, geomNormalWS, _SheenNormalFlatten)
+                                      + (normalWS - baseNormalWS) * _SheenDetailNormal);
 
                 #if defined(_DBUFFER)
                     // URP のデカール（汚れ・傷・タトゥー）を受ける。
@@ -329,7 +365,9 @@
                 ToonContext c;
                 c.positionWS = input.positionWS;
                 c.N          = normalWS;
-                c.specN      = baseNormalWS;   // 鋭いローブ用。ディテール法線を含まない（T-401）
+                c.rimN       = s.rimN;
+                c.sheenN     = s.sheenN;
+                c.specN      = s.specFlatN;   // 鋭いローブ用。ディテール法線を含まない（T-401）
                 c.V          = normalize(GetWorldSpaceViewDir(input.positionWS));
                 c.T          = tangentWS;
                 c.B          = bitangentWS;
@@ -529,6 +567,46 @@
                 return c;
             }
 
+            // ---- 追加光 1 灯ぶん（T-438 で関数に切り出し。Forward+ の Directional 用ループと共用）----
+            // 影は自前の硬い 1 タップ（T-418）。URP の GetAdditionalLight(…, shadowMask) は
+            // 主光源と同じソフトフィルタを追加光にも掛けるので使わない。
+            // 追加光ではクリアコートと Glitter のフラッシュを省く（T-418）。ステージの
+            // 追加光で要るのは色・光沢・sheen・リムで、コートの薄い層と粒のきらめきは
+            // 主光源だけで足りる（利用者判断）。allowCoat = false はコンパイル時に畳まれる。
+            void ToonAccumulateAdditionalLight(uint lightIndex, int addShadowIndex, float3 positionWS,
+                                               uint meshRenderingLayers, ToonSurface s, ToonContext c,
+                                               float2 rimShape, inout float3 addAccum)
+            {
+                Light addLight = GetAdditionalLight(lightIndex, positionWS);
+                addLight.shadowAttenuation = ToonAdditionalLightShadowHard(addShadowIndex, positionWS, addLight.direction);
+                #if defined(_LIGHT_COOKIES)
+                    addLight.color *= SampleAdditionalLightCookie(addShadowIndex, positionWS);
+                #endif
+                #ifdef _LIGHT_LAYERS
+                    if (!IsMatchingLightLayer(addLight.layerMask, meshRenderingLayers)) return;
+                #endif
+
+                ToonConditionLight(addLight);
+
+                // 間接光の分岐は主光源基準に固定するので lit は捨てるが、
+                // 落ち影の量はリムの消灯に要る（T-351）。
+                // リムもこの光源で光る（成分として返る）。ステージのスポットで色を作る
+                // 使い方では、これが無いとリムだけ主光源の色に取り残される。
+                float addLitUnused, addCast;
+                ToonLightTerms at = ToonShadeLight(s, c, addLight, addLight.direction,
+                                                   _AddLightShadowColor, 0.0, rimShape, false,
+                                                   addLitUnused, addCast);
+                float3 addFlashUnused;
+                ToonGlitterSet spNone = (ToonGlitterSet)0;   // glitterActive = false（定数で畳まれる）
+                float3 addContrib = ToonComposeLight(at, c, addLight, 0.0, spNone, addFlashUnused);
+
+                // Add = 物理的な加算 / Max = 最も強い 1 灯だけを採る（T-350）。
+                // ステージのように何灯も浴びる絵では、加算だと肌が白へ寄って
+                // 彩度が飛ぶ。Max なら色が残る（アニメ的な嘘だが目的に適う）。
+                addAccum = (_AdditionalLightBlendMode > 0.5) ? max(addAccum, addContrib)
+                                                             : addAccum + addContrib;
+            }
+
             // ---- 3. ライト（主光源 + フィル + グリッタ + 追加光源）---------
             // c.dNdx / dNdy / edgeAA をここで書くので ToonContext は inout。
             // mainLit / mainCast は間接光の陰側判定に、realLightDir は MatCap の
@@ -571,6 +649,7 @@
                     uint meshRenderingLayers = GetMeshRenderingLayer();
                     bool mainLightMatches = IsMatchingLightLayer(mainLight.layerMask, meshRenderingLayers);
                 #else
+                    uint meshRenderingLayers = 0;   // ToonAccumulateAdditionalLight の引数に要る（読まれない）
                     bool mainLightMatches = true;
                 #endif
 
@@ -705,50 +784,27 @@
                     inputData.positionWS              = input.positionWS;
                     inputData.normalizedScreenSpaceUV = c.screenUV;
 
+                    // **Forward+ では追加の Directional はクラスタに入らない。** ライト配列の先頭
+                    // URP_FP_DIRECTIONAL_LIGHTS_COUNT 個に並び、URP の LIGHT_LOOP_BEGIN はそこを飛ばして
+                    // クラスタの Point / Spot だけを回す（Lit.shader も別ループで先に回している）。
+                    // これが無いと **2 灯目以降の Directional が PC（Forward+）で一切効かない**（T-438。
+                    // IdolLookRig の Rim ライトを赤にしても赤くならなかった原因）。
+                    #if USE_CLUSTER_LIGHT_LOOP
+                        UNITY_LOOP
+                        for (uint dirIndex = 0; dirIndex < min(URP_FP_DIRECTIONAL_LIGHTS_COUNT, MAX_VISIBLE_LIGHTS); dirIndex++)
+                            ToonAccumulateAdditionalLight(dirIndex, dirIndex, input.positionWS, meshRenderingLayers,
+                                                          s, c, rimShape, addAccum);
+                    #endif
+
                     uint lightCount = GetAdditionalLightsCount();
                     LIGHT_LOOP_BEGIN(lightCount)
-                        // 影は自前の硬い 1 タップ（T-418）。URP の GetAdditionalLight(…, shadowMask) は
-                        // 主光源と同じソフトフィルタを追加光にも掛けるので使わない。
-                        Light addLight = GetAdditionalLight(lightIndex, input.positionWS);
                         #if USE_CLUSTER_LIGHT_LOOP
                             int addShadowIndex = lightIndex;
                         #else
                             int addShadowIndex = GetPerObjectLightIndex(lightIndex);
                         #endif
-                        addLight.shadowAttenuation = ToonAdditionalLightShadowHard(addShadowIndex, input.positionWS, addLight.direction);
-                        #if defined(_LIGHT_COOKIES)
-                            addLight.color *= SampleAdditionalLightCookie(addShadowIndex, input.positionWS);
-                        #endif
-
-                        #ifdef _LIGHT_LAYERS
-                            if (!IsMatchingLightLayer(addLight.layerMask, meshRenderingLayers))
-                                continue;
-                        #endif
-
-                        ToonConditionLight(addLight);
-
-                        // 間接光の分岐は主光源基準に固定するので lit は捨てるが、
-                        // 落ち影の量はリムの消灯に要る（T-351）。
-                        float addLitUnused, addCast;
-                        // リムもこの光源で光る（成分として返る）。ステージのスポットで色を作る
-                        // 使い方では、これが無いとリムだけ主光源の色に取り残される。
-                        // 追加光ではクリアコートと Glitter のフラッシュを省く（T-418）。ステージの
-                        // 追加光で要るのは色・光沢・sheen・リムで、コートの薄い層と粒のきらめきは
-                        // 主光源だけで足りる（利用者判断）。allowCoat = false はコンパイル時に畳まれる。
-                        ToonLightTerms at = ToonShadeLight(s, c, addLight, addLight.direction,
-                                                           _AddLightShadowColor, 0.0, rimShape, false,
-                                                           addLitUnused, addCast);
-                        float3 addFlashUnused;
-                        ToonGlitterSet spNone = (ToonGlitterSet)0;   // glitterActive = false（定数で畳まれる）
-                        float3 addContrib = ToonComposeLight(at, c, addLight, 0.0, spNone, addFlashUnused);
-
-                        // Add = 物理的な加算 / Max = 最も強い 1 灯だけを採る（T-350）。
-                        // ステージのように何灯も浴びる絵では、加算だと肌が白へ寄って
-                        // 彩度が飛ぶ。Max なら色が残る（アニメ的な嘘だが目的に適う）。
-                        addAccum = (_AdditionalLightBlendMode > 0.5)
-                                 ? max(addAccum, addContrib)
-                                 : addAccum + addContrib;
-
+                        ToonAccumulateAdditionalLight(lightIndex, addShadowIndex, input.positionWS, meshRenderingLayers,
+                                                      s, c, rimShape, addAccum);
                     LIGHT_LOOP_END
                 #endif
                 // 追加光の合計を丸める（T-421）。Add 合成で何灯も重なったぶんの白飛び対策

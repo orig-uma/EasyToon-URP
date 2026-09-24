@@ -8,7 +8,7 @@
 python gen_properties.py --write
 ```
 
-シェーダー: `Idol.shader` / プロパティ 215 個
+シェーダー: `Idol.shader` / プロパティ 223 個
 
 ⚡ はシェーダーバリアントを生むもの（マテリアル間で値が違うとバッチが分断される）。
 
@@ -45,6 +45,8 @@ python gen_properties.py --write
 | `_DetailMultiply` | Detail Multiply | `Float` | `0` | OFF = ディテールの色で置き換え（タトゥー・プリント）。ON = 乗算（DCC で焼いた生地の陰・AO） |
 | `_DetailNormalMap` | Detail Normal Map | `2D` | `"bump" {}` | — |
 | `_DetailNormalScale` | Detail Normal Scale | `Range(0,2)` | `1` | ベースのノーマルの上に whiteout 合成されます。効くのは影のグラデーション・sheen・リムで、ハイライトと映り込みはベースの法線のままです（細かい織り目が点にならないように） |
+| `_DetailCavity` | Detail Cavity | `Range(0,2)` | `0` | ディテール法線は鏡面に入らないので、ハイライトからは織り目が見えません。代わりにディテール法線の斜面で鏡面・sheen・クリアコート・映り込みを落とします ── ハイライトの中に織り目の陰が出ます（点にはなりません） |
+| `_DetailNormalRotation` | Detail Normal Rotation | `Range(-180,180)` | `0` | 織り目を回します（度）。引いた法線も合わせて回すので陰影の向きも付いてきます。材質全体で 1 つの角度です |
 
 ### ベース（Base） ／ 色調補正 (HSV)
 
@@ -59,8 +61,8 @@ python gen_properties.py --write
 | プロパティ | 表示名 | 型 | 既定 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
 | `_MaskMap` | Mask Map | `2D` | `"white" {}` | パック済みの RGBA マスク |
-| `_Metallic` | Metallic | `Range(0,1)` | `0` | R チャンネルを倍率で調整 |
-| `_MaskAIsRoughness` | Mask A Is Roughness | `Float` | `0` | ON = A が Roughness（InstaMat / Substance の標準出力）で、ここで反転して読みます。OFF = A は Smoothness |
+| `_Metallic` | Metallic | `Range(0,1)` | `0` | R チャンネルへの倍率（1 でマップの値そのまま） |
+| `_MaskAIsRoughness` | Mask A Is Roughness | `Float` | `0` | ON = A が Roughness（InstaMat / Substance の標準出力）で、ここで反転して読みます。OFF = A は Smoothness。Mask Map が無いときは反転しません（白を反転すると全面マットになるため） |
 | `_DirectOcclusion` | Direct Occlusion | `Range(0,1)` | `0.3` | 物理的には AO は間接光だけのもの。絵として要るときだけ上げる |
 | `_MicroShadow` | Micro Shadow | `Range(0,1)` | `1` | 斜めから当たる直接光を遮蔽量で削る |
 
@@ -240,12 +242,14 @@ python gen_properties.py --write
 
 | プロパティ | 表示名 | 型 | 既定 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
+| `_NormalCavity` | Normal Cavity | `Range(0,2)` | `0` | ノーマルマップの斜面で鏡面・sheen・クリアコート・映り込みを落とします。Specular Normal Flatten と組で使います ── 均した凹凸はハイライトを割らなくなり、陰としてだけハイライトの中に残ります |
 | `_Smoothness` | Smoothness | `Range(0,1)` | `0.25` | **ツヤのダイヤル。**鏡面ローブの幅で、低いと広くうっすら・高いと締まった光沢になります。Base タブ > Mask Map > Smoothness Scale と同一プロパティです（A チャンネルの倍率） |
 | `_SpecularIntensity` | Specular Intensity | `Range(0,4)` | `0` | 強さだけを変えます ── ハイライトの締まり（ツヤ）は上の Smoothness 側です。髪と布はここを通りません（それぞれ自前の強度を持っています） |
 | `_SpecEnergyConservation` | Spec Energy Conservation | `Range(0,1)` | `0` | 鏡面が反射した割合（Fresnel × Specular Intensity、光の当たる面だけ）だけ拡散を縮めます。縁で拡散＋鏡面が入射光を超えないようにする保存則。0 で従来どおり鏡面を上乗せするだけ |
 | `_SpecularTint` | Specular Tint | `Color` | `(1,1,1,1)` | — |
 | `_SpecularTintStrength` | Specular Tint Strength | `Range(0,1)` | `0` | — |
 | `_EnergyCompensation` | Energy Compensation | `Range(0,1)` | `1` | 粗い金属で単散乱 GGX が失うエネルギーを戻します。1 のとき完全反射体は入射をちょうど全部返します（白炉試験） |
+| `_SpecularNormalFlatten` | Specular Normal Flatten | `Range(0,1)` | `0` | 鏡面・映り込み・MatCap・グリッターが見る法線をメッシュの法線へ寄せます。浅い凹凸から先にハイライトを割らなくなり、深いしわは残ります |
 
 ### Metal Override（金属部の上書き）
 
@@ -284,6 +288,8 @@ python gen_properties.py --write
 | `_ClothTangentSwap` | Cloth Tangent Swap | `Float` | `0` | 光沢が織りと直交して出るときに切り替えます |
 | `_AnisotropyMapOn` ⚡ | Anisotropy Map On | `Float` | `0` | — |
 | `_AnisotropyMap` | Anisotropy Map (RG=dir B=strength) | `2D` | `"white" {}` | — |
+| `_SheenNormalFlatten` | Sheen Normal Flatten | `Range(0,1)` | `0` | sheen が見る法線をメッシュの法線へ寄せます。浅い凹凸から先に消えます |
+| `_SheenDetailNormal` | Sheen Detail Normal | `Range(0,1)` | `1` | sheen が Detail Normal をどれだけ見るか |
 
 ### 異方性ハイライト（髪）（Anisotropic (Hair)）
 
@@ -330,7 +336,7 @@ python gen_properties.py --write
 
 | プロパティ | 表示名 | 型 | 既定 | 説明 |
 | :--- | :--- | :--- | :--- | :--- |
-| `_ClearcoatStrength` | Clearcoat Strength | `Range(0,1)` | `0` | 別の粗さを持つ薄い層を 1 枚重ねます。IOR は 1.5 固定（f0 = 0.04）。漆・真珠・濡れた唇 |
+| `_ClearcoatStrength` | Clearcoat Strength | `Range(0,1)` | `0` | 別の粗さを持つ薄い層を 1 枚重ねます。IOR は 1.5 固定（f0 = 0.04）。漆・真珠・濡れた唇。0 で機能ごとコンパイルから外れます（キーワード _CLEARCOAT_ON がこの値に追従） |
 | `_ClearcoatSmoothness` | Clearcoat Smoothness | `Range(0,1)` | `0.9` | — |
 
 ### コートとグリッター（Coat and Glitter） ／ イリデッセンス
@@ -395,6 +401,8 @@ python gen_properties.py --write
 | `_RimIntensity` | Rim Intensity | `Range(0,8)` | `1.5` | ライトのエネルギーに比例し（ステージ照明の色が縁に乗る）、光が回り込んだ側だけに出ます |
 | `_RimFresnelThickness` | Rim Fresnel Thickness | `Range(0,1)` | `0.3` | 0 で極細（指数 12）、1 で極太（0.5）。Doll と同じ写像です |
 | `_RimReceiveShadow` | Rim Receive Shadow | `Range(0,1)` | `1` | 落ち影の中でリムを消します。見るのは落ち影だけで NdotL の陰は含みません（リムは「そこに光が届いているか」の話なので） |
+| `_RimDetailNormal` | Rim Detail Normal | `Range(0,1)` | `1` | リムが Detail Normal をどれだけ見るか。0 で織り目に縁が立たなくなります |
+| `_RimNormalFlatten` | Rim Normal Flatten | `Range(0,1)` | `0` | リムが見る法線をメッシュの法線へ寄せます。浅い凹凸から先に縁が消え、傾きの大きい深いしわの縁は残ります。距離やミップに依りません |
 
 ### リムライト / Peach Fuzz（Rim / Peach Fuzz） ／ Peach Fuzz（縁の柔らかい光沢）
 
@@ -490,7 +498,7 @@ python gen_properties.py --write
 | `_ShadowHueShift` | Shadow Hue Shift | `Range(-0.2,0.2)` | `-0.03` | 影の色相を回します。Saturation が 1 のまま両方とも既定ならHSV 変換ごと飛ぶので、触らなければコストはゼロです |
 | `_ShadowSaturation` | Shadow Saturation | `Range(0,3)` | `1.3` | 1 より上げると影が濁らず鮮やかに残ります（アニメ塗りの定番） |
 | `_ShadowValue` | Shadow Value | `Range(0,1)` | `0.75` | 下げると影が濃くなります。「ライト」タブの環境光も影を持ち上げます |
-| `_AddLightShadowColor` | Add Light Shadow Color | `Range(0,1)` | `1` | 追加光源の影にどれだけ影色を掛けるか。点光源すべてに全量掛けると濁って見えがちです |
+| `_AddLightShadowColor` | Add Light Shadow Color | `Range(0,1)` | `0` | 追加光が当たっていない側に足す量（影色 × ライトの色）。0 = 当たった所とリムにだけ寄与する（物理どおり。赤い逆光は縁に留まる）。1 = ライトの色でキャラ全体を染める（色ウォッシュ用） |
 | `_ShadowTint` | Shadow Tint (multiply) | `Color` | `(1,1,1,1)` | HSV の後に影へ乗算されます |
 | `_ShadowColor` | Shadow Color (mix toward) | `Color` | `(0.50, 0.32, 0.62, 1)` | 影を寄せたい色相。明るさは正規化して落とすので**色相だけ**が効きます（暗い色を選んでも暗くはなりません） |
 | `_ShadowColorMix` | Shadow Color Mix | `Range(0,1)` | `0` | 0 でこの処理ごと飛びます |
@@ -500,4 +508,4 @@ python gen_properties.py --write
 
 ---
 
-説明のあるもの 156 / 215。**残り 59 個は tooltip が書かれていない** ── `ToonPBRShaderGUI.cs` に足すとここにも出ます。
+説明のあるもの 164 / 223。**残り 59 個は tooltip が書かれていない** ── `ToonPBRShaderGUI.cs` に足すとここにも出ます。

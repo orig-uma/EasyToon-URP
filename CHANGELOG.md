@@ -2,6 +2,44 @@
 
 ## [Unreleased]
 
+## [0.2.8] - 2026-09-25
+
+### Added
+
+- **Detail Normal Map が自分のタイリングを持った**（T-429）。以前は Detail Map のタイリングを借りていたので、プリント柄（タイリング 1）と織り目（タイリング 20）が両立しなかった。既存の材質は、材質 GUI を開いたとき、または `Tools > Idol > 全 Idol マテリアルを最新の版へ更新` で、Detail Map のタイリングが Detail Normal Map へ 1 回だけ写される（見た目は変わらない。印は非表示の `_MaterialVersion`）。**更新前の材質で Detail Map のタイリングが 1 以外のものは、更新するまで織り目が 1 倍で出る。**
+- **`Detail Normal Rotation`**（T-431）。織り目を度で回す。引いた法線の xy も合わせて回すので陰影の向きが付いてくる。材質全体で 1 つの角度。
+
+- **リム専用の法線: `Rim Detail Normal` / `Rim Normal Flatten`**（T-432）。リムは N·V が 0 に近い所で急に立つので、ノーマルマップや Detail Normal の細かい凹凸 1 つ 1 つに縁が出ていた。`Rim Normal Flatten` はリムが見る法線をメッシュの法線へ寄せる ── 傾きが一律に縮むので、浅い凹凸から先に縁が消え、傾きの大きい深いしわは残る。`Rim Detail Normal` は Detail Normal がリムに入る量。産毛（Peach Fuzz）も同じ法線を見る。既定（Flatten 0 / Detail 1）は従来と同じ。ミップで均す案は不採用（ミップの段がメッシュと面の向きで変わり、距離で縁の出方が食い違う）。
+- **鏡面と sheen の法線も均せる: `Specular Normal Flatten` / `Sheen Normal Flatten` / `Sheen Detail Normal`、および `Detail Cavity`**（T-434）。Flatten はリムと同じ考え方（法線をメッシュの法線へ寄せる。浅い凹凸から先に消え、深いしわは残る）。Specular 側は鏡面・環境反射・MatCap・グリッターが見る法線に効く。**`Normal Cavity`** はノーマルマップの斜面で鏡面・sheen・クリアコート・環境反射を落とす ── Flatten で均した凹凸が、ハイライトを割らずに陰としてだけ残る（主な用途はこちら）。`Detail Cavity` は、ディテール法線が鏡面に入らない（T-401）代わりに、その斜面で鏡面・sheen・クリアコート・環境反射を落とす ── ハイライトの中に織り目の陰が出るが、向きは変えないので点は立たない。アルベドには掛からない。既定はどれも従来と同じ。
+- **Mask Map が無いとき `Mask A Is Roughness` を反転しない**（T-435）。未割り当ての既定テクスチャは白（A = 1）なので、トグルだけ ON だと反転して Smoothness 0 = 全面マットになり、マップの有無で金属の見た目が別物になっていた。実際に反転するかは GUI が `_MaskInvertA`（非表示）に「トグル × 割り当て済み」で入れる。合わせて、Mask Map があるのに Metallic / Smoothness が 1 未満のとき「スライダはマップへの倍率」と GUI で言う（既定 0.25 のままだとマップの Roughness が 4 倍粗く読まれる）。
+- **セットアップ診断と Mask Map の欄で、データマップが sRGB でインポートされていると言う**（T-436）。Unity は PNG を既定で sRGB ON にするので、Mask の G（AO）などの中間値が暗く解釈される（実測: 同じマップで sRGB ON 58 / OFF 72、マップ無し 79。R = 1 / 0 と A は影響しないので金属度と粗さは合って見え、気付きにくい）。診断の「sRGB を OFF にする」で一括修正できる。
+- **クリアコートをキーワード `_CLEARCOAT_ON` に**（T-437）。`Clearcoat Strength` > 0 に追従（Glitter と同じ）。requiem では 44 材質中 41 が 0 で、一様分岐のままだと 184 命令ぶんの経路（直接光と映り込み）が全材質に残っていた（PC 構成 1,560 → 1,376）。キーワードは 19 個。**セットアップ診断に性能の項目**を足した: Light Layers / Cookies が ON（+105 命令・バリアント 4 倍）、Opaque Texture が ON（シェーダーは読まない）、Depth Priming が無効（隠れた画素の ForwardLit を飛ばせる）、HQ Shadow OFF の材質（URP のソフト 16 タップは HQ 8 タップより 123 命令重い）。SETUP §2 の表も性能込みに直した。
+- **共有サンプラを異方性つき（Aniso 8）にした**（T-433）。インラインサンプラはインポート設定の Aniso Level を見ないので、これまで全マップが異方性なしだった。斜めを向いた面ほど早く粗いミップへ落ち、同じ距離でも面の向きとメッシュで織り目やノーマルの鮮明さが食い違っていた。サンプラの本数は増えない。
+
+### Fixed
+
+- **Forward+ で 2 灯目以降の Directional Light が一切効いていなかった**（T-438）。URP の Forward+ では追加の Directional はクラスタに入らず、ライト配列の先頭 `URP_FP_DIRECTIONAL_LIGHTS_COUNT` 個に並ぶ。URP の `LIGHT_LOOP_BEGIN` はそこを飛ばしてクラスタの Point / Spot だけを回す（Lit.shader は別ループで先に回している）ので、このシェーダーは Directional の追加光を 1 灯も読んでいなかった（Forward では Per Object の配列に入るので効いていた）。Directional 用のループを足し、1 灯ぶんの処理を `ToonAccumulateAdditionalLight` に切り出して共用。球 4 個で赤い逆光の Directional を追加光として当て、リム・拡散・透過が出ることを実レンダーで確認。
+
+- **`Add Light Shadow Color` の既定を 1 → 0 にした**（T-438）。1 は追加光が当たっていない側にも「影色 × ライトの色」を足すので、赤い逆光で正面まで一様に赤く転んでいた。0 なら追加光は当たった所とリムにだけ寄与する（物理どおり）。色ウォッシュ用に機能は残す。**旧既定の 1 のまま保存されている材質は、材質の版 2 への更新で 0 になる**（GUI を開いたとき、または `Tools > Idol > 全 Idol マテリアルを最新の版へ更新`。意図して 1 にしていたなら戻すこと）。
+
+## [0.2.7] - 2026-09-18
+
+### Changed
+
+- **`Share By Base Map` を Shade Normal / Bent Normal / SSS にも広げた**（T-427）。同じ Base Map を使う材質で 1 枚を焼いて全員に割り当てる。**機能を ON にするのは選択中の材質だけ** ── 顔だけ選んで Shade Normal を焼いても、同じ Base Map の耳や首で勝手に効き始めない（テクスチャは入るが強さは元のまま）。トグルは Bake Target の節へ移した（Geometry Map と向きのマップの両方に効くため）。Face SDF と Hair Flow は常に材質ごと。
+
+- **Baking タブを整理した**（T-426）。並びを「対象 → Geometry Map（Cavity / Curvature / AO。共有できるもの）→ 材質ごとのマップ（Shade Normal / Bent Normal / SSS）→ 部位専用（Face SDF / Hair Flow）」にし、Geometry Map の節に `Share By Base Map`・`Delete Source Files`（既定 ON）・「Cavity / Curvature / AO をまとめてベイク」・「残っている中間ファイルから詰め直す」をまとめた（以前は AO の折りたたみの中にあった）。`Delete Source Files` は詰めた後に Baked フォルダの `*_Cavity` / `*_Curvature` / `*_AO` を消す。1 種類だけ焼き直すときは、他のチャンネルを今の Geometry Map から引き継ぐので失われない。古い表記を直した: AO の「手で合成が要る」、Cavity の「_CavityStrength まで Baker が入れます」、Curvature の「Curvature Influence」（正しくは Curvature Softness）、保存先の説明（Source Root の隣 → マテリアルの隣の Baked フォルダ）。
+
+- **Geometry 系のベイク（Cavity / Curvature / AO）を、同じ Base Map を使う材質で 1 枚にまとめるようにした**（T-425、Core 0.3.5）。Baking タブの `Share By Base Map`（既定 ON）が、Source Root 配下で同じ Base Map を使う Idol 材質をグループにして 1 回だけ焼き、できた Geometry Map を全材質に割り当てる。材質ごとに焼くと各テクスチャの大半が空白のまま材質の数だけ増えていた（requiem は 46 材質が 8 アトラスを共有。上着のアトラスは 11 材質で 1 枚、UV の重なり 0.05%）。グループ内で UV が 2% 以上重なると警告する（Base Map を共有していないのに同居している材質の検出）。詰めた Geometry Map の取り込みは非圧縮から高品質圧縮（BC7）に変えた（VRAM 1/4）。Face SDF と Hair Flow は従来どおり材質ごと。インストーラの Core ピンと必要最低バージョンを 0.3.5 に。
+
+### Fixed
+
+- **焼いた Shade Normal / Bent Normal が Normal Map として取り込まれていなかった。** Core のベイカーは全種類を Default・非圧縮で取り込むが、Idol は `UnpackNormal` で読み、プロパティも `[Normal]` なので、インスペクタに「Normal Map として取り込まれていません」の警告が出ていた。Baking タブが焼いた直後に取り込みを Normal Map（圧縮あり。PC は BC5）へ直す。非圧縮の 1/4 になる。
+
+- **ベイク完了のポップアップが、焼いた枚数を誤解させていた。** 「N 個のマテリアル中 N 個にベイクしました」は Share By Base Map のとき N 枚できたように読めた（実際はグループごとに 1 枚）。「テクスチャを X 枚焼き、Y 個のマテリアルに割り当てました（選択 N 個）」に変えた。
+
+- **材質 GUI の「テクスチャはありますが強度が 0 なので出ません」から Dissolve を外した。** `Dissolve Amount` は強度ではなく進行度で、0 が平常（実行時に上げる）。テクスチャを入れて 0 のままが正しい使い方なのに、警告が常時出ていた。
+
 ## [0.2.6] - 2026-09-18
 
 ### Changed (Breaking)

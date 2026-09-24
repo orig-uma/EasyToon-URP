@@ -20,7 +20,8 @@ float2 ToonRimShape(ToonSurface s, ToonContext c)
 {
     // リムと産毛は同じ関数の 2 出力。強度が 0 の側は Core の中で分岐ごと飛ぶ。
     float rimFresnel, fuzzFresnel;
-    GetFresnelTerms(saturate(c.NdotV), _RimIntensity, _RimFresnelThickness,
+    // 法線はリム専用（T-432）。細かい凹凸を均したもの
+    GetFresnelTerms(saturate(dot(c.rimN, c.V)), _RimIntensity, _RimFresnelThickness,
                     _FuzzIntensity, _FuzzPower, rimFresnel, fuzzFresnel);
 
     // リムマスク（旧 NPR Map の B）は T-419 で廃止した ── 描かれたアセットが無く、
@@ -40,7 +41,7 @@ float3 ToonRimLight(float2 shape, ToonContext c, float3 lightDir, float3 lightEn
 {
     // 向き（光が回り込んだ側だけ）は Core の CalculateRimLight が saturate(N·L × 5) で絞る。
     // 落ち影は _RimReceiveShadow の度合いで消す（Core の lit 側引数へ変換して渡す）。
-    float  NdotL     = saturate(dot(c.N, lightDir));
+    float  NdotL     = saturate(dot(c.rimN, lightDir));
     float  rimShadow = lerp(1.0, 1.0 - saturate(castShadow), _RimReceiveShadow);
     float3 rimOut    = CalculateRimLight(_RimColor.rgb, shape.x, _RimIntensity,
                                          lightEnergy, NdotL, rimShadow);

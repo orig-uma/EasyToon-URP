@@ -92,19 +92,19 @@ NdotL
 
 ### キーワード方針
 
-**18 個のみ。** 追加は `param_check` の `ALLOWED_KEYWORDS` へ書くのが手続き。
+**19 個のみ。** 追加は `param_check` の `ALLOWED_KEYWORDS` へ書くのが手続き。
 
 ```
 _ALPHATEST_ON  _HQ_SHADOW_ON  _OUTLINE_ON  _FABRICMAP_ON  _ANISOMAP_ON  _GEOMETRYMAP_ON
-_GLITTER_ON  _STOCKING_ON  _MATCAP_ON  _DEBUG_ON
+_GLITTER_ON  _CLEARCOAT_ON  _STOCKING_ON  _MATCAP_ON  _DEBUG_ON
 _HQSHADOWTAPS_{8,16,32}
 _SURFACETYPE_{DEFAULT,SKIN,FACE,HAIR,CLOTH}
 ```
 
 `_HQSHADOWTAPS_*` は `HQ Shadow Taps`（KeywordEnum）で、HQ Shadow のタップ数を材質ごとに選ぶ（T-418）。
 
-`_GLITTER_ON` / `_STOCKING_ON` / `_MATCAP_ON` / `_DEBUG_ON` はトグルを持たず、それぞれ
-`Glitter Intensity` / `Stocking Intensity` / `MatCap Intensity` > 0、`Debug Mode` > 0 に追従する（T-418）。Glitter は材質の
+`_GLITTER_ON` / `_CLEARCOAT_ON` / `_STOCKING_ON` / `_MATCAP_ON` / `_DEBUG_ON` はトグルを持たず、それぞれ
+`Glitter Intensity` / `Clearcoat Strength` / `Stocking Intensity` / `MatCap Intensity` > 0、`Debug Mode` > 0 に追従する（T-418 / T-437）。Glitter は材質の
 静的な設定で、一様分岐のままだと OFF の材質でも最悪経路のレジスタ（8 本）を確保され占有率を
 下げていた（実測: PC 構成 2,389 → 1,917 命令 / レジスタ 57 → 51）。
 

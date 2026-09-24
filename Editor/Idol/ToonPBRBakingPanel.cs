@@ -4,10 +4,10 @@
 //  Idol マテリアル Inspector の「Baking」タブを描く自己完結パネル。
 //  ベイク本体は EasyShaderCore の public Baker 群へ委譲する。
 //
-//  **なぜ要るか。** Idol が読むマップのうち 7 種は Core に Baker がある:
+//  **なぜ要るか。** Idol が読むマップのうち 8 種は Core に Baker がある:
 //
-//      _CavityMap / _HairFlowMap / _ShadeNormalMap / _BentNormalMap
-//      _CurvatureMap / _FaceSDFMap / _SSSMap
+//      Cavity / Curvature / AO（→ Geometry Map）/ _ShadeNormalMap / _BentNormalMap
+//      _SSSMap / _FaceSDFMap / _HairFlowMap
 //
 //  ところが Idol 側に入口が無く、文書にも書いていなかったため、
 //  **導入した人は「自分で描くしかない」と思い込む**状態だった（T-277）。
@@ -24,13 +24,15 @@
 //    （Curvature）          × → Geometry Map の G へパネルが詰める。_CurvatureSoftness をここで立てる
 //    _FaceSDFMap            ○      _UseFaceSDF           × → _FaceFlatness をここで
 //    _SSSMap                ○      _SSSIntensity         × → _SSSMapStrength をここで
-//    _OcclusionMap          ×      _OcclusionStrength    ○  ── AO だけ扱いが違う（下記）
+//    （AO）                 × → Geometry Map の B へパネルが詰める。Occlusion Source を Both にする
 //
-//  **AO は自動アサインできない。** Idol は遮蔽を単体テクスチャではなく
-//  `_MaskMap` の G に詰める設計なので、`_OcclusionMap` を持たない。
-//  Baker 側は `HasProperty` で守られているため**保存だけされて割り当ては飛ぶ**
-//  ── 壊れはしないが、焼いた画像を自分で MaskMap の G へ合成する必要がある。
-//  黙って「焼けました」と出すと誤解するので、パネルで明示する。
+//  **Geometry 系（Cavity / Curvature / AO）は Idol に個別スロットが無い。** Core のベイカーは
+//  `HasProperty` で守られているので保存だけして割り当てを飛ばし、このパネルが 3 種を 1 枚
+//  （Geometry Map）に詰めて、同じ Base Map を使う材質ぜんぶに割り当てる（T-422 / T-425）。
+//
+//  **タブの並び（T-426 / T-427）**: 対象（Share By Base Map）→ Geometry Map → 向きのマップ
+//  （Shade Normal / Bent Normal / SSS。どちらも同じ Base Map の材質で 1 枚を共有できる）→ 部位専用
+//  （Face SDF / Hair Flow。常に材質ごと）。
 // =============================================================================
 using System;
 using System.IO;
@@ -45,6 +47,15 @@ namespace ToonNPR.EditorTools
         private GameObject _bakeRoot;
         private bool _shadeNormalOpen, _hairFlowOpen, _sdfOpen, _bentOpen;
         private bool _curvatureOpen, _cavityOpen, _sssOpen, _aoOpen;
+        // Geometry 系（Cavity / Curvature / AO）を、同じ Base Map（＝ UV が重ならない）を共有する材質で
+        // 1 枚にまとめる（T-425）。材質ごとに焼くと各テクスチャの大半が空白のまま材質の数だけ増える。
+        private bool _shareByBaseMap = true;
+        private bool _deleteGeometrySources = true;        // 詰めた後、元の *_Cavity / *_Curvature / *_AO を消す
+        private readonly System.Collections.Generic.HashSet<string> _bakedGroups = new System.Collections.Generic.HashSet<string>();
+        // 1 回のボタンで実際に焼いたテクスチャの数と、割り当てた材質の数（完了のポップアップ用）。
+        // Share By Base Map では「選択した材質の数」と「焼いた枚数」が一致しないので、分けて数える。
+        private int _runTextures, _runAssigned;
+        private bool _runDeduped;   // 直前の呼び出しが「このグループは処理済み」で抜けた
 
         private EasyPbrShadeNormalBaker.Settings _shadeNormal = EasyPbrShadeNormalBaker.Default;
         private EasyPbrHairFlowBaker.Settings    _hairFlow    = EasyPbrHairFlowBaker.Default;
@@ -88,14 +99,31 @@ namespace ToonNPR.EditorTools
 
             using (new EditorGUI.DisabledScope(_bakeRoot == null))
             {
-                DrawShadeNormal(editor, jp);
-                DrawHairFlow(editor, jp);
-                DrawFaceSdf(editor, jp);
-                DrawBentNormal(editor, jp);
-                DrawCurvature(editor, jp);
-                DrawCavity(editor, jp);
-                DrawSss(editor, jp);
-                DrawAo(editor, jp);
+                // 1) 共有できるもの: 形状由来のグレー 3 種を 1 枚に（同じ Base Map の材質で共有）
+                DrawGeometryGroup(editor, jp);
+
+                // 2) 向きを持つマップ（スロットあり。同じ Base Map で共有できる）
+                using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+                {
+                    if (_kit.Section("bakedirection", true, "Direction Maps", "向きのマップ（Shade Normal / Bent Normal / SSS）", "", ""))
+                        using (new EditorGUI.IndentLevelScope())
+                        {
+                            DrawShadeNormal(editor, jp);
+                            DrawBentNormal(editor, jp);
+                            DrawSss(editor, jp);
+                        }
+                }
+
+                // 3) 部位専用（その Surface Type の材質でだけ意味がある）
+                using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+                {
+                    if (_kit.Section("bakepart", true, "Part-Specific Maps", "部位専用のマップ", "", ""))
+                        using (new EditorGUI.IndentLevelScope())
+                        {
+                            DrawFaceSdf(editor, jp);
+                            DrawHairFlow(editor, jp);
+                        }
+                }
             }
         }
 
@@ -116,9 +144,9 @@ namespace ToonNPR.EditorTools
 
                     _bakeRoot = (GameObject)EditorGUILayout.ObjectField(
                         _kit.Label("Source Root",
-                            "Root GameObject. Every mesh under it that uses this material is "
-                            + "baked into one texture. Auto-filled from the Hierarchy selection",
-                            "Root の GameObject。配下でこのマテリアルを使う全メッシュを 1 枚に焼きます。"
+                            "Root GameObject of the character. Meshes under it that use the selected "
+                            + "materials are baked. Auto-filled from the Hierarchy selection",
+                            "キャラのルートの GameObject。配下で選択中のマテリアルを使うメッシュを焼きます。"
                             + "Hierarchy の選択から自動で入ります"),
                         _bakeRoot, typeof(GameObject), true);
 
@@ -131,17 +159,31 @@ namespace ToonNPR.EditorTools
                     int n = editor.targets.Length;
                     if (n > 1)
                         EditorGUILayout.HelpBox(
-                            jp ? $"{n} 個のマテリアルを選択中。ベイクは全部に対して走ります。"
-                               : $"{n} materials selected. Baking runs for all of them.",
+                            jp ? $"{n} 個のマテリアルを選択中。ベイクは全部に対して走ります"
+                                 + "（Share By Base Map が ON なら、同じ Base Map のグループごとに 1 回だけ）。"
+                               : $"{n} materials selected. Baking runs for all of them "
+                                 + "(once per Base Map group while Share By Base Map is on).",
                             MessageType.Info);
+
+                    _shareByBaseMap = EditorGUILayout.Toggle(
+                        _kit.Label("Share By Base Map", "Geometry Map / Shade Normal / Bent Normal / SSS: bake one texture for all "
+                                   + "materials under the Source Root that use the same Base Map (their UVs do not overlap) and assign "
+                                   + "it to all of them. Features are switched on only for the selected materials. "
+                                   + "Off = one texture per material (mostly empty, one per material). "
+                                   + "Face SDF and Hair Flow are always per material",
+                                   "Geometry Map / Shade Normal / Bent Normal / SSS を、Source Root 配下で同じ Base Map を使う材質"
+                                   + "（UV が重ならない）ぜんぶで 1 枚に焼いて割り当てます。機能を ON にするのは選択中の材質だけです。"
+                                   + "OFF = 材質ごとに 1 枚（大半が空白のテクスチャが材質の数だけできます）。"
+                                   + "Face SDF と Hair Flow は常に材質ごとです"),
+                        _shareByBaseMap);
 
                     // **メッシュの読み書きが要る。** ここで言わないと
                     // 「押しても何も起きない」で終わる。
                     EditorGUILayout.HelpBox(
                         jp ? "モデルの Read/Write Enabled が必要です。"
-                             + "焼いた画像は Source Root の隣に保存されます。"
+                             + "焼いた画像はマテリアルの隣の Baked フォルダに保存されます。"
                            : "The model needs Read/Write Enabled. "
-                             + "Baked images are saved next to the Source Root.",
+                             + "Baked images are saved in a Baked folder next to the material.",
                         MessageType.None);
                 }
             }
@@ -170,7 +212,13 @@ namespace ToonNPR.EditorTools
                       + "The Baker sets _ShadeNormalStrength too.");
 
                 if (BakeButton(jp ? "Shade Normal をベイク" : "Bake Shade Normal"))
-                    BakeAll(e, m => EasyPbrShadeNormalBaker.Bake(_bakeRoot, m, _shadeNormal));
+                {
+                    _bakedGroups.Clear();
+                    // 強度は Core が入れる（_ShadeNormalStrength）。選択していない材質のぶんは BakeShared が元に戻す
+                    BakeAll(e, m => BakeShared(e, m, "ShadeNormal",
+                        g => EasyPbrShadeNormalBaker.Bake(_bakeRoot, g, _shadeNormal), null, "_ShadeNormalStrength",
+                        "_ShadeNormalMap"));
+                }
             }
         }
 
@@ -211,11 +259,14 @@ namespace ToonNPR.EditorTools
                 _cavity.dilate = Dilate(_cavity.dilate);
                 _cavity.blur = Blur(_cavity.blur);
 
-                Note(jp, "_CavityStrength まで Baker が入れます。",
-                        "The Baker sets _CavityStrength too.");
+                Note(jp, "Geometry Map の R に入ります。Cavity Strength が 0 なら 1 にします。",
+                        "Goes into the R channel of the Geometry Map. Sets Cavity Strength to 1 if it is 0.");
 
                 if (BakeButton(jp ? "Cavity をベイク" : "Bake Cavity"))
-                    BakeAll(e, m => EasyPbrCavityBaker.Bake(_bakeRoot, m, _cavity) && PackGeometryMap(m));
+                {
+                    _bakedGroups.Clear();
+                    BakeAll(e, m => BakeGeometry(m, "Cavity", g => EasyPbrCavityBaker.Bake(_bakeRoot, g, _cavity), -1f));
+                }
             }
         }
 
@@ -516,9 +567,12 @@ namespace ToonNPR.EditorTools
                       + "Turns Use Bent Normal on after baking.");
 
                 if (BakeButton(jp ? "Bent Normal をベイク" : "Bake Bent Normal"))
-                    BakeAll(e, m => BakeThenSet(
-                        () => EasyPbrBentNormalBaker.Bake(_bakeRoot, m, _bentNormal),
-                        m, "_BentNormalOn", 1f));
+                {
+                    _bakedGroups.Clear();
+                    BakeAll(e, m => BakeShared(e, m, "BentNormal",
+                        g => EasyPbrBentNormalBaker.Bake(_bakeRoot, g, _bentNormal), "_BentNormalOn", null,
+                        "_BentNormalMap"));
+                }
             }
         }
 
@@ -536,17 +590,18 @@ namespace ToonNPR.EditorTools
                 _curvature.dilate = Dilate(_curvature.dilate);
                 _curvature.blur = Blur(_curvature.blur);
 
-                Note(jp, "曲率の唯一の供給源。Curvature Influence（陰・影タブ）が"
-                       + "これを読んで曲がった面の境界を広げます。"
-                       + "焼いた後、Influence が 0 なら 1 にします。",
-                        "The only curvature source. Curvature Influence (Shading tab) "
-                      + "reads it to widen the transition on curved areas. "
-                      + "Sets Influence to 1 after baking if it is 0.");
+                Note(jp, "Geometry Map の G に入ります。曲率の唯一の供給源で、Curvature Softness（陰・影タブ）が"
+                       + "これを読んで曲がった面の境界を広げます。Curvature Softness が 0 なら 1 にします。",
+                        "Goes into the G channel of the Geometry Map. The only curvature source - "
+                      + "Curvature Softness (Shading tab) reads it to widen the transition on curved areas. "
+                      + "Sets Curvature Softness to 1 if it is 0.");
 
                 if (BakeButton(jp ? "Curvature をベイク" : "Bake Curvature"))
-                    BakeAll(e, m => BakeThenSet(
-                        () => EasyPbrCurvatureBaker.Bake(_bakeRoot, m, _curvature),
-                        m, "_CurvatureSoftness", 1f) && PackGeometryMap(m));
+                {
+                    _bakedGroups.Clear();
+                    BakeAll(e, m => BakeGeometry(m, "Curvature",
+                        g => EasyPbrCurvatureBaker.Bake(_bakeRoot, g, _curvature), -1f, "_CurvatureSoftness"));
+                }
             }
         }
 
@@ -572,9 +627,11 @@ namespace ToonNPR.EditorTools
                       + "Sets SSS Map Strength to 1 after baking.");
 
                 if (BakeButton(jp ? "SSS をベイク" : "Bake SSS"))
-                    BakeAll(e, m => BakeThenSet(
-                        () => EasyPbrSssBaker.Bake(_bakeRoot, m, _sss),
-                        m, "_SSSMapStrength", 1f));
+                {
+                    _bakedGroups.Clear();
+                    BakeAll(e, m => BakeShared(e, m, "SSS",
+                        g => EasyPbrSssBaker.Bake(_bakeRoot, g, _sss), "_SSSMapStrength", null));
+                }
             }
         }
 
@@ -583,22 +640,15 @@ namespace ToonNPR.EditorTools
         // ------------------------------------------------------------------
         private void DrawAo(MaterialEditor e, bool jp)
         {
-            if (!Foldout(ref _aoOpen, jp, "Ambient Occlusion（**手で合成が要る**）",
-                    "Ambient Occlusion (needs manual compositing)")) return;
+            if (!Foldout(ref _aoOpen, jp, "Ambient Occlusion（遮蔽）", "Ambient Occlusion")) return;
 
             using (new EditorGUI.IndentLevelScope())
             {
-                // **ここだけ自動で入らない。** 黙って「焼けました」と出すと、
-                // 割り当たっていないことに気付かないまま強度だけ上げることになる。
-                // 焼いた AO は Geometry Map の B に自動で入る（T-422）。以前は保存のみで、Mask Map の G へ
-                // 手で合成する必要があった。Mask Map（InstaMAT などで作ったもの）は上書きしない。
-                EditorGUILayout.HelpBox(
-                    jp ? "焼いた AO は **Geometry Map の B** に自動で入り、`Geometry Map On` と `Occlusion Source` = Both が"
-                         + "立ちます（Mask Map の G の遮蔽と掛け合わせ。Mask Map は上書きしません）。"
-                       : "The baked AO goes into the **B channel of the Geometry Map** automatically, and sets "
-                         + "`Geometry Map On` and `Occlusion Source` = Both (multiplied with the Mask Map's G; "
-                         + "the Mask Map itself is never overwritten).",
-                    MessageType.Info);
+                // 焼いた AO は Geometry Map の B に自動で入る（T-422）。Mask Map（InstaMAT などで作ったもの）は上書きしない。
+                Note(jp, "Geometry Map の B に入ります。Occlusion Source が Mask G のままなら Both（Mask Map の G と掛け合わせ）に"
+                       + "します。Mask Map は上書きしません。",
+                        "Goes into the B channel of the Geometry Map. If Occlusion Source is still Mask G it becomes Both "
+                      + "(multiplied with the Mask Map's G). The Mask Map is never overwritten.");
 
                 _ao.resolution = ResField(_ao.resolution);
                 _ao.rayCount = Rays(_ao.rayCount);
@@ -612,13 +662,135 @@ namespace ToonNPR.EditorTools
                 _ao.blur = Blur(_ao.blur);
 
                 if (BakeButton(jp ? "AO をベイク" : "Bake AO"))
-                    BakeAll(e, m => EasyPbrAoBaker.Bake(_bakeRoot, m, _ao) && PackGeometryMap(m, setOcclusionBoth: true));
-
-                EditorGUILayout.Space(4);
-                if (GUILayout.Button(jp ? "既存の Cavity / Curvature / AO を Geometry Map に詰め直す"
-                                        : "Repack existing Cavity / Curvature / AO into the Geometry Map"))
-                    BakeAll(e, m => PackGeometryMap(m));
+                {
+                    _bakedGroups.Clear();
+                    BakeAll(e, m => BakeGeometry(m, "AO", g => EasyPbrAoBaker.Bake(_bakeRoot, g, _ao), 2f));
+                }
             }
+        }
+
+        // ------------------------------------------------------------------
+        //  Geometry Map の節（Cavity / Curvature / AO を 1 枚に。T-426）
+        // ------------------------------------------------------------------
+        private void DrawGeometryGroup(MaterialEditor e, bool jp)
+        {
+            using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+            {
+                if (!_kit.Section("bakegeometry", true, "Geometry Map", "Geometry Map（Cavity / Curvature / AO）", "", ""))
+                    return;
+
+                using (new EditorGUI.IndentLevelScope())
+                {
+                    Note(jp, "形状から決まるグレー 3 種（R Cavity / G Curvature / B Ambient Occlusion）を 1 枚に焼いて割り当てます。"
+                           + "全マテリアルを選択して「まとめてベイク」を押すのが一番楽です。",
+                            "Bakes the three shape-derived greys (R Cavity / G Curvature / B Ambient Occlusion) into one texture "
+                          + "and assigns it. Selecting every material and pressing Bake All is the easiest way.");
+
+                    _deleteGeometrySources = EditorGUILayout.Toggle(
+                        _kit.Label("Delete Source Files", "After packing, delete the intermediate *_Cavity / *_Curvature / *_AO "
+                                   + "images in the Baked folder. Re-baking one kind keeps the other channels from the existing "
+                                   + "Geometry Map, so nothing is lost",
+                                   "詰めた後、Baked フォルダの中間ファイル（*_Cavity / *_Curvature / *_AO）を削除します。"
+                                   + "1 種類だけ焼き直しても、他のチャンネルは今の Geometry Map から引き継ぐので失われません"),
+                        _deleteGeometrySources);
+
+                    if (BakeButton(jp ? "Cavity / Curvature / AO をまとめてベイク" : "Bake All (Cavity + Curvature + AO)"))
+                    {
+                        _bakedGroups.Clear();
+                        BakeAll(e, BakeGeometryAll);
+                    }
+
+                    EditorGUILayout.Space(4);
+                    DrawCavity(e, jp);
+                    DrawCurvature(e, jp);
+                    DrawAo(e, jp);
+
+                    EditorGUILayout.Space(4);
+                    if (GUILayout.Button(jp ? "残っている中間ファイルから詰め直す（焼かない）"
+                                            : "Repack from leftover source files (no baking)"))
+                    {
+                        _bakedGroups.Clear();
+                        BakeAll(e, m => BakeGeometry(m, null, null, -1f));
+                    }
+                }
+            }
+        }
+
+        /// <summary>
+        /// スロットを持つマップ（Shade Normal / Bent Normal / SSS）を、同じ Base Map のグループで 1 枚に焼く（T-427）。
+        /// テクスチャはグループ全員に割り当てる（Core の GroupScope）が、**機能を ON にするのは選択中の材質だけ**:
+        /// 顔だけ選んで Shade Normal を焼いたら、同じ Base Map の耳や首で勝手に効き始める、を避ける。
+        ///   enableProp   … パネルが立てる有効化プロパティ（0 のときだけ 1 に。選択中の材質のみ）
+        ///   coreStrength … Core が全員に立ててしまう強度プロパティ（選択していない材質は元の値へ戻す）
+        /// </summary>
+        ///   normalMapSlot … 法線として読むスロット（Shade / Bent）。焼いた後に取り込みを Normal Map へ直す
+        private bool BakeShared(MaterialEditor e, Material m, string kind, Func<Material, bool> bake,
+                                string enableProp, string coreStrength, string normalMapSlot = null)
+        {
+            var group = _shareByBaseMap ? BaseMapGroupOf(m) : new[] { m };
+            string groupName = group.Length > 1 ? BaseMapGroupNameOf(m) : null;
+            if (!_bakedGroups.Add(kind + ":" + (groupName ?? ("mat:" + m.name)))) { _runDeduped = true; return true; }   // このボタンで処理済み
+
+            var selected = new System.Collections.Generic.HashSet<UnityEngine.Object>(e.targets);
+            var keep = new System.Collections.Generic.Dictionary<Material, float>();
+            if (coreStrength != null)
+                foreach (var g in group)
+                    if (!selected.Contains(g) && g.HasProperty(coreStrength)) keep[g] = g.GetFloat(coreStrength);
+
+            bool ok;
+            using (EasyPbrBakeCore.GroupScope(group, groupName)) ok = bake(m);
+            foreach (var kv in keep) kv.Key.SetFloat(coreStrength, kv.Value);
+            if (!ok) return false;
+
+            _runTextures++; _runAssigned += group.Length;
+            if (normalMapSlot != null) ImportAsNormalMap(m, normalMapSlot);
+            if (enableProp != null)
+                foreach (var g in group) if (selected.Contains(g)) SetIfUnset(g, enableProp, 1f);
+            if (group.Length > 1)
+                Debug.Log($"[EasyToon] {kind}: Base Map '{groupName}' を共有する {group.Length} 材質に 1 枚を割り当てました"
+                        + "（機能を ON にしたのは選択中の材質だけ）"
+                        + (EasyPbrBakeCore.LastGroupOverlap > 0.02f
+                            ? $"。**UV の重なり {EasyPbrBakeCore.LastGroupOverlap * 100f:0.#}%** ── Share By Base Map を切るか材質の Base Map を確認"
+                            : "") + "。");
+            return true;
+        }
+
+        /// <summary>
+        /// 焼いた法線（Shade Normal / Bent Normal）の取り込みを Normal Map にする。
+        /// Core のベイカーは全種類を Default・非圧縮で取り込むが、Idol は `UnpackNormal` で読み、プロパティも
+        /// `[Normal]` なので、Default のままだとインスペクタに「Normal Map として取り込まれていません」の
+        /// 警告が出る（利用者指摘）。Normal Map にすれば圧縮（PC は BC5）も効き、非圧縮の 1/4 になる。
+        /// ベイカーの出力は RGB = 接空間の xyz（0.5 基準）で、通常の法線マップと同じ並び。
+        /// </summary>
+        private static void ImportAsNormalMap(Material m, string slot)
+        {
+            if (!m.HasProperty(slot)) return;
+            var path = AssetDatabase.GetAssetPath(m.GetTexture(slot));
+            if (string.IsNullOrEmpty(path) || !(AssetImporter.GetAtPath(path) is TextureImporter imp)) return;
+            if (imp.textureType == TextureImporterType.NormalMap) return;
+            imp.textureType = TextureImporterType.NormalMap;
+            imp.sRGBTexture = false;
+            imp.textureCompression = TextureImporterCompression.Compressed;
+            imp.SaveAndReimport();
+        }
+
+        /// <summary>3 種をまとめて焼いて 1 回だけ詰める（グループごとに 1 度）。</summary>
+        private bool BakeGeometryAll(Material m)
+        {
+            var group = _shareByBaseMap ? BaseMapGroupOf(m) : new[] { m };
+            string groupName = group.Length > 1 ? BaseMapGroupNameOf(m) : null;
+            if (!_bakedGroups.Add(groupName ?? ("mat:" + m.name))) { _runDeduped = true; return true; }
+
+            bool ok;
+            using (EasyPbrBakeCore.GroupScope(group, groupName))
+                ok = EasyPbrCavityBaker.Bake(_bakeRoot, m, _cavity)
+                  && EasyPbrCurvatureBaker.Bake(_bakeRoot, m, _curvature)
+                  && EasyPbrAoBaker.Bake(_bakeRoot, m, _ao);
+            if (!ok) return false;
+            foreach (var g in group) SetIfUnset(g, "_CurvatureSoftness", 1f);
+            if (!PackGeometryMap(group, groupName, 2f, _deleteGeometrySources)) return false;
+            _runTextures++; _runAssigned += group.Length;   // Geometry Map は 3 種を詰めた 1 枚
+            return true;
         }
 
         // ------------------------------------------------------------------
@@ -635,18 +807,77 @@ namespace ToonNPR.EditorTools
         /// 無いチャンネルは中立（R 1 / G 0.5 / B 1）。Core のベイカーの出力はそのまま残す
         ///（1 つだけ焼き直したときに、他のチャンネルをここから拾い直せるように）。
         /// </summary>
-        internal static bool PackGeometryMap(Material m, bool setOcclusionBoth = false)
+        /// <summary>
+        /// Geometry 系を 1 種類焼いて（bake が null なら焼かずに）Geometry Map に詰め直す。
+        /// Share By Base Map のときは、m と同じ Base Map を使う Source Root 配下の Idol 材質をまとめて 1 枚にする。
+        /// 同じグループは 1 回のボタンで 1 度だけ処理する（複数選択で同じアトラスを何度も焼かない）。
+        /// </summary>
+        private bool BakeGeometry(Material m, string kind, Func<Material, bool> bake, float occlusionSource,
+                                  string setIfUnsetProp = null)
         {
+            var group = _shareByBaseMap ? BaseMapGroupOf(m) : new[] { m };
+            string groupName = group.Length > 1 ? BaseMapGroupNameOf(m) : null;
+            string key = groupName ?? ("mat:" + m.name);
+            if (!_bakedGroups.Add(key)) { _runDeduped = true; return true; }   // このボタンで処理済み
+
+            if (bake != null)
+            {
+                bool ok;
+                using (EasyPbrBakeCore.GroupScope(group, groupName)) ok = bake(m);
+                if (!ok) return false;
+                if (group.Length > 1)
+                    Debug.Log($"[EasyToon] {kind}: Base Map '{groupName}' を共有する {group.Length} 材質を 1 枚に焼きました"
+                            + (EasyPbrBakeCore.LastGroupOverlap > 0.02f
+                                ? $"（**UV の重なり {EasyPbrBakeCore.LastGroupOverlap * 100f:0.#}%** ── Share By Base Map を切るか材質の Base Map を確認）"
+                                : "") + "。");
+            }
+            if (setIfUnsetProp != null) foreach (var g in group) SetIfUnset(g, setIfUnsetProp, 1f);
+            if (!PackGeometryMap(group, groupName, occlusionSource, _deleteGeometrySources)) return false;
+            _runTextures++; _runAssigned += group.Length;
+            return true;
+        }
+
+        /// <summary>m と同じ Base Map を使う、Source Root 配下の Idol 材質（m を含む）。Base Map が無ければ m だけ。</summary>
+        private Material[] BaseMapGroupOf(Material m)
+        {
+            var atlas = m.HasProperty("_BaseMap") ? m.GetTexture("_BaseMap") : null;
+            if (atlas == null || _bakeRoot == null) return new[] { m };
+            var list = new System.Collections.Generic.List<Material> { m };
+            foreach (var r in _bakeRoot.GetComponentsInChildren<Renderer>(true))
+                foreach (var sm in r.sharedMaterials)
+                    if (sm != null && sm != m && !list.Contains(sm) && sm.shader == m.shader
+                        && sm.HasProperty("_BaseMap") && sm.GetTexture("_BaseMap") == atlas)
+                        list.Add(sm);
+            return list.ToArray();
+        }
+
+        private static string BaseMapGroupNameOf(Material m)
+            => "Shared_" + (m.GetTexture("_BaseMap") != null ? m.GetTexture("_BaseMap").name : m.name);
+
+        internal static bool PackGeometryMap(Material m, bool setOcclusionBoth = false)
+            => PackGeometryMap(new[] { m }, null, setOcclusionBoth ? 2f : -1f, false);
+
+        /// <summary>
+        /// グループ（1 材質でもよい）の Cavity / Curvature / AO を 1 枚に詰めて、全材質に割り当てる。
+        /// 元は Baked フォルダの `<メッシュ>_<グループ名 or 材質名>_<種類>.png`（Core のベイカーの出力）。
+        /// 無ければ先頭の材質に残っている旧 `_CavityMap` / `_CurvatureMap` の参照（T-423 の残骸）から拾う。
+        /// </summary>
+        internal static bool PackGeometryMap(Material[] group, string groupName, float occlusionSource,
+                                             bool deleteSources)
+        {
+            var m = group[0];
             if (m == null || !m.HasProperty("_GeometryMap")) return true;   // 旧シェーダーなら何もしない
             var bakedDir = BakedDirOf(m);
-
-            // Core のベイカーは Baked フォルダへ `<メッシュ>_<材質>_<種類>.png` を保存する（Idol には
-            // 個別スロットが無いので割り当ては起きない）。まずそれを拾い、無ければ材質に残っている
-            // 旧 `_CavityMap` / `_CurvatureMap` の参照（T-423 で廃止したプロパティの残骸）から拾う。
-            string cavityPath = FindBaked(bakedDir, m.name, "Cavity")    ?? LegacyTexPath(m, "_CavityMap");
-            string curvPath   = FindBaked(bakedDir, m.name, "Curvature") ?? LegacyTexPath(m, "_CurvatureMap");
-            string aoPath     = FindBaked(bakedDir, m.name, "AO");
-            return PackGeometryMapFromPaths(m, cavityPath, curvPath, aoPath, setOcclusionBoth ? 2f : -1f);
+            string name = groupName ?? m.name;
+            string cavityPath = FindBaked(bakedDir, name, "Cavity")    ?? LegacyTexPath(m, "_CavityMap");
+            string curvPath   = FindBaked(bakedDir, name, "Curvature") ?? LegacyTexPath(m, "_CurvatureMap");
+            string aoPath     = FindBaked(bakedDir, name, "AO");
+            bool ok = PackGeometryMapFromPaths(group, cavityPath, curvPath, aoPath, occlusionSource);
+            // 詰め終わったら中間ファイルを消す（Baked フォルダの中のものだけ。他所にある旧参照のファイルは触らない）
+            if (ok && deleteSources)
+                foreach (var p in new[] { cavityPath, curvPath, aoPath })
+                    if (p != null && p.StartsWith(bakedDir + "/", StringComparison.Ordinal)) AssetDatabase.DeleteAsset(p);
+            return ok;
         }
 
         private static string BakedDirOf(Material m)
@@ -659,11 +890,12 @@ namespace ToonNPR.EditorTools
         /// <summary>テクスチャから詰める（Migrator 用）。occlusionSource &lt; 0 なら触らない。</summary>
         internal static bool PackGeometryMapFromTextures(Material m, Texture cavity, Texture curvature, Texture ao,
                                                       float occlusionSource)
-            => PackGeometryMapFromPaths(m, PngPath(cavity), PngPath(curvature), PngPath(ao), occlusionSource);
+            => PackGeometryMapFromPaths(new[] { m }, PngPath(cavity), PngPath(curvature), PngPath(ao), occlusionSource);
 
-        private static bool PackGeometryMapFromPaths(Material m, string cavityPath, string curvPath, string aoPath,
+        private static bool PackGeometryMapFromPaths(Material[] group, string cavityPath, string curvPath, string aoPath,
                                                   float occlusionSource)
         {
+            var m = group[0];
             if (m == null || !m.HasProperty("_GeometryMap")) return true;
             var bakedDir = BakedDirOf(m);
             var dir = bakedDir.Substring(0, bakedDir.Length - "/Baked".Length);
@@ -674,18 +906,23 @@ namespace ToonNPR.EditorTools
             }
 
             var cav = LoadGray(cavityPath); var cur = LoadGray(curvPath); var ao = LoadGray(aoPath);
+            // 元が無いチャンネルは、今の Geometry Map から引き継ぐ（中間ファイルを消していても、
+            // 1 種類だけ焼き直して他を失わないため）。それも無ければ中立（R 1 / G 0.5 / B 1）。
+            var prev = LoadGray(PngPath(m.GetTexture("_GeometryMap")));
             int size = Mathf.Max(cav?.width ?? 0, Mathf.Max(cur?.width ?? 0, ao?.width ?? 0));
+            if (size == 0 && prev != null) size = prev.width;
             var px = new Color[size * size];
             for (int y = 0; y < size; y++)
                 for (int x = 0; x < size; x++)
                 {
                     float u = (x + 0.5f) / size, v = (y + 0.5f) / size;
+                    var old = prev != null ? prev.GetPixelBilinear(u, v) : new Color(1f, 0.5f, 1f, 1f);
                     px[y * size + x] = new Color(
-                        cav != null ? cav.GetPixelBilinear(u, v).r : 1f,
-                        cur != null ? cur.GetPixelBilinear(u, v).r : 0.5f,
-                        ao  != null ? ao.GetPixelBilinear(u, v).r  : 1f, 1f);
+                        cav != null ? cav.GetPixelBilinear(u, v).r : old.r,
+                        cur != null ? cur.GetPixelBilinear(u, v).r : old.g,
+                        ao  != null ? ao.GetPixelBilinear(u, v).r  : old.b, 1f);
                 }
-            foreach (var t in new[] { cav, cur, ao }) if (t != null) UnityEngine.Object.DestroyImmediate(t);
+            foreach (var t in new[] { cav, cur, ao, prev }) if (t != null) UnityEngine.Object.DestroyImmediate(t);
 
             var outTex = new Texture2D(size, size, TextureFormat.RGBA32, false, true);
             outTex.SetPixels(px); outTex.Apply(false, false);
@@ -693,6 +930,9 @@ namespace ToonNPR.EditorTools
             string stem = Path.GetFileNameWithoutExtension(cavityPath ?? curvPath ?? aoPath);
             int cut = stem.LastIndexOf('_');
             string outPath = $"{bakedDir}/{(cut > 0 ? stem.Substring(0, cut) : stem)}_Geometry.png";
+            // 既に Geometry Map があるならその場所へ上書きする（GUID を保ち、割り当て済みの参照を生かす）
+            var existing = PngPath(m.GetTexture("_GeometryMap"));
+            if (existing != null && existing.StartsWith(bakedDir + "/", StringComparison.Ordinal)) outPath = existing;
             File.WriteAllBytes(outPath, outTex.EncodeToPNG());
             UnityEngine.Object.DestroyImmediate(outTex);
             AssetDatabase.ImportAsset(outPath, ImportAssetOptions.ForceUpdate);
@@ -700,20 +940,26 @@ namespace ToonNPR.EditorTools
             {
                 imp.sRGBTexture = false;
                 imp.textureType = TextureImporterType.Default;
-                imp.textureCompression = TextureImporterCompression.Uncompressed;
+                // 低周波のグレー 3 種なので高品質圧縮（BC7）で足りる。非圧縮の 1/4（T-425）
+                imp.textureCompression = TextureImporterCompression.CompressedHQ;
                 imp.SaveAndReimport();
             }
 
-            Undo.RecordObject(m, "Pack Geometry Map");
-            m.SetTexture("_GeometryMap", AssetDatabase.LoadAssetAtPath<Texture2D>(outPath));
-            m.SetFloat("_GeometryMapOn", 1f);
-            m.EnableKeyword("_GEOMETRYMAP_ON");
-            // AO を入れた直後だけ出どころを切り替える（自分で選んでいる人の値は触らない = Mask G のときだけ）
-            if (occlusionSource >= 0f && aoPath != null && m.HasProperty("_OcclusionSource")
-                && m.GetFloat("_OcclusionSource") < 0.5f)
-                m.SetFloat("_OcclusionSource", occlusionSource);
-            EditorUtility.SetDirty(m);
-            Debug.Log($"[EasyToon] Geometry Map を詰めました → {outPath}"
+            var packed = AssetDatabase.LoadAssetAtPath<Texture2D>(outPath);
+            foreach (var t in group)
+            {
+                if (t == null || !t.HasProperty("_GeometryMap")) continue;
+                Undo.RecordObject(t, "Pack Geometry Map");
+                t.SetTexture("_GeometryMap", packed);
+                t.SetFloat("_GeometryMapOn", 1f);
+                t.EnableKeyword("_GEOMETRYMAP_ON");
+                // AO を入れた直後だけ出どころを切り替える（自分で選んでいる人の値は触らない = Mask G のときだけ）
+                if (occlusionSource >= 0f && aoPath != null && t.HasProperty("_OcclusionSource")
+                    && t.GetFloat("_OcclusionSource") < 0.5f)
+                    t.SetFloat("_OcclusionSource", occlusionSource);
+                EditorUtility.SetDirty(t);
+            }
+            Debug.Log($"[EasyToon] Geometry Map を詰めました（{group.Length} 材質に割り当て）→ {outPath}"
                     + $"（R Cavity {(cavityPath != null ? "○" : "中立")} / G Curvature {(curvPath != null ? "○" : "中立")}"
                     + $" / B AO {(aoPath != null ? "○" : "中立")}）");
             return true;
@@ -849,17 +1095,28 @@ namespace ToonNPR.EditorTools
         /// <summary>選択中のマテリアル全部に実行（マルチ編集対応）。</summary>
         private void BakeAll(MaterialEditor editor, Func<Material, bool> bakeOne)
         {
-            int ok = 0, total = 0;
+            // **「何個の材質に焼いたか」ではなく「何枚焼いて、何個に割り当てたか」を言う。**
+            // Share By Base Map では 46 材質を選んでも焼くのは 8 枚で、以前の「46 個中 46 個にベイクしました」は
+            // テクスチャが 46 枚できたように読めた（利用者指摘）。
+            int total = 0, failed = 0;
+            _runTextures = 0; _runAssigned = 0;
             foreach (var o in editor.targets)
             {
                 if (!(o is Material m)) continue;
                 total++;
-                if (bakeOne(m)) ok++;
+                int texBefore = _runTextures;
+                _runDeduped = false;
+                bool ok = bakeOne(m);
+                if (!ok) { failed++; continue; }
+                // グループを使わないベイカー（Face SDF / Hair Flow）は自分では数えない → 1 枚・1 材質
+                if (!_runDeduped && _runTextures == texBefore) { _runTextures++; _runAssigned++; }
             }
-            if (total > 1)
+            if (total > 1 || _runAssigned > 1)
                 EditorUtility.DisplayDialog("EasyToon / Idol Baker",
-                    _kit.Jp ? $"{total} 個のマテリアル中 {ok} 個にベイクしました（詳細は Console）。"
-                            : $"Baked {ok} of {total} selected materials (see Console).", "OK");
+                    _kit.Jp ? $"テクスチャを {_runTextures} 枚焼き、{_runAssigned} 個のマテリアルに割り当てました"
+                              + $"（選択 {total} 個" + (failed > 0 ? $"、失敗 {failed} 個" : "") + "）。詳細は Console。"
+                            : $"Baked {_runTextures} texture(s) and assigned them to {_runAssigned} material(s) "
+                              + $"({total} selected" + (failed > 0 ? $", {failed} failed" : "") + "). See Console.", "OK");
         }
     }
 }

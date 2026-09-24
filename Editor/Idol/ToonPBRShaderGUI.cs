@@ -393,6 +393,18 @@ namespace ToonNPR.EditorTools
                                 "ベースのノーマルの上に whiteout 合成されます。効くのは影のグラデーション・"
                                 + "sheen・リムで、ハイライトと映り込みはベースの法線のままです"
                                 + "（細かい織り目が点にならないように）");
+                            P(e, "_DetailCavity", "Detail Cavity",
+                                "The detail normal never enters specular, so the weave is invisible to highlights. "
+                                + "This dims specular, sheen, clearcoat and reflections on the slopes of the detail "
+                                + "normal instead - the weave shows as shading in the highlight, without dots",
+                                "ディテール法線は鏡面に入らないので、ハイライトからは織り目が見えません。代わりに"
+                                + "ディテール法線の斜面で鏡面・sheen・クリアコート・映り込みを落とします ── "
+                                + "ハイライトの中に織り目の陰が出ます（点にはなりません）");
+                            P(e, "_DetailNormalRotation", "Detail Normal Rotation",
+                                "Rotates the weave (degrees). The sampled normal is rotated back, so the shading "
+                                + "direction follows. One angle per material",
+                                "織り目を回します（度）。引いた法線も合わせて回すので陰影の向きも付いてきます。"
+                                + "材質全体で 1 つの角度です");
                         }
 
                     SubHeader("Color Correction", "色調補正 (HSV)");
@@ -421,13 +433,21 @@ namespace ToonNPR.EditorTools
                         "R = Metallic / G = Occlusion / B = Thickness / A = Smoothness。");
 
                     P(e, "_MaskMap", "Mask Map", "Packed RGBA mask", "パック済みの RGBA マスク");
-                    P(e, "_Metallic", "Metallic", "Scales the R channel", "R チャンネルを倍率で調整");
-                    P(e, "_Smoothness", "Smoothness", "Scales the A channel", "A チャンネルを倍率で調整");
+                    // マップがあるときスライダは**倍率**。0.25 のままだとマップの Roughness が 4 倍粗く読まれる
+                    bool hasMask = e.target is Material mm && mm.GetTexture("_MaskMap") != null;
+                    if (hasMask && AssetImporter.GetAtPath(AssetDatabase.GetAssetPath(((Material)e.target).GetTexture("_MaskMap"))) is TextureImporter mi && mi.sRGBTexture)
+                        Note("Mask Map is imported as sRGB. It is a data map: mid values (AO, Thickness) read darker than authored. Turn off sRGB (Color Texture) in the import settings.",
+                             "Mask Map が sRGB でインポートされています。値のマップなので中間値（AO・Thickness）が描いたより暗く読まれます。インポート設定の sRGB (Color Texture) を OFF にしてください。");
+                    if (hasMask && (GetFloat("_Metallic") < 1f || GetFloat("_Smoothness") < 1f))
+                        Note("Mask Map is assigned: Metallic and Smoothness multiply the map. Set both to 1 to use the map's values as-is.",
+                             "Mask Map があるとき Metallic / Smoothness はマップへの倍率です。マップの値をそのまま使うなら両方 1 にしてください。");
+                    P(e, "_Metallic", "Metallic", "Scales the R channel (1 = use the map as-is)", "R チャンネルへの倍率（1 でマップの値そのまま）");
+                    P(e, "_Smoothness", "Smoothness", "Scales the A channel (1 = use the map as-is)", "A チャンネルへの倍率（1 でマップの値そのまま）");
                     P(e, "_MaskAIsRoughness", "Mask A Is Roughness",
                         "On = the A channel holds Roughness (InstaMat / Substance default) and is inverted here. "
                         + "Off = A is Smoothness",
                         "ON = A が Roughness（InstaMat / Substance の標準出力）で、ここで反転して読みます。"
-                        + "OFF = A は Smoothness");
+                        + "OFF = A は Smoothness。Mask Map が無いときは反転しません（白を反転すると全面マットになるため）");
                     P(e, "_OcclusionStrength", "Occlusion Strength",
                         "How much G darkens the indirect light", "G が間接光をどれだけ落とすか");
                     P(e, "_DirectOcclusion", "Direct Occlusion",
@@ -719,10 +739,11 @@ namespace ToonNPR.EditorTools
                 "Lower for deeper shadows. Ambient in the Lighting tab also lifts them",
                 "下げると影が濃くなります。「ライト」タブの環境光も影を持ち上げます");
             P(e, "_AddLightShadowColor", "Add Light Shadow Color",
-                "How much of the shadow colouring additional lights get. "
-                + "Full strength on every point light usually reads as dirty",
-                "追加光源の影にどれだけ影色を掛けるか。"
-                + "点光源すべてに全量掛けると濁って見えがちです");
+                "How much an additional light adds on the side it does NOT hit (shadow colour x light colour). "
+                + "0 = the light only contributes where it hits and on the rim (physically right; a red backlight "
+                + "stays on the edge). 1 = the light washes the whole figure in its colour",
+                "追加光が当たっていない側に足す量（影色 × ライトの色）。0 = 当たった所とリムにだけ寄与する"
+                + "（物理どおり。赤い逆光は縁に留まる）。1 = ライトの色でキャラ全体を染める（色ウォッシュ用）");
             P(e, "_ShadowTint", "Shadow Tint (multiply)",
                 "Multiplied onto the shadow after the HSV step",
                 "HSV の後に影へ乗算されます");
@@ -770,8 +791,31 @@ namespace ToonNPR.EditorTools
             // PNG の書き出しはアセット側の Inspector（ToonRampAssetEditor）にだけ置く。
 
             // 1. どのランプを使っているか
-            EditorGUILayout.ObjectField(_kit.Jp ? "ランプアセット" : "Ramp Asset",
+            // 既存のアセットへ差し替えられる（戻り値を捨てていて入れ替えが効かなかった・利用者指摘）。
+            // None にしたら参照だけ外す。Use Ramp Map は触らない（外部テクスチャを挿し直す余地を残す）。
+            EditorGUI.BeginChangeCheck();
+            EditorGUI.showMixedValue = asset != null && !shared;
+            var picked = (ToonRampAsset)EditorGUILayout.ObjectField(_kit.Jp ? "ランプアセット" : "Ramp Asset",
                 editing ? asset : null, typeof(ToonRampAsset), false);
+            EditorGUI.showMixedValue = false;
+            if (EditorGUI.EndChangeCheck())
+            {
+                if (picked != null)
+                {
+                    if (picked.texture != null) ToonPBRRampGenerator.Assign(mats, picked);
+                    else Debug.LogWarning("[EasyToon] このランプアセットにはテクスチャが埋め込まれていません: " + picked.name, picked);
+                }
+                else
+                {
+                    Undo.RecordObjects(mats, "Clear Ramp");
+                    foreach (var m in mats)
+                        if (m != null) { m.SetTexture("_RampMap", null); EditorUtility.SetDirty(m); }
+                }
+                _rampDraftFor = null;
+                asset = picked != null && picked.texture != null ? picked : null;
+                shared = asset != null;
+                editing = asset != null;
+            }
             if (asset != null && !shared)
                 Note("The selected materials use different ramps. Create a new one to give them a shared ramp.",
                     "選択中の材質は別々のランプを使っています。新規作成すると全員に 1 つの共有ランプが割り当てられます");
@@ -1019,6 +1063,12 @@ namespace ToonNPR.EditorTools
                         "Independent of the base roughness. Lower makes a tighter rim",
                         "下地の粗さとは独立です。下げるほど縁が細くなります");
                     P(e, "_SheenIntensity", "Sheen Intensity", null, null);
+                    P(e, "_SheenNormalFlatten", "Sheen Normal Flatten",
+                        "Pulls the sheen's normal toward the mesh normal. Shallow bumps go first",
+                        "sheen が見る法線をメッシュの法線へ寄せます。浅い凹凸から先に消えます");
+                    P(e, "_SheenDetailNormal", "Sheen Detail Normal",
+                        "How much of the Detail Normal the sheen sees",
+                        "sheen が Detail Normal をどれだけ見るか");
                     P(e, "_SheenEnergyConservation", "Sheen Energy Conservation",
                         "Shrinks the base by the sheen's directional albedo before adding. "
                         + "At 0 it just adds, which can exceed the incoming light at the rim",
@@ -1364,6 +1414,14 @@ namespace ToonNPR.EditorTools
                     P(e, "_RimFresnelThickness", "Rim Fresnel Thickness",
                         "0 razor-thin (exponent 12), 1 broad (0.5). Same mapping as Doll",
                         "0 で極細（指数 12）、1 で極太（0.5）。Doll と同じ写像です");
+                    P(e, "_RimDetailNormal", "Rim Detail Normal",
+                        "How much of the Detail Normal the rim sees. 0 = the weave does not raise rims",
+                        "リムが Detail Normal をどれだけ見るか。0 で織り目に縁が立たなくなります");
+                    P(e, "_RimNormalFlatten", "Rim Normal Flatten",
+                        "Pulls the rim's normal toward the mesh normal. Shallow bumps lose their rim first; "
+                        + "steep, deep wrinkles keep it. Does not depend on distance or mipmaps",
+                        "リムが見る法線をメッシュの法線へ寄せます。浅い凹凸から先に縁が消え、"
+                        + "傾きの大きい深いしわの縁は残ります。距離やミップに依りません");
                     P(e, "_RimReceiveShadow", "Rim Receive Shadow",
                         "Kills the rim inside cast shadows. Uses only shadow-map "
                         + "occlusion, not the NdotL shade - the rim is about light reaching there",
@@ -1485,6 +1543,18 @@ namespace ToonNPR.EditorTools
                         "強さだけを変えます ── ハイライトの締まり（ツヤ）は上の "
                         + "Smoothness 側です。髪と布はここを通りません"
                         + "（それぞれ自前の強度を持っています）");
+                    P(e, "_SpecularNormalFlatten", "Specular Normal Flatten",
+                        "Pulls the normal used by specular, reflections, MatCap and glitter toward the mesh normal. "
+                        + "Shallow bumps stop breaking up the highlight first; deep wrinkles keep doing so",
+                        "鏡面・映り込み・MatCap・グリッターが見る法線をメッシュの法線へ寄せます。"
+                        + "浅い凹凸から先にハイライトを割らなくなり、深いしわは残ります");
+                    P(e, "_NormalCavity", "Normal Cavity",
+                        "Dims specular, sheen, clearcoat and reflections on the slopes of the Normal Map. "
+                        + "Use with Specular Normal Flatten: the flattened bumps stop breaking up the highlight "
+                        + "but still show as shading inside it",
+                        "ノーマルマップの斜面で鏡面・sheen・クリアコート・映り込みを落とします。"
+                        + "Specular Normal Flatten と組で使います ── 均した凹凸はハイライトを割らなくなり、"
+                        + "陰としてだけハイライトの中に残ります");
                     P(e, "_SpecEnergyConservation", "Spec Energy Conservation",
                         "Shrinks the diffuse by the fraction the specular lobe reflects "
                         + "(Fresnel x Specular Intensity, lit side only). Keeps the total "
@@ -1567,9 +1637,9 @@ namespace ToonNPR.EditorTools
                     SubHeader("Clearcoat", "クリアコート");
                     P(e, "_ClearcoatStrength", "Clearcoat Strength",
                         "A second thin layer with its own roughness. IOR is fixed at 1.5 (f0 = 0.04). "
-                        + "Lacquer, pearl, wet lips",
+                        + "Lacquer, pearl, wet lips. 0 compiles the whole feature out (keyword _CLEARCOAT_ON follows this value)",
                         "別の粗さを持つ薄い層を 1 枚重ねます。IOR は 1.5 固定（f0 = 0.04）。"
-                        + "漆・真珠・濡れた唇");
+                        + "漆・真珠・濡れた唇。0 で機能ごとコンパイルから外れます（キーワード _CLEARCOAT_ON がこの値に追従）");
                     P(e, "_ClearcoatSmoothness", "Clearcoat Smoothness", null, null);
 
                     SubHeader("Iridescence", "イリデッセンス");
@@ -2071,7 +2141,63 @@ namespace ToonNPR.EditorTools
         /// <summary>スクリプトからプロパティを触られた場合もここでキーワードが揃う。</summary>
         public override void ValidateMaterial(Material material)
         {
+            UpgradeMaterial(material);
             ApplyKeywords(material);
+            ApplyDerived(material);
+        }
+
+        /// <summary>
+        /// GUI が導く値（キーワードではないもの）。
+        /// _MaskInvertA = Mask A Is Roughness かつ Mask Map 割り当て済み（T-435）。未割り当ての既定は白なので、
+        /// トグルだけ ON だと A = 1 を反転して Smoothness 0 になり、マップの有無で金属の見た目が別物になっていた。
+        /// </summary>
+        internal static void ApplyDerived(Material m)
+        {
+            if (!m.HasProperty("_MaskInvertA")) return;
+            bool has = m.HasProperty("_MaskMap") && m.GetTexture("_MaskMap") != null;
+            float v = (IsOn(m, "_MaskAIsRoughness") && has) ? 1f : 0f;
+            if (m.GetFloat("_MaskInvertA") != v) { m.SetFloat("_MaskInvertA", v); EditorUtility.SetDirty(m); }
+        }
+
+        // 今の材質の版。上げたら UpgradeMaterial に段を足す。
+        private const float MaterialVersion = 2f;
+
+        /// <summary>
+        /// 古い材質を 1 回だけ直す。**見た目を変えない変換だけを置く。**
+        ///   0 → 1（T-429）: Detail Normal Map が自分のタイリングを持った。以前は Detail Map の
+        ///                   タイリングを借りていたので、それを写す（写さないと織り目が 1 倍に戻る）。
+        ///   1 → 2（T-438）: Add Light Shadow Color の既定を 1 → 0 にした。**例外的に見た目が変わる段**
+        ///                   （利用者判断）── 旧既定の 1 のまま保存されている材質だけ 0 にする。
+        ///                   1 は「追加光が当たっていない側にも影色 × ライト色を足す」で、逆光の色が正面へ漏れていた。
+        /// </summary>
+        internal static bool UpgradeMaterial(Material m)
+        {
+            if (m == null || !m.HasProperty("_MaterialVersion")) return false;
+            if (m.GetFloat("_MaterialVersion") >= MaterialVersion) return false;
+            float ver = m.GetFloat("_MaterialVersion");
+            if (ver < 1f && m.HasProperty("_DetailMap") && m.HasProperty("_DetailNormalMap"))
+            {
+                m.SetTextureScale("_DetailNormalMap", m.GetTextureScale("_DetailMap"));
+                m.SetTextureOffset("_DetailNormalMap", m.GetTextureOffset("_DetailMap"));
+            }
+            if (ver < 2f && m.HasProperty("_AddLightShadowColor") && m.GetFloat("_AddLightShadowColor") >= 1f)
+                m.SetFloat("_AddLightShadowColor", 0f);
+            m.SetFloat("_MaterialVersion", MaterialVersion);
+            EditorUtility.SetDirty(m);
+            return true;
+        }
+
+        [MenuItem("Tools/Idol/全 Idol マテリアルを最新の版へ更新")]
+        private static void UpgradeAllMaterials()
+        {
+            int n = 0;
+            foreach (var guid in AssetDatabase.FindAssets("t:Material"))
+            {
+                var m = AssetDatabase.LoadAssetAtPath<Material>(AssetDatabase.GUIDToAssetPath(guid));
+                if (m != null && m.shader != null && m.shader.name.Contains("Idol") && UpgradeMaterial(m)) n++;
+            }
+            AssetDatabase.SaveAssets();
+            Debug.Log($"[EasyToon] {n} 件の Idol マテリアルを版 {MaterialVersion} へ更新しました");
         }
 
         private static void ApplyKeywords(Material m)
@@ -2084,6 +2210,7 @@ namespace ToonNPR.EditorTools
             SetKeyword(m, "_ANISOMAP_ON",            IsOn(m, "_AnisotropyMapOn"));
             // Glitter はトグルを持たず Intensity > 0 に追従（T-418）。設定は静的なのでキーワードで切る
             SetKeyword(m, "_GLITTER_ON",             Fl(m, "_GlitterIntensity") > 0f);
+            SetKeyword(m, "_CLEARCOAT_ON",           Fl(m, "_ClearcoatStrength") > 0f);   // T-437
             SetKeyword(m, "_STOCKING_ON",            Fl(m, "_StockingIntensity") > 0f);
             SetKeyword(m, "_MATCAP_ON",              Fl(m, "_MatCapIntensity") > 0f);
             SetKeyword(m, "_DEBUG_ON",               Fl(m, "_DebugMode") > 0.5f);
@@ -2241,7 +2368,10 @@ namespace ToonNPR.EditorTools
                 // ── **自分で作った罠は自分で塞ぐこと。**
                 if (gate.floatValue <= 0f && tex.textureValue != null)
                 {
-                    sleeping += "・" + gateName + "\n";
+                    // **Dissolve は言わない。** Dissolve Amount は強度ではなく進行度で、0 が平常
+                    //（実行時に Timeline / DissolveController が上げる）。テクスチャを入れて 0 のままなのが
+                    // 正しい使い方なので、警告すると常時出て邪魔になるだけ（利用者指摘）。
+                    if (gateName != "_DissolveAmount") sleeping += "・" + gateName + "\n";
                     continue;
                 }
 

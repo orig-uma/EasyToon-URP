@@ -378,9 +378,11 @@ if (_UseRampMap > 0.5)
     }
 
     // クリアコート。下地の鏡面を (1 - Fc) で減衰させてエネルギーを保存する。
-    // 強度 0 のときは分岐ごと飛ぶのでコストは掛からない（T-037 の方針）。
     // 追加光（allowCoat = false）では評価しない（T-418）。
-    // コートの強さは Fabric Map の B（場所ごと。T-419）を掛けた値
+    // コートの強さは Fabric Map の B（場所ごと。T-419）を掛けた値。
+    // **キーワード `_CLEARCOAT_ON`（Clearcoat Strength > 0 に追従。T-437）。** 一様分岐のままだと
+    // OFF の材質でも 184 命令ぶん（直接光＋映り込み）の経路がコンパイルに残り、レジスタも確保される（Glitter と同じ理屈）。
+#if defined(_CLEARCOAT_ON)
     float coatStrength = _ClearcoatStrength * s.coatMask;
     UNITY_BRANCH
     if (allowCoat && coatStrength > 0.0)
@@ -413,6 +415,7 @@ if (_UseRampMap > 0.5)
         specular *= coatAtten;
         coat      = Dc * Vc * Fc * NdotLs * coatTint;
     }
+#endif   // _CLEARCOAT_ON
 #endif
 
 #if defined(_SURFACETYPE_CLOTH)
@@ -423,7 +426,7 @@ if (_UseRampMap > 0.5)
     // 向きと強さはコンテキストで 1 回求めたもの（接線か Anisotropy Map。T-419）。
     float3 weave  = c.clothT;
     float3 Hcloth = normalize(H - weave * dot(H, weave) * c.clothAniso);
-    float  NdotHc = saturate(dot(N, Hcloth));
+    float  NdotHc = saturate(dot(c.sheenN, Hcloth));   // sheen 用の法線（T-434）
 
     // シーンにも同じカーネルを掛ける。**布の皺は法線が画素内で最も振れる場所**で、
     // ここが生の粗さのままだと白いシャツで斑点になる。
@@ -651,7 +654,8 @@ float3 ToonShadeIndirect(ToonSurface s, ToonContext c, float mainLit, float main
     // 掛けない。Glitter Specular 0 のときは 1。
     indirectSpecular *= c.specGrain;
 
-    // コートの映り込み。下地より鋭いので別 mip を引く。
+    // コートの映り込み。下地より鋭いので別 mip を引く。キーワード `_CLEARCOAT_ON`（T-437）
+#if defined(_CLEARCOAT_ON)
     float coatStrength = _ClearcoatStrength * s.coatMask;   // Fabric Map の B（T-419）
     UNITY_BRANCH
     if (coatStrength > 0.0)
@@ -675,6 +679,7 @@ float3 ToonShadeIndirect(ToonSurface s, ToonContext c, float mainLit, float main
         indirectSpecular += ToonSampleEnvSpecular(R, coatPr, c.positionWS, c.screenUV) * Fc * coatTint
                           * _EnvSpecIntensity * specOcclusion;
     }
+#endif
 
     return indirectDiffuse + indirectSpecular;
 }

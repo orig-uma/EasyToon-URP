@@ -335,6 +335,51 @@ namespace ToonNPR.EditorTools
             }
         }
 
+        // --------------------------------------------------------------------
+        //  性能（T-437）。**どれも絵は変えない、または変わるなら書いてある。**
+        //  数字は fxc の静的命令数（PC 構成: Forward+ / 主光源影 / 追加光 / HQ 8 タップ = 1,376。クリアコート OFF）。
+        // --------------------------------------------------------------------
+        private void CheckPerformance(UniversalRenderPipelineAsset asset, List<ScriptableRendererData> datas)
+        {
+            var so = new SerializedObject(asset);
+            bool layers  = so.FindProperty("m_SupportsLightLayers")?.boolValue ?? false;
+            bool cookies = so.FindProperty("m_SupportsLightCookies")?.boolValue ?? false;
+            bool opaque  = so.FindProperty("m_RequireOpaqueTexture")?.boolValue ?? false;
+
+            if (layers || cookies)
+                Add(Level.Info, "Light Layers / Light Cookies が有効",
+                    $"Light Layers {(layers ? "ON" : "OFF")} / Light Cookies {(cookies ? "ON" : "OFF")}。" +
+                    "両方 ON で ForwardLit が約 105 命令増え、バリアントも 4 倍になる。" +
+                    "ライトに Cookie を付けていない・レイヤーでライトを分けていないなら OFF にする（絵は変わらない）。", asset);
+
+            if (opaque)
+                Add(Level.Info, "Opaque Texture が ON",
+                    "このシェーダーは読まない。毎フレーム画面 1 枚のコピーが走るので、" +
+                    "他の Feature が使っていなければ OFF にする。", asset);
+
+            // Depth Priming: 不透明を DepthOnly（26 命令）で先に描き、隠れた画素の ForwardLit（1,500 命令超）を
+            // 早期 Z で飛ばす。髪・服が何層も重なるキャラでは効きが大きい。MSAA と併用不可（URP 側の制約）。
+            foreach (var data in datas)
+            {
+                var dso = new SerializedObject(data);
+                var priming = dso.FindProperty("m_DepthPrimingMode");
+                if (priming != null && priming.intValue == 0)
+                    Add(Level.Info, $"Depth Priming が無効（{data.name}）",
+                        "Renderer Data の Depth Priming Mode を Auto にすると、隠れた画素の ForwardLit が飛ぶ" +
+                        "（DepthOnly パスは 26 命令）。髪・袖・スカートが重なる画では効きが大きい。" +
+                        "MSAA を使っている場合は URP が無視するので変えなくてよい。", data);
+            }
+
+            // URP のソフトシャドウ（High = 16 タップ）は HQ Shadow（既定 8 タップ）より 123 命令重い。
+            // HQ ON の材質は URP のフィルタを通らないので、全材質 HQ なら Soft Shadows の品質は効かない。
+            var mats = CollectToonMaterials();
+            int hqOff = mats.Count(m => m.HasFloat("_HQShadowOn") && m.GetFloat("_HQShadowOn") <= 0.5f);
+            if (hqOff > 0)
+                Add(Level.Info, $"HQ Shadow が OFF の材質が {hqOff} 件",
+                    "HQ Shadow OFF は URP のソフトシャドウ（品質 High で 16 タップ）を通り、" +
+                    "HQ Shadow ON（8 タップ）より約 120 命令重い上に縁の質も落ちる。ON を推奨。");
+        }
+
         private void CheckRendererFeatures(UniversalRenderPipelineAsset asset)
         {
             // 公開 API から Renderer Data を辿る方法がバージョンで揺れるので
@@ -356,6 +401,8 @@ namespace ToonNPR.EditorTools
             }
 
             if (datas.Count == 0) return;
+
+            CheckPerformance(asset, datas);
 
             bool ssaoActive = features.Any(f => f.isActive && f.GetType().Name == "ScreenSpaceAmbientOcclusion");
             if (!ssaoActive)
@@ -508,6 +555,34 @@ namespace ToonNPR.EditorTools
         // --------------------------------------------------------------------
         private void CheckMaterialValues(Material[] mats)
         {
+            // **データマップが sRGB で読まれている**（T-436）。Unity は PNG を既定で sRGB ON にする。
+            // Mask の G（AO）などの中間値が暗く解釈され（0.6 → 0.32）、マップありの金属だけ沈む
+            //（実測: 同じマップで sRGB ON 58 / OFF 72、マップ無し 79）。R = 1 / 0 と A は影響しないので
+            // 金属度と粗さは合っているように見え、気付きにくい。
+            string[] dataMaps = { "_MaskMap", "_NPRMap", "_FabricMap", "_GeometryMap", "_AnisotropyMap",
+                                  "_HairFlowMap", "_SSSMap", "_FaceSDFMap" };
+            var srgbBad = new System.Collections.Generic.List<(Material, string, TextureImporter)>();
+            foreach (var m in mats)
+                foreach (var tex in dataMaps)
+                {
+                    if (!m.HasTexture(tex) || m.GetTexture(tex) == null) continue;
+                    var imp = AssetImporter.GetAtPath(AssetDatabase.GetAssetPath(m.GetTexture(tex))) as TextureImporter;
+                    if (imp != null && imp.sRGBTexture) srgbBad.Add((m, tex, imp));
+                }
+            if (srgbBad.Count > 0)
+            {
+                var imps = srgbBad.Select(x => x.Item3).Distinct().ToArray();
+                Add(Level.Error, $"データマップが sRGB で読まれている（{imps.Length} 枚）",
+                    "Mask / NPR / Fabric / Geometry / Anisotropy などは色ではなく値のマップ。sRGB ON だと中間値が暗く" +
+                    "解釈され、AO や Sheen が想定より強く落ちる（マップありの金属だけ沈む、など）。" +
+                    "インポート設定の sRGB (Color Texture) を OFF にすること。\n  " +
+                    string.Join("\n  ", srgbBad.Select(x => $"{x.Item1.name}: {x.Item2}").Distinct()),
+                    imps[0], "sRGB を OFF にする", () =>
+                    {
+                        foreach (var imp in imps) { imp.sRGBTexture = false; imp.SaveAndReimport(); }
+                    });
+            }
+
             // テクスチャは入れたのに強度 0、という組み合わせ（T-063 で実際に全滅していた）。
             (string tex, string gate, string label)[] pairs =
             {
