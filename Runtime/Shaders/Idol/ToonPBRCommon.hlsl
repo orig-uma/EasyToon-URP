@@ -61,6 +61,8 @@ CBUFFER_START(UnityPerMaterial)
     float4 _DetailColor;
     float  _DetailMultiply;
     float  _DetailNormalScale;
+    float4 _DetailNormalMap_ST;
+    float  _DetailNormalRotation;
     float  _NormalMapOn;
 
     // 素のアルベドの HSV 補正（影側の _Shadow* とは別物。両方掛かる）
@@ -71,6 +73,7 @@ CBUFFER_START(UnityPerMaterial)
     // PBR
     float  _Metallic;
     float  _Smoothness;
+    float  _MaskInvertA;
     float  _MaskAIsRoughness;
     float  _OcclusionSource;
     float  _OcclusionStrength;
@@ -174,6 +177,13 @@ CBUFFER_START(UnityPerMaterial)
     float4 _RimColor;
     float  _RimIntensity;
     float  _RimReceiveShadow;
+    float  _RimDetailNormal;
+    float  _RimNormalFlatten;
+    float  _SpecularNormalFlatten;
+    float  _SheenNormalFlatten;
+    float  _SheenDetailNormal;
+    float  _DetailCavity;
+    float  _NormalCavity;
     float4 _FuzzColor;
     float  _FuzzIntensity;
     float  _FuzzPower;
@@ -317,23 +327,29 @@ CBUFFER_END
 //
 // マテリアルのマップは同じメッシュの同じ UV に貼るので、フィルタとラップを
 // 揃えて困る場面が無い。Unity の既定インポート設定に合わせて Linear/Repeat。
-#define sampler_BumpMap        sampler_LinearRepeat
-#define sampler_DetailMap       sampler_LinearRepeat
-#define sampler_DetailNormalMap sampler_LinearRepeat
-#define sampler_MaskMap        sampler_LinearRepeat
-#define sampler_NPRMap         sampler_LinearRepeat
-#define sampler_FabricMap      sampler_LinearRepeat
-#define sampler_GeometryMap       sampler_LinearRepeat
-#define sampler_AnisotropyMap  sampler_LinearRepeat
-#define sampler_HairShiftMap   sampler_LinearRepeat
-#define sampler_EmissionMap    sampler_LinearRepeat
-#define sampler_BentNormalMap  sampler_LinearRepeat
-#define sampler_HairFlowMap    sampler_LinearRepeat
-#define sampler_ShadeNormalMap sampler_LinearRepeat
-#define sampler_SSSMap         sampler_LinearRepeat
-#define sampler_StockingMask   sampler_LinearRepeat
-#define sampler_GlitterMask    sampler_LinearRepeat
-#define sampler_DissolveTex    sampler_LinearRepeat
+// **異方性つき（T-433）。** インラインサンプラはテクスチャのインポート設定の Aniso Level を見ない ──
+// 名前に AnisoN を入れない限り異方性なしになる。異方性なしだと**斜めを向いた面ほど早く粗いミップへ落ち**、
+// 同じ距離でも面の向きとメッシュで織り目の鮮明さが食い違う（利用者報告）。
+// 1 本を全マップで共有するのは従来どおり（本数は増やさない）。
+SAMPLER(sampler_LinearRepeatAniso8);
+#define sampler_IdolShared sampler_LinearRepeatAniso8
+#define sampler_BumpMap        sampler_IdolShared
+#define sampler_DetailMap       sampler_IdolShared
+#define sampler_DetailNormalMap sampler_IdolShared
+#define sampler_MaskMap        sampler_IdolShared
+#define sampler_NPRMap         sampler_IdolShared
+#define sampler_FabricMap      sampler_IdolShared
+#define sampler_GeometryMap       sampler_IdolShared
+#define sampler_AnisotropyMap  sampler_IdolShared
+#define sampler_HairShiftMap   sampler_IdolShared
+#define sampler_EmissionMap    sampler_IdolShared
+#define sampler_BentNormalMap  sampler_IdolShared
+#define sampler_HairFlowMap    sampler_IdolShared
+#define sampler_ShadeNormalMap sampler_IdolShared
+#define sampler_SSSMap         sampler_IdolShared
+#define sampler_StockingMask   sampler_IdolShared
+#define sampler_GlitterMask    sampler_IdolShared
+#define sampler_DissolveTex    sampler_IdolShared
 #define sampler_MatCapTex      sampler_LinearClamp
 
 // クランプが要るものだけ分ける。

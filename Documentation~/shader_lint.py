@@ -276,6 +276,8 @@ PRAGMA_KW_RE = re.compile(
 )
 IFDEF_RE = re.compile(r"#\s*(?:if|elif)\s+[^\n]*?defined\s*\(\s*(\w+)\s*\)|#\s*ifdef\s+(\w+)")
 DEFINE_RE = re.compile(r"^\s*#\s*define\s+(\w+)", re.MULTILINE)
+# Editor だけが読み書きする印（シェーダーは読まない）。W103 の対象外
+EDITOR_ONLY_PROPS = {"_MaterialVersion", "_MaskAIsRoughness"}
 RENDER_STATE_RE = re.compile(r"(?<!\w)\[\s*(_\w+)\s*\]")
 LIGHTMODE_RE = re.compile(r'"LightMode"\s*=\s*"(\w+)"')
 CUSTOM_EDITOR_RE = re.compile(r'^\s*CustomEditor\s+"([\w.]+)"', re.MULTILINE)
@@ -561,6 +563,8 @@ def lint_shader(shader_path: Path, issues: list[Issue]) -> None:
                 f"'{name}' が HLSL から参照されているが UnityPerMaterial CBUFFER に無い。"
                 "未宣言エラーか SRP Batcher の非互換になる",
             ))
+        elif name in EDITOR_ONLY_PROPS:
+            continue
         elif not referenced and name not in render_state_props and not drives_keyword:
             issues.append(Issue(
                 "W103", shader_path, ln,

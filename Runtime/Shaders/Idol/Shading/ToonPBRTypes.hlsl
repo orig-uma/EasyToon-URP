@@ -17,6 +17,9 @@ struct ToonSurface
     float  metalSpecBoost;      // lerp(1, _MetalSpecularBoost, metallic)。非金属では 1
     float  metalEnvBoost;       // lerp(1, _MetalEnvBoost, metallic)。同上
     float  metallic;            // Mask R × Metallic（sheen の金属染めに使う。T-420）
+    float3 rimN;               // リム用の法線。サーフェス収集で作る（T-432）
+    float3 sheenN;             // sheen 用（T-434）
+    float3 specFlatN;          // 鏡面用。ベースを幾何法線へ寄せたもの（T-434）
     float  geomCurvature;      // Geometry Map の G（0.5 = 平坦）。コンテキストが読む（T-422）
     float3 f0;
     float  perceptualRoughness;
@@ -51,6 +54,8 @@ struct ToonContext
     float3 positionWS;
     float3 N;
     float3 bentN;               // 遮蔽されていない方向。未使用時は N と同じ
+    float3 sheenN;              // sheen の D 項用（T-434）
+    float3 rimN;                // リム・産毛用（T-432）。ノーマルマップをぼかし、ディテールを減らせる
     float3 specN;               // 鋭いローブ（GGX・環境反射・MatCap・グリッター）用。ディテール法線を含まない（T-401）
     float3 shadeN;              // 陰ランプ専用の平滑法線。未使用時は N と同じ
     float3 sssDir;              // 透過を曲げる方向。未使用時は N と同じ

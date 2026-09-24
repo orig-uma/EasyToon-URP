@@ -705,6 +705,7 @@ namespace ToonNPR.EditorTools
             SetToggle(mat, "_AnisotropyMapOn", "_ANISOMAP_ON");
             // 値に追従するキーワード（T-418）: トグルを持たず、強度 > 0 で立つ
             SetFollow(mat, "_GlitterIntensity",  "_GLITTER_ON",  0f);
+            SetFollow(mat, "_ClearcoatStrength", "_CLEARCOAT_ON", 0f);   // T-437
             SetFollow(mat, "_StockingIntensity", "_STOCKING_ON", 0f);
             SetFollow(mat, "_MatCapIntensity",   "_MATCAP_ON",   0f);
             SetFollow(mat, "_DebugMode",         "_DEBUG_ON",    0.5f);

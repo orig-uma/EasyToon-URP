@@ -18,6 +18,8 @@ Shader "Origuma/EasyToon_URP/Idol"
         [Toggle] _NormalMapOn ("Normal Map On", Float) = 0
         [Normal] _BumpMap ("  Bump Map", 2D) = "bump" {}
         _BumpScale ("  Bump Scale", Range(0,2)) = 1
+        // ノーマルマップの斜面で鏡面・sheen・クリアコート・映り込みを落とす（T-434）。Specular Normal Flatten で均した凹凸の陰を量として返す
+        _NormalCavity ("  Normal Cavity", Range(0,2)) = 0
         // ディテールマップ（T-368。Doll と同名）: タトゥー・チーク等を A の
         // 合成率でベースへ重ねる。ベースと独立したタイリング（ST）を持つ。
         [Toggle] _DetailOn ("Detail On", Float) = 0
@@ -26,8 +28,14 @@ Shader "Origuma/EasyToon_URP/Idol"
         // 0 = 置き換え（タトゥー・チーク: その色で置く）/ 1 = 乗算（生地の陰・AO: 元の色を暗くする）。
         // DCC で焼いた生地の陰・AO を乗算で受ける（T-404）。強さは Detail Color の A。
         [Toggle] _DetailMultiply ("  Detail Multiply", Float) = 0
-        [NoScaleOffset][Normal] _DetailNormalMap ("  Detail Normal Map", 2D) = "bump" {}
+        // タイリングは Detail Map と別（T-429）。柄（タイリング 1）と織り目（タイリング 20）を両立させる
+        [Normal] _DetailNormalMap ("  Detail Normal Map", 2D) = "bump" {}
         _DetailNormalScale ("  Detail Normal Scale", Range(0,2)) = 1
+        // 織り目の斜面で鏡面・sheen・クリアコートを落とす（T-434）。ディテール法線は鏡面に入らないので、その代わり
+        _DetailCavity ("  Detail Cavity", Range(0,2)) = 0
+        _DetailNormalRotation ("  Detail Normal Rotation", Range(-180,180)) = 0
+        // 材質の版。GUI / 一括更新が古い材質を 1 回だけ直すための印（T-429）。シェーダーは読まない
+        [HideInInspector] _MaterialVersion ("Material Version", Float) = 0
         // **Render Mode（GUI）が設定する派生状態。** 直接いじる入口は持たない
         // ── カットアウトはブレンド・キュー・RenderType とセットで決まるので、
         // トグル単独で切ると食い違う（T-358）。
@@ -60,6 +68,9 @@ Shader "Origuma/EasyToon_URP/Idol"
         _Smoothness ("  Smoothness", Range(0,1)) = 0.25
         // InstaMat などの標準出力は Roughness。反転を忘れると全面ツルツルになるので材質側で受ける（T-419）
         [Toggle] _MaskAIsRoughness ("  Mask A Is Roughness", Float) = 0
+        // 実際に反転するか = Mask A Is Roughness かつ Mask Map が割り当て済み（GUI が入れる。T-435）。
+        // 未割り当ての既定は白（A = 1）なので、トグルだけ ON だと反転して Smoothness 0 = 全面マットになる
+        [HideInInspector] _MaskInvertA ("Mask Invert A (script)", Float) = 0
         _OcclusionStrength ("  Occlusion Strength", Range(0,1)) = 1
         _DirectOcclusion ("  Direct Occlusion", Range(0,1)) = 0.3
         // AO と入射角から細かい凹凸の自己遮蔽を作る。AO が無ければ何も起きない。
@@ -115,7 +126,8 @@ Shader "Origuma/EasyToon_URP/Idol"
         _ShadowHueShift ("Shadow Hue Shift", Range(-0.2,0.2)) = -0.03
         _ShadowSaturation ("Shadow Saturation", Range(0,3)) = 1.3
         _ShadowValue ("Shadow Value", Range(0,1)) = 0.75
-        _AddLightShadowColor ("  Add Light Shadow Color", Range(0,1)) = 1
+        // 既定 0（T-438）。1 だと追加光が当たっていない側にも影色 × ライト色を足し、逆光の色が正面へ漏れる
+        _AddLightShadowColor ("  Add Light Shadow Color", Range(0,1)) = 0
         _ShadowTint ("Shadow Tint (multiply)", Color) = (1,1,1,1)
         // 影色を「掛ける」のではなく、その色相へ**寄せる**ための組。
         // 掛け算は減法混色なので、色を持つ Tint を掛けると2つの色相が
@@ -322,6 +334,13 @@ Shader "Origuma/EasyToon_URP/Idol"
         _RimFresnelThickness ("  Rim Fresnel Thickness", Range(0,1)) = 0.3
         // 落ち影の中ではリムを消す。0 だと遮蔽物の影の中でもシルエットが光る。
         _RimReceiveShadow ("  Rim Receive Shadow", Range(0,1)) = 1
+        // リムが見る法線（T-432）。細かい凹凸の 1 つ 1 つに縁が立つのを抑える
+        _RimDetailNormal ("  Rim Detail Normal", Range(0,1)) = 1
+        // 鏡面・sheen が見る法線をメッシュの法線へ寄せる（T-434）。浅い凹凸から先に消える
+        _SpecularNormalFlatten ("  Specular Normal Flatten", Range(0,1)) = 0
+        _SheenNormalFlatten ("  Sheen Normal Flatten", Range(0,1)) = 0
+        _SheenDetailNormal ("  Sheen Detail Normal", Range(0,1)) = 1
+        _RimNormalFlatten ("  Rim Normal Flatten", Range(0,1)) = 0
 
         [Space(6)]
         // 産毛（ピーチファズ）。リムと同じ「縁の光沢」だが、リムが**光が回り込んだ
@@ -537,6 +556,7 @@ Shader "Origuma/EasyToon_URP/Idol"
             // 413 命令ぶんのレジスタ（8 本）を最悪経路として確保され、占有率を下げていた。
             // キーワードは Glitter Intensity > 0 に追従する（GUI の ValidateMaterial が立てる）。
             #pragma shader_feature_local_fragment _GLITTER_ON
+            #pragma shader_feature_local_fragment _CLEARCOAT_ON
             #pragma shader_feature_local_fragment _FABRICMAP_ON
             #pragma shader_feature_local_fragment _GEOMETRYMAP_ON
             #pragma shader_feature_local_fragment _ANISOMAP_ON
@@ -665,6 +685,7 @@ Shader "Origuma/EasyToon_URP/Idol"
             // 413 命令ぶんのレジスタ（8 本）を最悪経路として確保され、占有率を下げていた。
             // キーワードは Glitter Intensity > 0 に追従する（GUI の ValidateMaterial が立てる）。
             #pragma shader_feature_local_fragment _GLITTER_ON
+            #pragma shader_feature_local_fragment _CLEARCOAT_ON
             #pragma shader_feature_local_fragment _FABRICMAP_ON
             #pragma shader_feature_local_fragment _GEOMETRYMAP_ON
             #pragma shader_feature_local_fragment _ANISOMAP_ON

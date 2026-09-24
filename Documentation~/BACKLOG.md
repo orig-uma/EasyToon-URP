@@ -4,7 +4,7 @@
 
 見積もりの目安: **S** = 1ファイル内で完結 / **M** = 複数ファイル + 新規クラス / **L** = Renderer Feature など仕組みの追加
 
-**この文書は 419 項目まで伸びた。着手先を探すときは以下だけ見れば足りる。**
+**この文書は 429 項目まで伸びた。着手先を探すときは以下だけ見れば足りる。**
 実装済みの項目は経緯の記録であって、順に読む必要は無い。
 
 **サマリは必ず更新すること。** 一度「99 項目」「プリセットは T-109」と書いたまま
@@ -76,7 +76,7 @@ python check.py --full       # 約 3 分。キーワード全組（Idol 180 / Ce
 検査の規模 ── 静的検査（E000-E014 / W101-W111 の 26 コード）・実コンパイル（56 組）・
 値の検算（39 種）・自己診断（**91 項目 / カバー率 72 検査**）。
 
-バリアントは **ForwardLit は feature 7,680 × system 32,768**。
+バリアントは **ForwardLit は feature 15,360 × system 32,768**。
 `param_check` がここの数字と実装を毎回突き合わせるので、
 **キーワードを足したらここも直る**（直さないと診断が赤くなる）。
 
@@ -1564,6 +1564,55 @@ Animation / Timeline から Renderer のマテリアルプロパティとして
 | ~~要判断~~ | ~~**2影**（`_Shadow2*`）~~ | **見送りで確定**（利用者判断）。Ramp Override が機能的に上位互換（N 段・色も自由）で、専用プロパティは操作が楽になるだけ ── プロパティを脂やさない方を取った |
 | 低 | **グレイン** | 手続き的に作れば Blue Noise 不要。3D ライブの遠景では潰れやすい |
 | 低 | 小さなオプション欠け | クリアコートのマスク・反射強度 / 鏡面の f0 直接指定 / 顔 SDF とシャドウマップの混合率 / カットアウト時の影バイアス / 間接光の Tint |
+
+### T-438 Forward+ で追加の Directional Light が消えていた　[S]
+
+**状況（実装済み・実レンダー確認済み）** ── 利用者「IdolLookRig で Rim を赤くしても赤く裏から照らされた見た目にならない」。材質の Rim Intensity 0 を疑ったが、球（Rim Intensity 3）に赤い Directional を追加光として当てても**拡散すら出なかった**。原因は URP の Forward+ の仕様: 追加の Directional はクラスタに入らず配列の先頭に並び、`LIGHT_LOOP_BEGIN` はそれを飛ばす。Lit.shader は `for (i < URP_FP_DIRECTIONAL_LIGHTS_COUNT)` を別に回している。同じループを足した。Forward（Mobile）では元から効いていた。併せて `Add Light Shadow Color` の既定を 1 → 0（利用者判断。1 は当たっていない側にも影色 × ライト色を足し、逆光の色が正面へ漏れる）。旧既定 1 の材質は版 2 で 0 に揃える。
+
+### T-437 処理速度: 計測と URP 側のチューニング　[M]
+
+**状況（第 1 段実装済み）** ── 利用者「処理速度を詰めたい。URP の仕様や Unity 向けのチューニングも」。fxc で計測: 既定 935 / PC 構成（Forward+・主光源影・追加光・HQ 8 タップ）1,560・レジスタ 36。内訳: Cluster ループ +217、主光源影 +91（うちカスケード 17）、URP ソフト影（HQ OFF）+123、Cookies+Layers +105、Glitter +308、クリアコート +184（直接光 + 映り込み）、Surface Type Skin +70 / Cloth +147 / Face +200 / Hair +305。材質の値で切っている一様分岐は合計 341 命令（うち requiem 全材質 OFF が 191）だが、**取られない一様分岐の実行コストは小さく、レジスタ差も 0〜2**なので命令数ほどの効果は無い ── キーワード化はレジスタを食うもの（Glitter・クリアコート）に限る。
+**やった**: `_CLEARCOAT_ON`（41/44 材質が 0）、診断の性能項目（Layers/Cookies、Opaque Texture、Depth Priming、HQ OFF）、SETUP §2。
+**候補（要相談）**: ① Depth Priming を利用者のプロジェクトで実測（Frame Debugger / Profiler の GPU 時間）。② `half` 化 ── ほぼ全て float。PC では効かず、モバイルを出荷対象にするなら大きい（Mobile_RPAsset が存在する）。③ Hair の +305 の内訳（2 ローブ strand + Hair Flow + Shift）。④ `_SHADOWS_SOFT_LOW/MEDIUM/HIGH` を multi_compile に足す（URP 17 は静的分岐が要る環境で `_SHADOWS_SOFT` を立てない → HQ OFF の材質が硬い影になる。PC は per-light 品質なので影響なし）。⑤ レジスタ 36〜41 の削減（ToonSurface / ToonContext の生存範囲）。
+
+### T-436 マップありの金属だけ沈む ── 実測と sRGB 診断　[S]
+
+**状況（実装済み）** ── 利用者「マップありとなしで金属の暗くなり方が違いすぎる」。球 8 個で実レンダーして比べた（同じ値を入れればマップの有無で 1 ピクセルも違わない ── シェーダーに経路の差は無い）。違いを作っていたのは値: ① InstaMAT の Roughness（0.3〜0.5 → Smoothness 0.5〜0.7）に対しマップ無しの既定 Smoothness 0.25 は粗く、粗い金属は直接光のローブが広がって**面全体が明るく**見える（平均 96 vs 滑らか 79）。② マップの G（AO）が映り込みを落とす（AO 平均 0.6 で 79 → 72）。③ PNG の既定 sRGB ON で AO の中間値がさらに暗く読まれる（72 → 58）。①②は入力どおり、③はインポート設定の誤りなのでSetupCheck と Mask Map の欄で言うようにした（一括修正つき）。
+
+### T-435 Mask Map の有無で金属の見た目が変わる　[S]
+
+**状況（実装済み）** ── 利用者「マスクありとなしのときでメタリックのふるまいが違いすぎる。A は InstaMAT の Roughness」。原因 2 つ: ① `Mask A Is Roughness` ON でマップ無し → 既定の白 A=1 を反転して Smoothness 0（全面マット）。② マップありでは `_Smoothness`（既定 0.25）が倍率として掛かり、マップの Roughness が 4 倍粗く読まれる。①はシェーダーが `_MaskInvertA`（GUI が トグル × 割り当て済み で導く）を読むようにした。②は倍率の意味を GUI で言う（既定は変えていない ── 変えると全材質の見た目が動く）。
+
+### T-434 鏡面・sheen の法線を均すノブと Detail Cavity　[S]
+
+**状況（実装済み・実機未確認・既定は従来どおり）** ── 利用者「Sheen や Specular もある程度細かい Normal を無視したい。Detail のくぼみの考慮はしたい」。Flatten は T-432 と同じ式（`s.specFlatN` / `s.sheenN`）。くぼみは**既存の `s.cavity` に畳んだ**: `s.cavity *= 1 - Detail Cavity × |dTS.xy|`。cavity はライティング側で鏡面・sheen・coat・環境反射の遮蔽に既に掛かっているので経路を足さずに済む。アルベドへの cavity 適用より後なのでアルベドは動かない。追加サンプル無し。**利用者の主眼は Detail Normal ではなくノーマルマップ本体**（検証も Normal Map で行っている）── 同じ式の `Normal Cavity`（`|normalTS.xy|`）を足し、Flatten と組で使う形にした。Detail 側は「取り入れられるものは取り入れる」の扱い。**限界**: 高さが無いので落ちるのは谷底ではなく斜面。谷底を正確に落としたければ Detail Map（乗算）の輝度を使う案があるが、Detail Map は uv0・別タイリングなので UV1 の織り目と揃わない ── 要れば別途。
+
+### T-433 共有サンプラの異方性　[S]
+
+**状況（実装済み・実機未確認）** ── 利用者「ミップを使うと距離でメッシュごとにディテールの違いが見える」。原因は 3 つ: UV 密度の差（T-430 の UV1 で揃う）、**異方性なし**（インラインサンプラは Aniso Level を無視。斜めの面が早く粗いミップへ落ちる）、法線ミップの平均化で凹凸が浅くなること。ここでは 2 つ目を直した: `sampler_LinearRepeatAniso8` を宣言し全マップで共有。**Unity がこの名前を認識するかは実機で確認が要る**（fxc は名前を見ない）。ミップ無しは不採用（動くと織り目がモアレになる）。
+
+### T-432 リム専用の法線（Rim Normal Flatten / Rim Detail Normal）　[S]
+
+**状況（実装済み・実機未確認・既定は従来どおり）** ── 利用者「Normal や Detail の細かい凹凸にリムが判定されるのをどうにかしたい。とはいえ深いしわには出したい」。初版はミップの bias で均す `Rim Normal Blur` だったが、**利用者判断で不採用**（ミップの段がメッシュと面の向きで変わる）。`Rim Normal Flatten` に置き換えた: リム用の法線を幾何法線へ lerp。追加サンプル無し。`s.rimN` / `c.rimN` をリムと産毛が読む。**残り**: 既定値の相談。幅が細く深い溝を確実に残したければ Geometry Map の Cavity でゲートする案。
+
+### T-431 Detail Normal Rotation　[S]
+
+**状況（実装済み・実機未確認）** ── 提案書 DETAIL_SCALE.md の回転案を精査して仕様を変えた。単一の角度では提案の動機
+（パーツごとの布目）は解けない ── それは UV1 のアイランドを回す側の仕事で、このノブは「画像を焼き直さずに 45° を試す」
+ための利便。**提案のコードは UV だけ回していた**が、それだと模様は回っても陰影の向きが回らない（90° で凸が凹に見える）。
+UV を R で回し、引いた法線の xy を Rᵀ で戻す。sincos は `_DetailOn` の枝の中で 1 回。
+
+### T-430 Detail Normal の UV1 と Bake Detail UV　[M]
+
+**撤去（利用者判断「uv1 の機能は不要」）** ── 0.2.8 の中で実装し、リリース前に外した。内容の記録: uv0 のアイランドの形を保ったままアイランドごとに sqrt(実面積 / UV 面積) 倍して UV1 に書き、`_DetailNormalUseUV1` でディテール法線の土台を切り替える案。補間レジスタは `Varyings.uv` の空いていた zw を使うので増えない。要るときはこの節の履歴（git）から戻せる。
+
+### T-429 Detail Normal Map の独立タイリングと材質の版　[S]
+
+**状況（実装済み・実機未確認）** ── `[NoScaleOffset]` を外し `_DetailNormalMap_ST` を CBUFFER へ。既存材質のために
+非表示の `_MaterialVersion` を足し、`ToonPBRShaderGUI.UpgradeMaterial` が 0 → 1 で Detail Map の ST を写す
+（ValidateMaterial と一括メニューの両方から）。shader_lint の W103 は `EDITOR_ONLY_PROPS` で除外。
+提案の T-428（2 枚目の Bump）は保留 ── 中間スケールは uv0 に入るので InstaMAT 側で `_BumpMap` に合成できる。
+提案の T-429（タイル側の粗さ・Cavity）は不対応で同意。
 
 ### T-427 Share By Base Map を Shade Normal / Bent Normal / SSS へ　[S]
 

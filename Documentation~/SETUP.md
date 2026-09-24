@@ -150,7 +150,13 @@ Idol の Baking タブで焼き直してください。テクスチャは**非�
 | Rendering Path | Forward / Forward+ どちらでも | NFR-05 のため**両方で確認する** |
 | Shadow Distance | 20〜30 m | 長いとテクセルが粗くなり自己影がガタつく |
 | Cascade Count | 2〜4 | 近景カットなら 2 で足りる |
-| Soft Shadows | ON | |
+| Soft Shadows | ON | HQ Shadow ON の材質は URP のフィルタを通らないので品質は Low でよい（High は HQ より 123 命令重い） |
+| Light Layers / Light Cookies | 使わないなら OFF | 両方 ON で ForwardLit +105 命令、バリアント 4 倍 |
+| Renderer Data > Depth Priming | Auto | 隠れた画素の ForwardLit（1,500 命令超）を DepthOnly（26 命令）で飛ばす。髪・服の重なりに効く。MSAA 併用時は URP が無視 |
+| Rendering Path | Forward+ | 追加光の数に上限が無い。Forward より約 220 命令重いが、ステージのスポット数を考えると Forward+ 一択 |
+
+性能の目安（fxc の静的命令数。PC 構成 = Forward+ / 主光源影 / 追加光 / HQ 8 タップ）: Default 1,560 / Skin +70 / Cloth +150 / Face +200 / Hair +300。Glitter は +300、クリアコートは +184（どちらも強度 0 で機能ごと外れる）。
+セットアップ診断が上の項目を指摘する。
 
 Color Space は Linear（Project Settings > Player）。Gamma では影色の HSV 変換が意図した色にならない。
 
