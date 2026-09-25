@@ -1253,6 +1253,9 @@ namespace ToonNPR.EditorTools
                     P(e, "_FaceShadowOffsetV", "Face Shadow Offset V",
                         "Slides the vertical boundary. Positive keeps the face lit under higher light",
                         "縦の境界をずらす。正で光が高くても明るいまま");
+                    P(e, "_FaceSDFPoleFade", "Face SDF Pole Fade",
+                        "The horizontal sweep flips front/back when the light passes straight overhead or underneath (Directional X near 90 / 270), so the whole face snaps. Above this |light.y| the azimuth term fades to front-lit so the transition is continuous; the vertical sweep keeps the top-light shadows. 1 disables",
+                        "ライトが真上・真下を通る瞬間（Directional の X が 90 / 270 付近）に横スイープの前後が入れ替わり、顔全体の影が一斉に切り替わる。|光.y| がこの値を超えると方位角の寄与を正面光へ寄せて連続にする。上からの影は縦スイープが担当。1 で無効");
                     P(e, "_FaceSDFBlendNormalMin", "Face SDF Blend Normal Min",
                         "Normal dot head-up threshold where Face SDF influence reaches zero. Fades the SDF out on downward-facing areas like the neck or under-chin. Follows the head bone, so it stays correct when the head tilts",
                         "法線と頭 up 軸の内積がこの値以下で顔の SDF の影響がゼロ。顎下や首など下向きの面で SDF をフェードアウトさせる。頭ボーンに追従するので俯いても顎裏の判定がずれない");

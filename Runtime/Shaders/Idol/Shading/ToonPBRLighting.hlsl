@@ -211,6 +211,20 @@ ToonLightTerms ToonShadeLight(ToonSurface s, ToonContext c, Light light, float3 
 
         float FdotL = dot(fwd, lXZ);
         float RdotL = dot(right, lXZ);
+
+        // **極の対処（T-442）。** lXZ は L.y = ±1 で向きが定まらず、ライトが真上・
+        // 真下を通る瞬間に前後が入れ替わって顔全体の影が一斉に反転する
+        // （利用者報告: Directional の X が 270° 付近で急に切り替わる）。
+        // |L.y| が Pole Fade を超えたら FdotL → 1（正面光 ＝ 閾値 0 ＝ 全面照射）、
+        // RdotL → 0（左右 50/50）へ寄せる。極では横の方位角に意味が無く、
+        // 上からの光は縦スイープが影を担当する。下からの光は焼いていないので
+        // 照らされたまま（物理的にも顎裏・鼻下は下光で照らされる）。
+        // 判定は世界の Y。潰す面が世界 XZ なので、特異点も世界 Y = ±1 に立つ。
+        // Pole Fade = 1 なら smoothstep が常に 0 ＝ 従来どおり。
+        float pole = smoothstep(_FaceSDFPoleFade, max(_FaceSDFPoleFade + 1e-4, 0.995), abs(Ld.y));
+        FdotL = lerp(FdotL, 1.0, pole);
+        RdotL = lerp(RdotL, 0.0, pole);
+
         float threshold = 1.0 - (FdotL * 0.5 + 0.5) + _FaceShadowOffset;
 
         // **左右の切替は硬い分岐にしない（T-371）。** `RdotL < 0` で U を
