@@ -8,7 +8,7 @@
 python gen_properties.py --write
 ```
 
-シェーダー: `Idol.shader` / プロパティ 231 個
+シェーダー: `Idol.shader` / プロパティ 225 個
 
 ⚡ はシェーダーバリアントを生むもの（マテリアル間で値が違うとバッチが分断される）。
 
@@ -179,12 +179,6 @@ python gen_properties.py --write
 | `_FaceShadowOffsetV` | Face Shadow Offset V | `Range(-0.5,0.5)` | `0` | 縦の境界をずらす。正で光が高くても明るいまま |
 | `_FaceSDFBlendNormalMin` | Face SDF Blend Normal Min | `Range(-1.5,1)` | `-1` | 法線と頭 up 軸の内積がこの値以下で顔の SDF の影響がゼロ。顎下や首など下向きの面で SDF をフェードアウトさせる。頭ボーンに追従するので俯いても顎裏の判定がずれない |
 | `_FaceSDFBlendNormalMax` | Face SDF Blend Normal Max | `Range(-1,1.5)` | `0` | 法線と頭 up 軸の内積がこの値以上で顔の SDF の影響が 100%。Min と Max の間は滑らかにフェード |
-| `_FaceSDFElevationMin` | Face SDF Elevation Fade Min | `Range(0,1.5)` | `1.0` | 光の仰角（\|頭 up・ライト\|）がこの値を超えると SDF が法線の陰影へ戻り始める。SDF は水平スイープなので仰角を知らず、トップライトで俯くと顔だけ明るいまま首が暗くなる。既定は OFF（1.0 以上）: 法線に戻すと鼻や唇の凹凸が出るので、顔を平らに保ちたいなら Face Shadow Tone を使う |
-| `_FaceSDFElevationMax` | Face SDF Elevation Fade Max | `Range(0,1.5)` | `1.5` | 光の仰角がこの値で SDF が完全に法線の陰影へ戻る（首と同じ伝達関数なので継ぎ目が合う） |
-| `_FaceShadowToneMode` | Face Shadow Tone | `Float` | `0` | 顔に落ちるシャドウマップの影（鼻下・唇・前髪）を画面固定の網点に置き換える。遮蔽量が点の密度になる。Off = PCF の値そのまま / Dots = Bayer 4×4 の網点 / Grain = ブルーノイズの粒。漫画のトーンのように画面に固定される。TAA では時間方向に均されて滑らかな半調に戻る |
-| `_FaceShadowToneScale` | Face Shadow Tone Scale (px) | `Range(1,8)` | `3` | 網点 1 セルの画面ピクセル数。1 で画素単位、3〜4 で印刷のトーンらしく見える |
-| `_FaceShadowToneStrength` | Face Shadow Tone Strength | `Range(0,1)` | `0.6` | 影ドットの濃さ。1 で影色まで落ち、0.5 なら影色と明色の中間 |
-| `_FaceShadowToneThreshold` | Face Shadow Tone Threshold | `Range(0,0.9)` | `0.2` | この値以下の遮蔽は密度に写す前に切り捨てる。薄い半影には点が出ず、影の芯だけがトーンになる |
 | `_FaceUseObjectAxis` | Face Use Object Axis | `Float` | `1` | 頭ボーンの向きを供給するものが無いときの代替 |
 
 ## ライト（Lighting）
@@ -516,4 +510,4 @@ python gen_properties.py --write
 
 ---
 
-説明のあるもの 172 / 231。**残り 59 個は tooltip が書かれていない** ── `ToonPBRShaderGUI.cs` に足すとここにも出ます。
+説明のあるもの 166 / 225。**残り 59 個は tooltip が書かれていない** ── `ToonPBRShaderGUI.cs` に足すとここにも出ます。

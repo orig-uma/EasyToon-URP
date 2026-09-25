@@ -133,12 +133,6 @@ CBUFFER_START(UnityPerMaterial)
     float  _FaceShadowOffsetV;
     float  _FaceSDFBlendNormalMin;
     float  _FaceSDFBlendNormalMax;
-    float  _FaceSDFElevationMin;
-    float  _FaceSDFElevationMax;
-    float  _FaceShadowToneMode;
-    float  _FaceShadowToneScale;
-    float  _FaceShadowToneStrength;
-    float  _FaceShadowToneThreshold;
 
     // スキン
     float4 _SubsurfaceColor;

@@ -482,7 +482,6 @@
                 c.faceSdf     = 0.0;
                 c.faceSdfV    = 1.0;
                 c.faceSdfMask = 1.0;
-                c.faceTone    = 0.0;
                 #if defined(_SURFACETYPE_FACE)
                     // 16bit 1ch（R×256+G）をデコードしてから変化率を取る。
                     // 上位バイトだけの fwidth だと 256 段の飛びを拾って AA が過大になる。
@@ -514,9 +513,6 @@
                                                    max(_FaceSDFBlendNormalMax, _FaceSDFBlendNormalMin + 1e-4),
                                                    dot(headUp, c.N));
                     }
-
-                    // 顔の影トーンの網点しきい値（T-440）。画面固定・ライト非依存なのでここで 1 回。
-                    c.faceTone = ToonFaceTonePattern(input.positionCS.xy, c.dither);
                 #endif
 
                 // ---- 光源に依存しない前計算 -----------------------------------
@@ -951,6 +947,8 @@
                     else if (mode == 11) dbg = s.perceptualRoughness;
                     else if (mode == 13) dbg = s.shadowColor;
                     else if (mode == 14) dbg = s.specMask;
+                    else if (mode == 15) dbg = c.faceSdf;                  // 顔 SDF 横（R×256+G デコード後）
+                    else if (mode == 16) dbg = c.faceSdfV;                 // 顔 SDF 縦（B×256+A デコード後。T-441）
 
                     return half4(dbg, 1);
                 }
