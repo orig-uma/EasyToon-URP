@@ -1248,14 +1248,14 @@ namespace ToonNPR.EditorTools
                         "0 uses the normal-based transfer, 1 uses the SDF alone",
                         "0 は法線による伝達、1 は SDF だけ");
                     P(e, "_FaceSDFVertical", "Face SDF Vertical (BA)",
-                        "Weight of the vertical sweep stored in BA (bake with Vertical Sweep in the Baking tab). The horizontal sweep ignores light elevation, so a head looking down or a top light left the area under the nose, lips and chin lit. Read by elevation and combined with min. 0 = classic 1ch",
-                        "BA に焼いた縦スイープの寄与（Baking タブの Vertical Sweep で焼く）。横スイープは光の仰角を知らず、俯く・トップライトで鼻下・唇・顎裏が明るいまま残る。仰角で読んで横と min で合成。0 で従来の 1ch");
+                        "Weight of the vertical sweeps stored in B (top light) and A (bottom light); bake with Vertical Sweep in the Baking tab. The horizontal sweep ignores light elevation, so a head looking down, a top light or a light from below left the area under the nose, lips and chin lit. Read by the angle in the front-up plane and combined with min. 0 = classic 1ch. Check Debug View FaceSDF V before raising it on an old texture",
+                        "B（上光）/ A（下光）に焼いた縦スイープの寄与。Baking タブの Vertical Sweep で焼く。横スイープは光の仰角を知らず、俯く・トップライト・下光で鼻下・唇・顎裏が明るいまま残る。fwd-up 面内の角度で読んで横と min で合成。0 で従来の 1ch。古いテクスチャで上げる前に Debug View の FaceSDF V で焼けているか確認");
                     P(e, "_FaceShadowOffsetV", "Face Shadow Offset V",
-                        "Slides the vertical boundary. Positive keeps the face lit under higher light",
-                        "縦の境界をずらす。正で光が高くても明るいまま");
-                    P(e, "_FaceSDFPoleFade", "Face SDF Pole Fade",
-                        "The horizontal sweep flips front/back when the light passes straight overhead or underneath (Directional X near 90 / 270), so the whole face snaps. Above this |light.y| the azimuth term fades to front-lit so the transition is continuous; the vertical sweep keeps the top-light shadows. 1 disables",
-                        "ライトが真上・真下を通る瞬間（Directional の X が 90 / 270 付近）に横スイープの前後が入れ替わり、顔全体の影が一斉に切り替わる。|光.y| がこの値を超えると方位角の寄与を正面光へ寄せて連続にする。上からの影は縦スイープが担当。1 で無効");
+                        "Slides the vertical boundary, same sign convention as Face Shadow Offset",
+                        "縦の境界をずらす。符号の向きは Face Shadow Offset と同じ");
+                    P(e, "_FaceSDFAxisFade", "Face SDF Axis Fade",
+                        "Width over which each axis lets go near where its angle is undefined: the azimuth straight overhead / underneath, the vertical angle for a light from the side. Below this in-plane length the threshold eases to lit. 0.5 keeps the horizontal sweep unchanged up to 60 degrees of elevation. Smaller preserves the classic look but snaps faster at the poles",
+                        "各軸が「角度を定義できない所」の手前で手を離す幅。横の方位角は真上・真下で、縦の角度は真横の光で定まらない。面内成分の長さがこれを下回ると閾値を照射側へ寄せる。0.5 なら横は仰角 60° まで従来どおり。小さいほど既存の絵を守るが極での切り替えが速い");
                     P(e, "_FaceSDFBlendNormalMin", "Face SDF Blend Normal Min",
                         "Normal dot head-up threshold where Face SDF influence reaches zero. Fades the SDF out on downward-facing areas like the neck or under-chin. Follows the head bone, so it stays correct when the head tilts",
                         "法線と頭 up 軸の内積がこの値以下で顔の SDF の影響がゼロ。顎下や首など下向きの面で SDF をフェードアウトさせる。頭ボーンに追従するので俯いても顎裏の判定がずれない");
@@ -2077,11 +2077,11 @@ namespace ToonNPR.EditorTools
         {
             "Off", "Albedo", "Normal", "ShadeNormal", "BentNormal", "Lit", "ShadowAtten",
             "Curvature", "Occlusion", "Cavity", "Roughness", "ShadowColor", "SpecMask",
-            "FaceSDF H", "FaceSDF V",
+            "FaceSDF H", "FaceSDF V Up", "FaceSDF V Down",
         };
         private static readonly int[] s_DebugValues =
         {
-            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 13, 14, 15, 16,   // 10 = 旧コンタクト影 / 12 = 旧材質 ID の欠番
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 11, 13, 14, 15, 16, 17,   // 10 = 旧コンタクト影 / 12 = 旧材質 ID の欠番
         };
 
         /// <summary>

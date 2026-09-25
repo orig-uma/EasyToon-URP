@@ -325,16 +325,19 @@ namespace ToonNPR.EditorTools
                     _faceSdf.pack16 = true;
                 }
 
-                // 縦スイープ（T-441）。BA に上光スイープを 16bit で足す。横は水平面内なので
-                // 光の仰角を知らず、俯く・トップライトで鼻下・唇・顎裏が明るいまま残る。
-                _faceSdf.pack16Vertical = EditorGUILayout.Toggle(
+                // 縦スイープ（T-441 / T-443）。B = 上光 / A = 下光を角度線形 8bit で足す。
+                // 横は水平面内なので光の仰角を知らず、俯く・トップライト・下光で
+                // 鼻下・唇・顎裏が明るいまま残る。
+                _faceSdf.bakeVertical = EditorGUILayout.Toggle(
                     _kit.Label("Vertical Sweep (BA)",
-                               "Also bake the top-light sweep into BA (16-bit). Fixes the face "
-                               + "staying lit under the nose, lips and chin when the head looks "
-                               + "down or the light is high. Sets Face SDF Vertical to 1",
-                               "上光スイープも BA に 16bit で焼く。俯く・トップライトで鼻下・唇・"
-                               + "顎裏が明るいまま残るのを直す。Face SDF Vertical を 1 にする"),
-                    _faceSdf.pack16Vertical);
+                               "Also bake the top-light (B) and bottom-light (A) sweeps, 8-bit "
+                               + "angle-linear. Fixes the face staying lit under the nose, lips and "
+                               + "chin when the head looks down or the light is high or low. "
+                               + "Sets Face SDF Vertical to 1",
+                               "上光（B）と下光（A）のスイープも角度線形 8bit で焼く。俯く・"
+                               + "トップライト・下光で鼻下・唇・顎裏が明るいまま残るのを直す。"
+                               + "Face SDF Vertical を 1 にする"),
+                    _faceSdf.bakeVertical);
 
                 // ---- プロキシ法線（T-414）--------------------------------------
                 // ローポリの顔は法線がポリゴンごとに折れて等値線がガタつく。頭に合わせた楕円体か
@@ -456,7 +459,7 @@ namespace ToonNPR.EditorTools
 
                 // **_FaceFlatness を立てないと焼いても絵が変わらない。**
                 // Baker が立てるのは Doll 名（_UseFaceSDF）で Idol には無い。
-                Note(jp, "16bit（R×256+G。Vertical Sweep ON なら BA にも縦）で焼き、SDF Blend（_FaceFlatness）を立てます。"
+                Note(jp, "16bit（R×256+G。Vertical Sweep ON なら B / A に縦の上・下）で焼き、SDF Blend（_FaceFlatness）を立てます。"
                        + "**シーンに FaceDirectionBinder が要ります** ── "
                        + "頭ボーンの向きが無いと顔だけ破綻します。",
                         "Bakes a 16-bit (R*256+G, plus BA when Vertical Sweep is on) SDF and sets SDF Blend (_FaceFlatness). "
@@ -477,7 +480,7 @@ namespace ToonNPR.EditorTools
             // 縦を焼いたら読む側も立てる。焼いていないテクスチャに戻したときは
             // 0 にする（BA が別データのままだと縦の閾値が誤読される）。
             if (m.HasFloat("_FaceSDFVertical"))
-                m.SetFloat("_FaceSDFVertical", _faceSdf.pack16Vertical ? 1f : 0f);
+                m.SetFloat("_FaceSDFVertical", _faceSdf.bakeVertical ? 1f : 0f);
             return true;
         }
 

@@ -212,20 +212,31 @@ ToonLightTerms ToonShadeLight(ToonSurface s, ToonContext c, Light light, float3 
         float FdotL = dot(fwd, lXZ);
         float RdotL = dot(right, lXZ);
 
-        // **極の対処（T-442）。** lXZ は L.y = ±1 で向きが定まらず、ライトが真上・
-        // 真下を通る瞬間に前後が入れ替わって顔全体の影が一斉に反転する
-        // （利用者報告: Directional の X が 270° 付近で急に切り替わる）。
-        // |L.y| が Pole Fade を超えたら FdotL → 1（正面光 ＝ 閾値 0 ＝ 全面照射）、
-        // RdotL → 0（左右 50/50）へ寄せる。極では横の方位角に意味が無く、
-        // 上からの光は縦スイープが影を担当する。下からの光は焼いていないので
-        // 照らされたまま（物理的にも顎裏・鼻下は下光で照らされる）。
-        // 判定は世界の Y。潰す面が世界 XZ なので、特異点も世界 Y = ±1 に立つ。
-        // Pole Fade = 1 なら smoothstep が常に 0 ＝ 従来どおり。
-        float pole = smoothstep(_FaceSDFPoleFade, max(_FaceSDFPoleFade + 1e-4, 0.995), abs(Ld.y));
-        FdotL = lerp(FdotL, 1.0, pole);
-        RdotL = lerp(RdotL, 0.0, pole);
+        // --- 縦スイープあり（T-441 / T-443）: 横も頭フレームで取り、極で寄与を落とす ---
+        // 横は L を水平面に潰して方位角を取るので、真上・真下（L.y = ±1）で向きが
+        // 定まらず、極を跨ぐ瞬間に前後が入れ替わって顔全体が一斉に反転していた。
+        // 「極付近だけフェード」（T-442）は瞬間を連続にしただけで、後ろ = 全面影の
+        // 切り替えがフェード窓に圧縮されて見えた（利用者「本質的でない」）。
+        // 横と縦を対称に扱う: 方位角 φ = atan2(r, f) は極で、仰角側の角度
+        // ψ = atan2(|e|, f) は真横の光で定義できない。互いに相手が不定な所で自分は
+        // 良く定義されるので、各軸の閾値をその「定義できる度合い」（面内成分の長さ）
+        // で 0（照射）へ寄せる。どの経路でも片方の線が動き続け、極でも真横でも飛ばない。
+        // 頭フレームで取るのは、SDF が頭ローカルで焼かれているから（世界 XZ は
+        // 頭が直立しているときだけ一致する近似だった）。
+        float wH = 1.0;
+        UNITY_BRANCH
+        if (_FaceSDFVertical > 0.0)
+        {
+            float f = dot(headFwd,   Ld);
+            float r = dot(headRight, Ld);
+            float lenH = sqrt(f * f + r * r);            // = cos(仰角)
+            float invH = 1.0 / max(lenH, 1e-5);
+            FdotL = f * invH;
+            RdotL = r * invH;
+            wH = smoothstep(0.0, _FaceSDFAxisFade, lenH);
+        }
 
-        float threshold = 1.0 - (FdotL * 0.5 + 0.5) + _FaceShadowOffset;
+        float threshold = (1.0 - (FdotL * 0.5 + 0.5) + _FaceShadowOffset) * wH;
 
         // **左右の切替は硬い分岐にしない（T-371）。** `RdotL < 0` で U を
         // ミラーするだけだと、光が真正面を横切る瞬間に左右のサンプルが
@@ -249,25 +260,29 @@ ToonLightTerms ToonShadeLight(ToonSurface s, ToonContext c, Light light, float3 
         faceLit = smoothstep(threshold - soft, threshold + soft, sdf);
     }
 
-    // --- 縦スイープ（BA・16bit。T-441）------------------------------------
-    // 横スイープは fwd と L を水平面に潰して方位角だけ見るので、頭が俯く・仰ぐ・
-    // トップライトが差す、のどれも「正面光」と読む。俯いたときに鼻下・唇・顎裏が
-    // 明るいまま残り、首（N·L）との段差と落ち影の浮きになっていた（利用者報告）。
-    // Baking タブの Vertical Sweep が焼いた上光スイープ（正面 → 真上 → 背面）を、
-    // **仰角だけ**を閾値にして読む。f（前後成分）を混ぜて atan2(e, f) にすると
-    // 真横の光で 90° へ飛ぶ ── 方位角は横の SDF が担当し、縦は仰角だけを担当する。
-    // 下光（e < 0）は仰角 0 ＝ 閾値 0 で「正面光で照らされる所は照らされる」に落ち、
-    // 縦の寄与が消える（焼いていない）。閾値の写像は横と同じ 1 − (cos·0.5+0.5)。
+    // --- 縦スイープ（B = 上 / A = 下、角度線形 8bit。T-441 / T-443）--------------
+    // 横スイープは水平面内なので光の仰角を知らない。俯く・トップライト・下からの光で
+    // 鼻下・唇・顎裏が「正面光」と読まれ、首（N·L）との段差と落ち影の浮きになっていた。
+    // Baking タブの Vertical Sweep が焼いた 2 本（上: 正面 → 真上 → 背面 / 下: 正面 →
+    // 真下 → 背面）を、fwd-up 面内の角度 ψ = atan2(|e|, f) で読む。格納は th/π
+    // （角度線形。cos 空間の 8bit は正面付近が 5° 刻みになる）なので閾値は ψ/π。
+    // 上下は e の符号で選び、真横付近（|e| < 0.15）でクロスフェード（横の左右と同型）。
+    // 真横の光では ψ が定まらないので、閾値を |(f, e)| で 0（照射）へ寄せる（横と対称）。
     // 合成は min: 旧 4ch の加重平均は各軸の近くで線が痩せて甘くなった（T-382）。
-    // 仰角も Ld（絵として置きたい向き）で取る。
+    // 角度も Ld（絵として置きたい向き）で取る。
     UNITY_BRANCH
     if (_FaceSDFVertical > 0.0)
     {
-        float e     = saturate(dot(headUp, Ld));
-        float cosEl = sqrt(saturate(1.0 - e * e));        // cos(asin(e))
-        float thresholdV = 1.0 - (cosEl * 0.5 + 0.5) + _FaceShadowOffsetV;
+        float f = dot(headFwd, Ld);
+        float e = dot(headUp,  Ld);
+        float lenV = sqrt(f * f + e * e);
+        float wV   = smoothstep(0.0, _FaceSDFAxisFade, lenV);
+        float psi  = atan2(abs(e), f);                    // 0 = 正面 … π = 背面
+        float thresholdV = (psi / TOON_PI + _FaceShadowOffsetV) * wV;
+        float sideV = smoothstep(-0.15, 0.15, e);         // 1 = 上光 / 0 = 下光
+        float sdfV  = lerp(c.faceSdfVD, c.faceSdfVU, sideV);
         float softV = max(softness, c.faceSdfVAA);
-        float faceLitV = smoothstep(thresholdV - softV, thresholdV + softV, c.faceSdfV);
+        float faceLitV = smoothstep(thresholdV - softV, thresholdV + softV, sdfV);
         faceLit = lerp(faceLit, min(faceLit, faceLitV), _FaceSDFVertical);
     }
 

@@ -131,7 +131,7 @@ CBUFFER_START(UnityPerMaterial)
     float  _FaceFlatness;
     float  _FaceSDFVertical;
     float  _FaceShadowOffsetV;
-    float  _FaceSDFPoleFade;
+    float  _FaceSDFAxisFade;
     float  _FaceSDFBlendNormalMin;
     float  _FaceSDFBlendNormalMax;
 

@@ -480,17 +480,20 @@
                 c.faceSdfAA   = 0.0;
                 c.faceSdfVAA  = 0.0;
                 c.faceSdf     = 0.0;
-                c.faceSdfV    = 1.0;
+                c.faceSdfVU   = 1.0;
+                c.faceSdfVD   = 1.0;
                 c.faceSdfMask = 1.0;
                 #if defined(_SURFACETYPE_FACE)
                     // 16bit 1ch（R×256+G）をデコードしてから変化率を取る。
                     // 上位バイトだけの fwidth だと 256 段の飛びを拾って AA が過大になる。
-                    // BA は縦スイープ（T-441）。同じ 1 フェッチから取れるので追加コスト無し。
+                    // B / A は縦スイープ（上 / 下、角度線形 8bit。T-441 / T-443）。
+                    // 同じ 1 フェッチから取れるので追加コスト無し。
                     float4 faceSdfPx = SAMPLE_TEXTURE2D(_FaceSDFMap, sampler_FaceSDFMap, uv);
                     c.faceSdf    = ToonDecodeFaceSdf16(faceSdfPx.rg);
                     c.faceSdfAA  = fwidth(c.faceSdf);
-                    c.faceSdfV   = ToonDecodeFaceSdf16(faceSdfPx.ba);
-                    c.faceSdfVAA = fwidth(c.faceSdfV);
+                    c.faceSdfVU  = faceSdfPx.b;
+                    c.faceSdfVD  = faceSdfPx.a;
+                    c.faceSdfVAA = max(fwidth(c.faceSdfVU), fwidth(c.faceSdfVD));
 
                     // **下向きの面は SDF から法線の陰影へ戻す（T-376・Doll と同じ仕組み）。**
                     // SDF のスイープは水平面内で回すので光の仰角を知らない。顎の裏は法線が
@@ -948,7 +951,8 @@
                     else if (mode == 13) dbg = s.shadowColor;
                     else if (mode == 14) dbg = s.specMask;
                     else if (mode == 15) dbg = c.faceSdf;                  // 顔 SDF 横（R×256+G デコード後）
-                    else if (mode == 16) dbg = c.faceSdfV;                 // 顔 SDF 縦（B×256+A デコード後。T-441）
+                    else if (mode == 16) dbg = c.faceSdfVU;                // 顔 SDF 縦・上光（B。T-441）
+                    else if (mode == 17) dbg = c.faceSdfVD;                // 顔 SDF 縦・下光（A）
 
                     return half4(dbg, 1);
                 }
