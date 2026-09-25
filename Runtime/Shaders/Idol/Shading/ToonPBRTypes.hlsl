@@ -90,6 +90,7 @@ struct ToonContext
     // 前髪の影を引き上げたとき（T-067）と同じ理由でここに置く。
     float  faceSdf;             // 顔 SDF（16bit 1ch・非ミラー側）。ミラー側はライトごとに引く
     float  faceSdfMask;         // 顔 SDF の顎裏フェード（法線・頭 up 軸の内積。T-376 / T-440）。Face 以外では 1
+    float  faceTone;            // 顔の影トーンの網点しきい値 0..1（画面固定。Bayer かブルーノイズ。T-440）。Face 以外では 0
     float3 hairT1;              // ずらした繊維接線（1層目）
     float3 hairT2;              //             （2層目）
     float  hairSparkle;         // 毛束の粒。副バンドを割る 0..1

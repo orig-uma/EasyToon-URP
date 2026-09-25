@@ -138,6 +138,47 @@ void ToonFaceHeadBasis(out float3 headFwd, out float3 headRight, out float3 head
     headValid = max(bound, _FaceUseObjectAxis);
 }
 
+// ----------------------------------------------------------------------------
+//  顔の影トーン（T-440）
+//
+//  遮蔽量（1 − PCF の値）を密度として、画面固定の網点しきい値と比べる。
+//  PCF が半影を滑らかにしているので、密度もそのまま滑らかに変わる ＝ 半調。
+//  しきい値の模様（Bayer / ブルーノイズ）はライトに依存しないので
+//  ToonFaceTonePattern をフラグメントで 1 回呼び、c.faceTone に置く。
+// ----------------------------------------------------------------------------
+/// <summary>網点のしきい値 0..1。positionCS は SV_POSITION の xy（画素）。</summary>
+float ToonFaceTonePattern(float2 positionCS, float blueNoise)
+{
+    // Dots: Bayer 4×4。規則的な点の並びで「トーン」らしく見える。
+    // Grain: ブルーノイズ（影フィルタの回転角と同じテクスチャ）。等方な粒。
+    // どちらもセルで量子化する（Scale px ごとに同じ値）。ブルーノイズは
+    // セルの左上の画素で引き直すのが正しいが、テクスチャを 2 度引かないため
+    // フラグメントの値をそのまま使う ── Scale > 1 では粒がセル単位で並ばず
+    // 画素単位に散るだけで、密度の意味は変わらない。
+    static const float bayer4[16] = {
+         0.0,  8.0,  2.0, 10.0,
+        12.0,  4.0, 14.0,  6.0,
+         3.0, 11.0,  1.0,  9.0,
+        15.0,  7.0, 13.0,  5.0 };
+    float2 cell = floor(positionCS / max(_FaceShadowToneScale, 1.0));
+    int2   ip   = int2(cell) & 3;
+    float  dots = (bayer4[ip.y * 4 + ip.x] + 0.5) / 16.0;
+    return (_FaceShadowToneMode > 1.5) ? blueNoise : dots;
+}
+
+/// <summary>
+/// 顔の影トーン。PCF の値 atten（1 = 遮蔽なし）を網点の減衰（1 = 点なし）に変える。
+/// Off のときは atten をそのまま返す。
+/// </summary>
+float ToonFaceToneShadow(float atten, float tone)
+{
+    float occl = saturate(1.0 - atten);
+    // Threshold で薄い半影を切り、残りを 0..1 へ張り直す（点が出始める遮蔽量を上げる）。
+    occl = saturate((occl - _FaceShadowToneThreshold) / max(1.0 - _FaceShadowToneThreshold, 1e-4));
+    float dotOn = step(tone, occl);   // 1 = この画素は影ドット
+    return 1.0 - dotOn * _FaceShadowToneStrength;
+}
+
 // 返り値は成分ごと（ToonLightTerms）。畳むのは ToonComposeLight（T-410）。
 // rimShape: ToonRimShape の結果（視線だけで決まるのでフラグメントで 1 回）。
 /// <param name="allowCoat">
@@ -243,7 +284,18 @@ ToonLightTerms ToonShadeLight(ToonSurface s, ToonContext c, Light light, float3 
     // しきい値はぼかし幅より広い影にしか opening として働かず、ぼかしきれない
     // 細い影では**輪郭を締め直す方向（逆効果）**に働いた（利用者実測）。
     // 顔の影の整形は Penumbra（ぼかし）の調整だけで行う。
-    float shadowAtten = lerp(1.0, light.shadowAttenuation, _ReceiveShadowStrength)
+    //
+    // **Face Shadow Tone（T-440）。** 俯いたときの鼻下・唇・前髪の落ち影は、
+    // PCF の滑らかな暗がりのままだと SDF で平らにした顔の上で「実物の影」として
+    // 浮く（利用者「鼻下や唇の影をあまり見せたくない。ディザで散らして漫画の
+    // トーンのような影にしたい」）。遮蔽量を密度にした画面固定の網点に置き換える。
+    // 一様分岐（材質の値）なのでバリアントは増えない。追加光の硬い 1 タップ影も
+    // 同じ経路を通る（0/1 なので点の密度は 0 か Strength の二値になる）。
+    float faceShadow = light.shadowAttenuation;
+    UNITY_BRANCH
+    if (_FaceShadowToneMode > 0.5)
+        faceShadow = ToonFaceToneShadow(faceShadow, c.faceTone);
+    float shadowAtten = lerp(1.0, faceShadow, _ReceiveShadowStrength)
                       * microShadow;
     faceLit *= shadowAtten;
 
@@ -259,7 +311,8 @@ ToonLightTerms ToonShadeLight(ToonSurface s, ToonContext c, Light light, float3 
     // lit は首と同じ ToonLightResponse を通るので継ぎ目の伝達関数が一致し、
     // Shade Normal Map を入れていれば c.shadeN 経由で鼻の割れも丸まる。
     // 仰角は Ld（絵として置きたい向き）で取る ── SDF 本体と同じ向きを見る。
-    // Min = 1.5 は「無効」（|e| ≤ 1 なので smoothstep が常に 0 ＝ 従来の絵）。
+    // **既定は OFF（Min 1.0）**: |e| ≤ 1 なので smoothstep が常に 0 ＝ 仰角を無視。
+    // 法線に戻すと鼻や唇の凹凸が出るので、顔を平らに保ちたいなら OFF のまま Tone を使う。
     float lightElev = abs(dot(headUp, Ld));
     float elevFade  = 1.0 - smoothstep(_FaceSDFElevationMin,
                                        max(_FaceSDFElevationMax, _FaceSDFElevationMin + 1e-4),

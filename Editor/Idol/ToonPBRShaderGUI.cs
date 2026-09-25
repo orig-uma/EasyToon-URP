@@ -1254,11 +1254,24 @@ namespace ToonNPR.EditorTools
                         "Normal dot head-up threshold where Face SDF influence is fully applied. Values between Min and Max fade smoothly",
                         "法線と頭 up 軸の内積がこの値以上で顔の SDF の影響が 100%。Min と Max の間は滑らかにフェード");
                     P(e, "_FaceSDFElevationMin", "Face SDF Elevation Fade Min",
-                        "Light elevation (|dot(head up, light)|) above which the SDF starts fading back to normal-based shading. The SDF is a horizontal sweep and ignores elevation, so a head looking down under a top light stayed lit while the neck and cast shadows went dark. 1.5 disables the fade",
-                        "光の仰角（|頭 up・ライト|）がこの値を超えると SDF が法線の陰影へ戻り始める。SDF は水平スイープなので仰角を知らず、トップライトで俯くと顔だけ明るいまま首と落ち影が暗くなっていた。1.5 でフェード無効");
+                        "Light elevation (|dot(head up, light)|) above which the SDF starts fading back to normal-based shading. The SDF is a horizontal sweep and ignores elevation, so a head looking down under a top light stays lit while the neck goes dark. Off by default (1.0 or above): normal-based shading brings back nose and lip bumps, so prefer Face Shadow Tone when the face should stay flat",
+                        "光の仰角（|頭 up・ライト|）がこの値を超えると SDF が法線の陰影へ戻り始める。SDF は水平スイープなので仰角を知らず、トップライトで俯くと顔だけ明るいまま首が暗くなる。既定は OFF（1.0 以上）: 法線に戻すと鼻や唇の凹凸が出るので、顔を平らに保ちたいなら Face Shadow Tone を使う");
                     P(e, "_FaceSDFElevationMax", "Face SDF Elevation Fade Max",
                         "Light elevation at which the SDF is fully replaced by normal-based shading (same transfer as the neck, so the seam matches)",
                         "光の仰角がこの値で SDF が完全に法線の陰影へ戻る（首と同じ伝達関数なので継ぎ目が合う）");
+
+                    P(e, "_FaceShadowToneMode", "Face Shadow Tone",
+                        "Replaces shadow-map shadows on the face (nose, lips, bangs) with a screen-space halftone: occlusion becomes dot density. Off = raw PCF value. Dots = Bayer 4x4 grid. Grain = blue noise. The pattern is fixed to the screen like manga tone; TAA averages it back to a smooth half-tone",
+                        "顔に落ちるシャドウマップの影（鼻下・唇・前髪）を画面固定の網点に置き換える。遮蔽量が点の密度になる。Off = PCF の値そのまま / Dots = Bayer 4×4 の網点 / Grain = ブルーノイズの粒。漫画のトーンのように画面に固定される。TAA では時間方向に均されて滑らかな半調に戻る");
+                    P(e, "_FaceShadowToneScale", "Face Shadow Tone Scale (px)",
+                        "Screen pixels per tone cell. 1 is per-pixel; 3-4 reads as printed tone",
+                        "網点 1 セルの画面ピクセル数。1 で画素単位、3〜4 で印刷のトーンらしく見える");
+                    P(e, "_FaceShadowToneStrength", "Face Shadow Tone Strength",
+                        "Darkness of a shadow dot. 1 drops to the shadow color; 0.5 lands halfway",
+                        "影ドットの濃さ。1 で影色まで落ち、0.5 なら影色と明色の中間");
+                    P(e, "_FaceShadowToneThreshold", "Face Shadow Tone Threshold",
+                        "Occlusion below this is dropped before mapping to density, so faint penumbra gets no dots and only the shadow core is toned",
+                        "この値以下の遮蔽は密度に写す前に切り捨てる。薄い半影には点が出ず、影の芯だけがトーンになる");
 
 
                     P(e, "_FaceUseObjectAxis", "Face Use Object Axis",

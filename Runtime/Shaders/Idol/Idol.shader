@@ -310,9 +310,25 @@ Shader "Origuma/EasyToon_URP/Idol"
         // 頭ローカルで見た光の仰角（俯く・仰ぐ・トップライト）を知らない。
         // 仰角が Min を超えたら法線の陰影へ戻し始め、Max で完全に戻す。
         // 通常経路は首と同じ伝達関数を通るので、継ぎ目の陰が一致する。
-        // Min を 1.5 にすると無効（仰角は最大 1 なので届かない＝従来どおり仰角を無視）。
-        _FaceSDFElevationMin ("  Face SDF Elevation Fade Min", Range(0,1.5)) = 0.35
-        _FaceSDFElevationMax ("  Face SDF Elevation Fade Max", Range(0,1.5)) = 0.8
+        // **既定は OFF（Min 1.0 / Max 1.5）。** 仰角は最大 1 なので Min ≥ 1 で届かない。
+        // 法線の陰影に戻すと鼻や唇の凹凸が法線で出るため、「俯いても顔を平らに
+        // 保ちたい」用途（Face Shadow Tone）とは相性が悪い。使うなら Min を 1 未満に。
+        _FaceSDFElevationMin ("  Face SDF Elevation Fade Min", Range(0,1.5)) = 1.0
+        _FaceSDFElevationMax ("  Face SDF Elevation Fade Max", Range(0,1.5)) = 1.5
+        // 顔に落ちるシャドウマップの影を網点のトーンに置き換える（T-440）。
+        // 俯いたときの鼻下・唇・前髪の落ち影は、PCF の滑らかな暗がりのままだと
+        // SDF で平らにした顔の上で「実物の影」として浮く。遮蔽量を密度にした
+        // スクリーン固定の網点（漫画のトーン）にすると、形は残しつつ絵として軽くなる。
+        // Off = 従来（PCF の値をそのまま掛ける）/ Dots = Bayer 4×4 の網点 / Grain = ブルーノイズの粒。
+        // 網点は画面に固定なので、カメラが動くと影の方が下を流れる（トーンと同じ振る舞い）。
+        // TAA 有効時は時間方向に均されて滑らかな半調に戻る。
+        [Enum(Off, 0, Dots, 1, Grain, 2)] _FaceShadowToneMode ("  Face Shadow Tone", Float) = 0
+        // 網点 1 セルの画面ピクセル数。1 で画素単位、3〜4 で「トーン」らしく見える。
+        _FaceShadowToneScale ("  Face Shadow Tone Scale (px)", Range(1,8)) = 3
+        // 影ドットの濃さ。1 で影色まで落ち、0.5 なら影色と明色の中間の点になる。
+        _FaceShadowToneStrength ("  Face Shadow Tone Strength", Range(0,1)) = 0.6
+        // 遮蔽量を密度へ写す前の持ち上げ。正で薄い半影を切り捨て、影の芯だけ点にする。
+        _FaceShadowToneThreshold ("  Face Shadow Tone Threshold", Range(0,0.9)) = 0.2
         // FaceDirectionBinder が無いときにオブジェクトの軸（+Z 正面 / +X 右）で代用する。
         // 頭の回転には追従しないので、首を振る演出では Binder を付けること。
         [Toggle] _FaceUseObjectAxis ("Face Use Object Axis", Float) = 1
