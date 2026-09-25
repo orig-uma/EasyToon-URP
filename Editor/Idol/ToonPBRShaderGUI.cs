@@ -1247,6 +1247,12 @@ namespace ToonNPR.EditorTools
                     P(e, "_FaceFlatness", "Face Flatness",
                         "0 uses the normal-based transfer, 1 uses the SDF alone",
                         "0 は法線による伝達、1 は SDF だけ");
+                    P(e, "_FaceSDFVertical", "Face SDF Vertical (BA)",
+                        "Weight of the vertical sweep stored in BA (bake with Vertical Sweep in the Baking tab). The horizontal sweep ignores light elevation, so a head looking down or a top light left the area under the nose, lips and chin lit. Read by elevation and combined with min. 0 = classic 1ch",
+                        "BA に焼いた縦スイープの寄与（Baking タブの Vertical Sweep で焼く）。横スイープは光の仰角を知らず、俯く・トップライトで鼻下・唇・顎裏が明るいまま残る。仰角で読んで横と min で合成。0 で従来の 1ch");
+                    P(e, "_FaceShadowOffsetV", "Face Shadow Offset V",
+                        "Slides the vertical boundary. Positive keeps the face lit under higher light",
+                        "縦の境界をずらす。正で光が高くても明るいまま");
                     P(e, "_FaceSDFBlendNormalMin", "Face SDF Blend Normal Min",
                         "Normal dot head-up threshold where Face SDF influence reaches zero. Fades the SDF out on downward-facing areas like the neck or under-chin. Follows the head bone, so it stays correct when the head tilts",
                         "法線と頭 up 軸の内積がこの値以下で顔の SDF の影響がゼロ。顎下や首など下向きの面で SDF をフェードアウトさせる。頭ボーンに追従するので俯いても顎裏の判定がずれない");

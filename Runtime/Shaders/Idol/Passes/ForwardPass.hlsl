@@ -478,15 +478,20 @@
                 // 顔 SDF の境界 AA。同じ理由でループ内では fwidth を呼べない。
                 // Face 以外はフェッチごと発生しない。
                 c.faceSdfAA   = 0.0;
+                c.faceSdfVAA  = 0.0;
                 c.faceSdf     = 0.0;
+                c.faceSdfV    = 1.0;
                 c.faceSdfMask = 1.0;
                 c.faceTone    = 0.0;
                 #if defined(_SURFACETYPE_FACE)
                     // 16bit 1ch（R×256+G）をデコードしてから変化率を取る。
                     // 上位バイトだけの fwidth だと 256 段の飛びを拾って AA が過大になる。
-                    c.faceSdf   = ToonDecodeFaceSdf16(
-                                      SAMPLE_TEXTURE2D(_FaceSDFMap, sampler_FaceSDFMap, uv).rg);
-                    c.faceSdfAA = fwidth(c.faceSdf);
+                    // BA は縦スイープ（T-441）。同じ 1 フェッチから取れるので追加コスト無し。
+                    float4 faceSdfPx = SAMPLE_TEXTURE2D(_FaceSDFMap, sampler_FaceSDFMap, uv);
+                    c.faceSdf    = ToonDecodeFaceSdf16(faceSdfPx.rg);
+                    c.faceSdfAA  = fwidth(c.faceSdf);
+                    c.faceSdfV   = ToonDecodeFaceSdf16(faceSdfPx.ba);
+                    c.faceSdfVAA = fwidth(c.faceSdfV);
 
                     // **下向きの面は SDF から法線の陰影へ戻す（T-376・Doll と同じ仕組み）。**
                     // SDF のスイープは水平面内で回すので光の仰角を知らない。顎の裏は法線が

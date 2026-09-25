@@ -298,6 +298,13 @@ Shader "Origuma/EasyToon_URP/Idol"
         [Toggle] _FaceSDFFlipU ("  Face SDF Flip U", Float) = 0
         _FaceShadowOffset ("  Face Shadow Offset", Range(-0.5,0.5)) = 0
         _FaceFlatness ("  Face Flatness", Range(0,1)) = 1
+        // 縦スイープ（BA・16bit）の寄与（T-441）。横スイープは水平面内なので光の仰角を
+        // 知らず、俯く・トップライトで鼻下・唇・顎裏が明るいまま残る。Baking タブの
+        // Vertical Sweep で焼いた BA を仰角の閾値で読み、横と min で合成する。
+        // 0 で従来の 1ch と同じ（BA を読まない）。焼いていないテクスチャで 1 にすると
+        // 既定 white の BA = 1 なので「常に照らされる」＝ 影響なしで壊れはしない。
+        _FaceSDFVertical ("  Face SDF Vertical (BA)", Range(0,1)) = 0
+        _FaceShadowOffsetV ("  Face Shadow Offset V", Range(-0.5,0.5)) = 0
         // 下向きの面（顎の裏・首）は SDF を切って法線の陰影へ戻す（T-376）。
         // SDF のスイープは水平面内なので光の仰角を知らず、顎裏を「照らされる」と
         // 焼いてしまう。隣の首は N·L で正しく陰るため、つなぎ目で段差になる。

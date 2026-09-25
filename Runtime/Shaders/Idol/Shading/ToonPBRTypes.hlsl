@@ -83,12 +83,14 @@ struct ToonContext
     float2 uvDx;                // UV の画面微分。光源ループ内のサンプルはこれで _GRAD を使う
     float2 uvDy;
     float  faceSdfAA;           // 顔 SDF（16bit デコード後）の画面変化率。Face 以外では 0
+    float  faceSdfVAA;          // 縦 SDF（BA）の画面変化率（T-441）。Face 以外では 0
 
     // ---- 光源に依存しない前計算 --------------------------------------------
     // ToonShadeLight は**ライトの数だけ**呼ばれる。light に依らない量を
     // その中で毎回求めるのは、Forward+ で灯数ぶんの無駄になる。
     // 前髪の影を引き上げたとき（T-067）と同じ理由でここに置く。
     float  faceSdf;             // 顔 SDF（16bit 1ch・非ミラー側）。ミラー側はライトごとに引く
+    float  faceSdfV;            // 縦 SDF（B×256+A・上光スイープ。T-441）。ミラー不要なのでライトごとに引かない
     float  faceSdfMask;         // 顔 SDF の顎裏フェード（法線・頭 up 軸の内積。T-376 / T-440）。Face 以外では 1
     float  faceTone;            // 顔の影トーンの網点しきい値 0..1（画面固定。Bayer かブルーノイズ。T-440）。Face 以外では 0
     float3 hairT1;              // ずらした繊維接線（1層目）

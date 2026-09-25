@@ -276,6 +276,28 @@ ToonLightTerms ToonShadeLight(ToonSurface s, ToonContext c, Light light, float3 
         faceLit = smoothstep(threshold - soft, threshold + soft, sdf);
     }
 
+    // --- 縦スイープ（BA・16bit。T-441）------------------------------------
+    // 横スイープは fwd と L を水平面に潰して方位角だけ見るので、頭が俯く・仰ぐ・
+    // トップライトが差す、のどれも「正面光」と読む。俯いたときに鼻下・唇・顎裏が
+    // 明るいまま残り、首（N·L）との段差と落ち影の浮きになっていた（利用者報告）。
+    // Baking タブの Vertical Sweep が焼いた上光スイープ（正面 → 真上 → 背面）を、
+    // **仰角だけ**を閾値にして読む。f（前後成分）を混ぜて atan2(e, f) にすると
+    // 真横の光で 90° へ飛ぶ ── 方位角は横の SDF が担当し、縦は仰角だけを担当する。
+    // 下光（e < 0）は仰角 0 ＝ 閾値 0 で「正面光で照らされる所は照らされる」に落ち、
+    // 縦の寄与が消える（焼いていない）。閾値の写像は横と同じ 1 − (cos·0.5+0.5)。
+    // 合成は min: 旧 4ch の加重平均は各軸の近くで線が痩せて甘くなった（T-382）。
+    // 仰角も Ld（絵として置きたい向き）で取る。
+    UNITY_BRANCH
+    if (_FaceSDFVertical > 0.0)
+    {
+        float e     = saturate(dot(headUp, Ld));
+        float cosEl = sqrt(saturate(1.0 - e * e));        // cos(asin(e))
+        float thresholdV = 1.0 - (cosEl * 0.5 + 0.5) + _FaceShadowOffsetV;
+        float softV = max(softness, c.faceSdfVAA);
+        float faceLitV = smoothstep(thresholdV - softV, thresholdV + softV, c.faceSdfV);
+        faceLit = lerp(faceLit, min(faceLit, faceLitV), _FaceSDFVertical);
+    }
+
     // **遮蔽項も掛けること。** SDF が置き換えるのは「面の向きによる陰」であって、
     // 遮蔽ではない。以前はマイクロシャドウが抜けており、
     // **顔だけ鼻の脇や顎の下の落ち込みが出なかった**（他のサーフェスタイプは効いていた）。

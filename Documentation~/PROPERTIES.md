@@ -8,7 +8,7 @@
 python gen_properties.py --write
 ```
 
-シェーダー: `Idol.shader` / プロパティ 229 個
+シェーダー: `Idol.shader` / プロパティ 231 個
 
 ⚡ はシェーダーバリアントを生むもの（マテリアル間で値が違うとバッチが分断される）。
 
@@ -175,6 +175,8 @@ python gen_properties.py --write
 | `_FaceSDFFlipU` | Face SDF Flip U | `Float` | `0` | 焼いたときの左右の取り決めに合わせます |
 | `_FaceShadowOffset` | Face Shadow Offset | `Range(-0.5,0.5)` | `0` | 境界ぜんたいをずらします。正で顔がより回り込んでも明るいまま |
 | `_FaceFlatness` | Face Flatness | `Range(0,1)` | `1` | 0 は法線による伝達、1 は SDF だけ |
+| `_FaceSDFVertical` | Face SDF Vertical (BA) | `Range(0,1)` | `0` | BA に焼いた縦スイープの寄与（Baking タブの Vertical Sweep で焼く）。横スイープは光の仰角を知らず、俯く・トップライトで鼻下・唇・顎裏が明るいまま残る。仰角で読んで横と min で合成。0 で従来の 1ch |
+| `_FaceShadowOffsetV` | Face Shadow Offset V | `Range(-0.5,0.5)` | `0` | 縦の境界をずらす。正で光が高くても明るいまま |
 | `_FaceSDFBlendNormalMin` | Face SDF Blend Normal Min | `Range(-1.5,1)` | `-1` | 法線と頭 up 軸の内積がこの値以下で顔の SDF の影響がゼロ。顎下や首など下向きの面で SDF をフェードアウトさせる。頭ボーンに追従するので俯いても顎裏の判定がずれない |
 | `_FaceSDFBlendNormalMax` | Face SDF Blend Normal Max | `Range(-1,1.5)` | `0` | 法線と頭 up 軸の内積がこの値以上で顔の SDF の影響が 100%。Min と Max の間は滑らかにフェード |
 | `_FaceSDFElevationMin` | Face SDF Elevation Fade Min | `Range(0,1.5)` | `1.0` | 光の仰角（\|頭 up・ライト\|）がこの値を超えると SDF が法線の陰影へ戻り始める。SDF は水平スイープなので仰角を知らず、トップライトで俯くと顔だけ明るいまま首が暗くなる。既定は OFF（1.0 以上）: 法線に戻すと鼻や唇の凹凸が出るので、顔を平らに保ちたいなら Face Shadow Tone を使う |
@@ -514,4 +516,4 @@ python gen_properties.py --write
 
 ---
 
-説明のあるもの 170 / 229。**残り 59 個は tooltip が書かれていない** ── `ToonPBRShaderGUI.cs` に足すとここにも出ます。
+説明のあるもの 172 / 231。**残り 59 個は tooltip が書かれていない** ── `ToonPBRShaderGUI.cs` に足すとここにも出ます。
