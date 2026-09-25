@@ -89,6 +89,7 @@ struct ToonContext
     // その中で毎回求めるのは、Forward+ で灯数ぶんの無駄になる。
     // 前髪の影を引き上げたとき（T-067）と同じ理由でここに置く。
     float  faceSdf;             // 顔 SDF（16bit 1ch・非ミラー側）。ミラー側はライトごとに引く
+    float  faceSdfMask;         // 顔 SDF の顎裏フェード（法線・頭 up 軸の内積。T-376 / T-440）。Face 以外では 1
     float3 hairT1;              // ずらした繊維接線（1層目）
     float3 hairT2;              //             （2層目）
     float  hairSparkle;         // 毛束の粒。副バンドを割る 0..1

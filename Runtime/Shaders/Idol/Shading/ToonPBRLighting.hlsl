@@ -93,6 +93,51 @@ float3 ToonSpecularEnergy(float3 lightEnergy)
     return e;
 }
 
+// ----------------------------------------------------------------------------
+//  顔 SDF の頭基底（T-440 で ToonShadeLight から切り出し）
+//
+//  fwd / right は Binder（_HeadForward / _HeadRight）から、無ければオブジェクトの軸。
+//  up は外積で作る（Binder は 2 軸しか送らない）。ライトに依存しないので、
+//  フラグメントの前計算（顎裏マスク）と光源ループ（SDF の方位角）の両方から呼ぶ。
+// ----------------------------------------------------------------------------
+/// <param name="headValid">1 = 基底が使える（Binder あり、または Object Axis 代用 ON）。0 なら SDF を使わない</param>
+void ToonFaceHeadBasis(out float3 headFwd, out float3 headRight, out float3 headUp, out float headValid)
+{
+    // **FaceDirectionBinder が無いと _HeadForward はゼロのまま来る。**
+    // normalize(0) が NaN を返し、NaN は乗算も lerp も素通りして最終色まで届く
+    // ＝顔が丸ごと破綻する。コンポーネントの付け忘れは必ず起きるので、
+    // シェーダー側で検知して通常の法線経路へ落とす。ダミーの直交系を入れるのは、
+    // 分岐の中で NaN を「作らない」ため（後段で 0 を掛けても NaN は消えない）。
+    headFwd   = _HeadForward.xyz;
+    headRight = _HeadRight.xyz;
+    float bound = (dot(headFwd, headFwd) > 1e-6 && dot(headRight, headRight) > 1e-6) ? 1.0 : 0.0;
+
+    // **Binder が無いときはオブジェクトの軸で代用する。**
+    // これが無いと「焼いた顔 SDF があるのにコンポーネントを付けるまで
+    // 一度も使われない」状態になる（実際そうなっていた）。
+    // 頭の回転には追従しないので、首を振る演出では Binder が要る。
+    // Unity に取り込んだ Humanoid は素体の +Z が正面、+X が右なのが通例。
+    float3 objFwd   = mul((float3x3)UNITY_MATRIX_M, float3(0, 0, 1));
+    float3 objRight = mul((float3x3)UNITY_MATRIX_M, float3(1, 0, 0));
+
+    // スケール 0 のオブジェクトで normalize が NaN を返すのを塞ぐ。
+    objFwd   = (dot(objFwd, objFwd)     > 1e-8) ? normalize(objFwd)   : float3(0, 0, 1);
+    objRight = (dot(objRight, objRight) > 1e-8) ? normalize(objRight) : float3(1, 0, 0);
+
+    headFwd   = (bound > 0.5) ? headFwd   : objFwd;
+    headRight = (bound > 0.5) ? headRight : objRight;
+
+    // 頭の up 軸。Unity の左手系で cross(forward, right) = up（(0,0,1)×(1,0,0) = (0,1,0)）。
+    // fwd と right が平行に近い（Binder の軸設定ミス）と 0 になるので normalize を守る。
+    // Binder が無いときはオブジェクトの Y になり、T-376 の旧判定（オブジェクト空間の
+    // 法線 Y）と同じ絵に落ちる。
+    float3 upRaw = cross(headFwd, headRight);
+    headUp = (dot(upRaw, upRaw) > 1e-8) ? normalize(upRaw) : float3(0, 1, 0);
+
+    // Binder があれば常に有効。無ければトグル次第（既定 ON）。
+    headValid = max(bound, _FaceUseObjectAxis);
+}
+
 // 返り値は成分ごと（ToonLightTerms）。畳むのは ToonComposeLight（T-410）。
 // rimShape: ToonRimShape の結果（視線だけで決まるのでフラグメントで 1 回）。
 /// <param name="allowCoat">
@@ -146,32 +191,10 @@ ToonLightTerms ToonShadeLight(ToonSurface s, ToonContext c, Light light, float3 
     // 鼻の凹凸で影が割れるのを根本的に避けるため。
     float faceLit;
 
-    // **FaceDirectionBinder が無いと _HeadForward はゼロのまま来る。**
-    // normalize(0) が NaN を返し、NaN は乗算も lerp も素通りして最終色まで届く
-    // ＝顔が丸ごと破綻する。コンポーネントの付け忘れは必ず起きるので、
-    // シェーダー側で検知して通常の法線経路へ落とす。ダミーの直交系を入れるのは、
-    // 分岐の中で NaN を「作らない」ため（後段で 0 を掛けても NaN は消えない）。
-    float3 headFwd   = _HeadForward.xyz;
-    float3 headRight = _HeadRight.xyz;
-    float  bound = (dot(headFwd, headFwd) > 1e-6 && dot(headRight, headRight) > 1e-6) ? 1.0 : 0.0;
-
-    // **Binder が無いときはオブジェクトの軸で代用する。**
-    // これが無いと「焼いた顔 SDF があるのにコンポーネントを付けるまで
-    // 一度も使われない」状態になる（実際そうなっていた）。
-    // 頭の回転には追従しないので、首を振る演出では Binder が要る。
-    // Unity に取り込んだ Humanoid は素体の +Z が正面、+X が右なのが通例。
-    float3 objFwd   = mul((float3x3)UNITY_MATRIX_M, float3(0, 0, 1));
-    float3 objRight = mul((float3x3)UNITY_MATRIX_M, float3(1, 0, 0));
-
-    // スケール 0 のオブジェクトで normalize が NaN を返すのを塞ぐ。
-    objFwd   = (dot(objFwd, objFwd)     > 1e-8) ? normalize(objFwd)   : float3(0, 0, 1);
-    objRight = (dot(objRight, objRight) > 1e-8) ? normalize(objRight) : float3(1, 0, 0);
-
-    headFwd   = (bound > 0.5) ? headFwd   : objFwd;
-    headRight = (bound > 0.5) ? headRight : objRight;
-
-    // Binder があれば常に有効。無ければトグル次第（既定 ON）。
-    float headValid = max(bound, _FaceUseObjectAxis);
+    // 頭の基底。ライトに依存しない部分（顎裏マスク）は c.faceSdfMask に前計算済み。
+    float3 headFwd, headRight, headUp;
+    float  headValid;
+    ToonFaceHeadBasis(headFwd, headRight, headUp, headValid);
 
     {
         // --- 16bit 1ch（左右ミラー）。Idol の顔 SDF はこの 1 方式だけ（T-382）----
@@ -224,20 +247,26 @@ ToonLightTerms ToonShadeLight(ToonSurface s, ToonContext c, Light light, float3 
                       * microShadow;
     faceLit *= shadowAtten;
 
-    // **下向きの面は SDF から法線の陰影へ戻す（T-376・Doll と同じ仕組み）。**
-    // SDF のスイープは水平面内で回すので光の仰角を知らない。顎の裏は法線が
-    // ほぼ真下で、わずかな前向き成分だけで「ほぼ全方位で照らされる」と焼かれる。
-    // 隣接する首（Default）は N·L で上からの光に正しく陰るため、下から覗くと
-    // 「顎裏＝明・首＝陰」の段差が出ていた（利用者報告）。
-    // 判定はオブジェクト空間の法線 Y（素体は直立が通例）。既定 Min -1 / Max 0 で
-    // 真下 → 0、水平以上 → 1。Min==Max は smoothstep が 0 除算になるので離す。
-    float normalOSY = TransformWorldToObjectDir(c.N).y;
-    float sdfMask   = smoothstep(_FaceSDFBlendNormalMin,
-                                 max(_FaceSDFBlendNormalMax, _FaceSDFBlendNormalMin + 1e-4),
-                                 normalOSY);
+    // 下向きの面（顎の裏・首）の SDF フェード（T-376）は c.faceSdfMask に前計算済み
+    // （ライトに依存しないので ForwardPass。T-440 で頭 up 軸判定に変えた）。
+
+    // **光の仰角でも SDF から法線の陰影へ戻す（T-440）。** 顔 SDF は fwd と L を
+    // 水平面に潰して方位角だけ見るので、頭が俯く・仰ぐ・トップライトが差す、
+    // のどれも「正面光」と読む。俯いたときに顔だけ SDF で明るい島として残り、
+    // 首（N·L）と HQ の落ち影（顎→首・前髪→額・鼻→上唇）が正しく暗くなるので、
+    // 「本来なら陰に沈む面に硬い落ち影が乗る」絵になっていた（利用者報告）。
+    // 仰角 |dot(headUp, L)| が Min を超えたら通常経路の lit へ戻し始める。
+    // lit は首と同じ ToonLightResponse を通るので継ぎ目の伝達関数が一致し、
+    // Shade Normal Map を入れていれば c.shadeN 経由で鼻の割れも丸まる。
+    // 仰角は Ld（絵として置きたい向き）で取る ── SDF 本体と同じ向きを見る。
+    // Min = 1.5 は「無効」（|e| ≤ 1 なので smoothstep が常に 0 ＝ 従来の絵）。
+    float lightElev = abs(dot(headUp, Ld));
+    float elevFade  = 1.0 - smoothstep(_FaceSDFElevationMin,
+                                       max(_FaceSDFElevationMax, _FaceSDFElevationMin + 1e-4),
+                                       lightElev);
 
     // headValid で殺す。Binder が無いキャラは SDF を使わず通常の陰影で出る。
-    float faceBlend = _FaceFlatness * headValid * sdfMask;
+    float faceBlend = _FaceFlatness * headValid * c.faceSdfMask * elevFade;
 
     lit  = lerp(lit, faceLit, faceBlend);
     rawT = lerp(rawT, faceLit, faceBlend);

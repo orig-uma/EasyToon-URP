@@ -1248,11 +1248,17 @@ namespace ToonNPR.EditorTools
                         "0 uses the normal-based transfer, 1 uses the SDF alone",
                         "0 は法線による伝達、1 は SDF だけ");
                     P(e, "_FaceSDFBlendNormalMin", "Face SDF Blend Normal Min",
-                        "Local Y normal threshold where Face SDF influence reaches zero. Fades the SDF out on downward-facing areas like the neck or under-chin",
-                        "顔の SDF の影響がゼロになるローカル Y 法線のしきい値。顎下や首など下向きの面で SDF をフェードアウトさせる");
+                        "Normal dot head-up threshold where Face SDF influence reaches zero. Fades the SDF out on downward-facing areas like the neck or under-chin. Follows the head bone, so it stays correct when the head tilts",
+                        "法線と頭 up 軸の内積がこの値以下で顔の SDF の影響がゼロ。顎下や首など下向きの面で SDF をフェードアウトさせる。頭ボーンに追従するので俯いても顎裏の判定がずれない");
                     P(e, "_FaceSDFBlendNormalMax", "Face SDF Blend Normal Max",
-                        "Local Y normal threshold where Face SDF influence is fully applied. Normals between Min and Max fade smoothly",
-                        "顔の SDF の影響が 100% になるローカル Y 法線のしきい値。Min と Max の間は滑らかにフェード");
+                        "Normal dot head-up threshold where Face SDF influence is fully applied. Values between Min and Max fade smoothly",
+                        "法線と頭 up 軸の内積がこの値以上で顔の SDF の影響が 100%。Min と Max の間は滑らかにフェード");
+                    P(e, "_FaceSDFElevationMin", "Face SDF Elevation Fade Min",
+                        "Light elevation (|dot(head up, light)|) above which the SDF starts fading back to normal-based shading. The SDF is a horizontal sweep and ignores elevation, so a head looking down under a top light stayed lit while the neck and cast shadows went dark. 1.5 disables the fade",
+                        "光の仰角（|頭 up・ライト|）がこの値を超えると SDF が法線の陰影へ戻り始める。SDF は水平スイープなので仰角を知らず、トップライトで俯くと顔だけ明るいまま首と落ち影が暗くなっていた。1.5 でフェード無効");
+                    P(e, "_FaceSDFElevationMax", "Face SDF Elevation Fade Max",
+                        "Light elevation at which the SDF is fully replaced by normal-based shading (same transfer as the neck, so the seam matches)",
+                        "光の仰角がこの値で SDF が完全に法線の陰影へ戻る（首と同じ伝達関数なので継ぎ目が合う）");
 
 
                     P(e, "_FaceUseObjectAxis", "Face Use Object Axis",

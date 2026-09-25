@@ -477,14 +477,37 @@
 
                 // 顔 SDF の境界 AA。同じ理由でループ内では fwidth を呼べない。
                 // Face 以外はフェッチごと発生しない。
-                c.faceSdfAA  = 0.0;
-                c.faceSdf    = 0.0;
+                c.faceSdfAA   = 0.0;
+                c.faceSdf     = 0.0;
+                c.faceSdfMask = 1.0;
                 #if defined(_SURFACETYPE_FACE)
                     // 16bit 1ch（R×256+G）をデコードしてから変化率を取る。
                     // 上位バイトだけの fwidth だと 256 段の飛びを拾って AA が過大になる。
                     c.faceSdf   = ToonDecodeFaceSdf16(
                                       SAMPLE_TEXTURE2D(_FaceSDFMap, sampler_FaceSDFMap, uv).rg);
                     c.faceSdfAA = fwidth(c.faceSdf);
+
+                    // **下向きの面は SDF から法線の陰影へ戻す（T-376・Doll と同じ仕組み）。**
+                    // SDF のスイープは水平面内で回すので光の仰角を知らない。顎の裏は法線が
+                    // ほぼ真下で、わずかな前向き成分だけで「ほぼ全方位で照らされる」と焼かれる。
+                    // 隣接する首（Default）は N·L で上からの光に正しく陰るため、下から覗くと
+                    // 「顎裏＝明・首＝陰」の段差が出ていた（利用者報告）。
+                    // **判定は頭の up 軸で取る（T-440）。** 以前はオブジェクト空間の法線 Y
+                    // だったが、スキンメッシュのオブジェクト空間はルート（素体の直立）なので
+                    // 頭の回転に追従しない。俯くと顎裏の法線が前を向いて Y が上がり、
+                    // マスクが「SDF 100%」へ振れる ── 俯いたときほど顎裏〜首の繋ぎが悪化する
+                    // 向きに働いていた。頭 up との内積なら、頭がどこを向いても「顎の裏」は
+                    // 顎の裏のまま。Binder が無いときはオブジェクトの Y に落ちるので従来と同じ。
+                    // ライトに依存しないのでここで 1 回（光源ループでは灯数ぶん掛かる）。
+                    // 既定 Min -1 / Max 0 で真下 → 0、水平以上 → 1。Min==Max は 0 除算なので離す。
+                    {
+                        float3 headFwd, headRight, headUp;
+                        float  headValid;
+                        ToonFaceHeadBasis(headFwd, headRight, headUp, headValid);
+                        c.faceSdfMask = smoothstep(_FaceSDFBlendNormalMin,
+                                                   max(_FaceSDFBlendNormalMax, _FaceSDFBlendNormalMin + 1e-4),
+                                                   dot(headUp, c.N));
+                    }
                 #endif
 
                 // ---- 光源に依存しない前計算 -----------------------------------

@@ -131,6 +131,8 @@ CBUFFER_START(UnityPerMaterial)
     float  _FaceFlatness;
     float  _FaceSDFBlendNormalMin;
     float  _FaceSDFBlendNormalMax;
+    float  _FaceSDFElevationMin;
+    float  _FaceSDFElevationMax;
 
     // スキン
     float4 _SubsurfaceColor;

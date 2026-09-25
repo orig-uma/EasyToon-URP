@@ -301,8 +301,18 @@ Shader "Origuma/EasyToon_URP/Idol"
         // 下向きの面（顎の裏・首）は SDF を切って法線の陰影へ戻す（T-376）。
         // SDF のスイープは水平面内なので光の仰角を知らず、顎裏を「照らされる」と
         // 焼いてしまう。隣の首は N·L で正しく陰るため、つなぎ目で段差になる。
+        // 判定は頭ボーンの up 軸で取る（T-440）。以前はオブジェクト空間の Y だったが、
+        // スキンメッシュのオブジェクト空間はルートなので頭の回転に追従せず、
+        // 俯くと顎裏の法線が前を向いて「SDF 100%」側へ振れ、首との段差が悪化していた。
         _FaceSDFBlendNormalMin ("  Face SDF Blend Normal Min", Range(-1.5,1)) = -1
         _FaceSDFBlendNormalMax ("  Face SDF Blend Normal Max", Range(-1,1.5)) = 0
+        // 光の仰角による SDF のフェード（T-440）。SDF は水平面内のスイープなので
+        // 頭ローカルで見た光の仰角（俯く・仰ぐ・トップライト）を知らない。
+        // 仰角が Min を超えたら法線の陰影へ戻し始め、Max で完全に戻す。
+        // 通常経路は首と同じ伝達関数を通るので、継ぎ目の陰が一致する。
+        // Min を 1.5 にすると無効（仰角は最大 1 なので届かない＝従来どおり仰角を無視）。
+        _FaceSDFElevationMin ("  Face SDF Elevation Fade Min", Range(0,1.5)) = 0.35
+        _FaceSDFElevationMax ("  Face SDF Elevation Fade Max", Range(0,1.5)) = 0.8
         // FaceDirectionBinder が無いときにオブジェクトの軸（+Z 正面 / +X 右）で代用する。
         // 頭の回転には追従しないので、首を振る演出では Binder を付けること。
         [Toggle] _FaceUseObjectAxis ("Face Use Object Axis", Float) = 1
