@@ -69,13 +69,17 @@ namespace ToonNPR.EditorTools
         private GameObject _sdfProxyObject;
         private int        _sdfProxyShape;                   // 0 楕円体 / 1 卵型 / 2 前を平ら / 3 円盤 / 4 カスタム
 
-        // Idol の既定: 卵型プロキシ・Blend 0.7（鼻・眉の形を少し残す）。ローポリの顔でも
+        // Idol の既定: 楕円体プロキシ・Blend 0.7（鼻・眉の形を少し残す）。ローポリの顔でも
         // 何も設定せずに滑らかな境界が出る。従来の「メッシュの法線」は Proxy で選べる。
+        // 縦スイープ（BA）も既定で焼く ── 俯き・トップライト・下光で顔の影が正しく出るのは
+        // 縦があってこそで、焼き忘れると Face SDF Vertical を上げたとき顔全体が影に落ちる（T-441）。
         private static EasyPbrFaceSdfBaker.Settings MakeFaceSdfDefault()
         {
             var s = EasyPbrFaceSdfBaker.Default;
             s.proxyMode = 1; s.proxyBlend = 0.7f;
-            s.proxyTaper = 0.3f; // 卵型（顎を細く）。楕円体より顔の明暗境界が自然（利用者確認済み）
+            // 卵型（Taper 0.3）を 0.2.3 で既定にしたが、縦スイープを入れた後に楕円体へ戻した（利用者判断・0.2.9 後）
+            s.proxyTaper = 0f;
+            s.bakeVertical = true;
             return s;
         }
         private EasyPbrBentNormalBaker.Settings  _bentNormal  = EasyPbrBentNormalBaker.Default;
@@ -325,6 +329,20 @@ namespace ToonNPR.EditorTools
                     _faceSdf.pack16 = true;
                 }
 
+                // 縦スイープ（T-441 / T-443）。B = 上光 / A = 下光を角度線形 8bit で足す。
+                // 横は水平面内なので光の仰角を知らず、俯く・トップライト・下光で
+                // 鼻下・唇・顎裏が明るいまま残る。
+                _faceSdf.bakeVertical = EditorGUILayout.Toggle(
+                    _kit.Label("Vertical Sweep (BA)",
+                               "Also bake the top-light (B) and bottom-light (A) sweeps, 8-bit "
+                               + "angle-linear. Fixes the face staying lit under the nose, lips and "
+                               + "chin when the head looks down or the light is high or low. "
+                               + "Sets Face SDF Vertical to 1",
+                               "上光（B）と下光（A）のスイープも角度線形 8bit で焼く。俯く・"
+                               + "トップライト・下光で鼻下・唇・顎裏が明るいまま残るのを直す。"
+                               + "Face SDF Vertical を 1 にする"),
+                    _faceSdf.bakeVertical);
+
                 // ---- プロキシ法線（T-414）--------------------------------------
                 // ローポリの顔は法線がポリゴンごとに折れて等値線がガタつく。頭に合わせた楕円体か
                 // プロキシメッシュの法線で遷移角を求めれば、線は完全に滑らかになる。UV は顔の
@@ -445,10 +463,10 @@ namespace ToonNPR.EditorTools
 
                 // **_FaceFlatness を立てないと焼いても絵が変わらない。**
                 // Baker が立てるのは Doll 名（_UseFaceSDF）で Idol には無い。
-                Note(jp, "16bit 1ch（R×256+G）で焼き、SDF Blend（_FaceFlatness）を立てます。"
+                Note(jp, "16bit（R×256+G。Vertical Sweep ON なら B / A に縦の上・下）で焼き、SDF Blend（_FaceFlatness）を立てます。"
                        + "**シーンに FaceDirectionBinder が要ります** ── "
                        + "頭ボーンの向きが無いと顔だけ破綻します。",
-                        "Bakes a 16-bit 1ch (R*256+G) SDF and sets SDF Blend (_FaceFlatness). "
+                        "Bakes a 16-bit (R*256+G, plus BA when Vertical Sweep is on) SDF and sets SDF Blend (_FaceFlatness). "
                       + "A FaceDirectionBinder must exist in the scene, or the face alone breaks.");
 
                 if (BakeButton(jp ? "Face SDF をベイク" : "Bake Face SDF"))
@@ -463,6 +481,10 @@ namespace ToonNPR.EditorTools
             ResolveSdfProxy(m);
             if (!EasyPbrFaceSdfBaker.Bake(_bakeRoot, m, _faceSdf)) return false;
             SetIfUnset(m, "_FaceFlatness", 1f);
+            // 縦を焼いたら読む側も立てる。焼いていないテクスチャに戻したときは
+            // 0 にする（BA が別データのままだと縦の閾値が誤読される）。
+            if (m.HasFloat("_FaceSDFVertical"))
+                m.SetFloat("_FaceSDFVertical", _faceSdf.bakeVertical ? 1f : 0f);
             return true;
         }
 

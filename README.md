@@ -35,7 +35,7 @@ https://github.com/orig-uma/EasyToon-URP.git
 特定バージョンを指定する場合:
 
 ```
-https://github.com/orig-uma/EasyToon-URP.git#v0.2.8
+https://github.com/orig-uma/EasyToon-URP.git#v0.2.9
 ```
 
 依存する共通基盤パッケージ [EasyShaderCore](https://github.com/orig-uma/EasyShaderCore-URP)（`com.origuma.easyshader-core`）は、
@@ -43,7 +43,7 @@ https://github.com/orig-uma/EasyToon-URP.git#v0.2.8
 手動手順つきの案内ウィンドウが表示される。手動で先に入れる場合:
 
 ```
-https://github.com/orig-uma/EasyShaderCore-URP.git#v0.3.5
+https://github.com/orig-uma/EasyShaderCore-URP.git#v0.3.6
 ```
 
 ### Embedded
@@ -54,7 +54,7 @@ https://github.com/orig-uma/EasyShaderCore-URP.git#v0.3.5
 
 * Unity 6 (6000.3) 以降
 * Universal RP 17.3 以降 / Forward・Forward+
-* [EasyShaderCore](https://github.com/orig-uma/EasyShaderCore-URP) 0.3.5 以降（自動インストールされる）
+* [EasyShaderCore](https://github.com/orig-uma/EasyShaderCore-URP) 0.3.6 以降（自動インストールされる）
 * Render Graph 有効（既定）。Compatibility Mode では RendererFeature（アウトライン・前髪透過）が動作しません
 * [EasyPBR for URP](https://github.com/orig-uma/EasyPBR-URP) は**任意**（Doll からの移行変換にのみ必要。コード依存なし）
 

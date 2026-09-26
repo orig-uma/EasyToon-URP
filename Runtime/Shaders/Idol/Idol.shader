@@ -298,9 +298,25 @@ Shader "Origuma/EasyToon_URP/Idol"
         [Toggle] _FaceSDFFlipU ("  Face SDF Flip U", Float) = 0
         _FaceShadowOffset ("  Face Shadow Offset", Range(-0.5,0.5)) = 0
         _FaceFlatness ("  Face Flatness", Range(0,1)) = 1
+        // 縦スイープ（B = 上 / A = 下、角度線形 8bit）の寄与（T-441 / T-443）。横スイープは
+        // 水平面内なので光の仰角を知らず、俯く・トップライト・下光で鼻下・唇・顎裏が
+        // 明るいまま残る。Baking タブの Vertical Sweep で焼いた B / A を fwd-up 面内の角度で
+        // 読み、横と min で合成する。0 で従来の 1ch と同じ（B / A を読まず、横も世界 XZ）。
+        // 焼いていないテクスチャで 1 にすると「常に影」になるので、Debug View の FaceSDF V で
+        // 焼けているかを確かめること（Baking タブが焼いたときに 1 にする）。
+        _FaceSDFVertical ("  Face SDF Vertical (BA)", Range(0,1)) = 0
+        _FaceShadowOffsetV ("  Face Shadow Offset V", Range(-0.5,0.5)) = 0
+        // 各軸の閾値を「角度が定義できる度合い」で 0（照射）へ寄せる幅（T-443）。横の方位角は
+        // 真上・真下で、縦の角度は真横の光で定まらない。面内成分の長さがこの値を下回ると
+        // 閾値を寄せ始める。0.5 ＝ 横は仰角 60° まで従来どおり、それ以上で極へ向けて寄せる。
+        // 小さいほど既存の絵を守り、極の切り替えが速くなる。
+        _FaceSDFAxisFade ("  Face SDF Axis Fade", Range(0.05,1)) = 0.5
         // 下向きの面（顎の裏・首）は SDF を切って法線の陰影へ戻す（T-376）。
         // SDF のスイープは水平面内なので光の仰角を知らず、顎裏を「照らされる」と
         // 焼いてしまう。隣の首は N·L で正しく陰るため、つなぎ目で段差になる。
+        // 判定は頭ボーンの up 軸で取る（T-440）。以前はオブジェクト空間の Y だったが、
+        // スキンメッシュのオブジェクト空間はルートなので頭の回転に追従せず、
+        // 俯くと顎裏の法線が前を向いて「SDF 100%」側へ振れ、首との段差が悪化していた。
         _FaceSDFBlendNormalMin ("  Face SDF Blend Normal Min", Range(-1.5,1)) = -1
         _FaceSDFBlendNormalMax ("  Face SDF Blend Normal Max", Range(-1,1.5)) = 0
         // FaceDirectionBinder が無いときにオブジェクトの軸（+Z 正面 / +X 右）で代用する。

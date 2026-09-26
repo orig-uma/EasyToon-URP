@@ -8,7 +8,7 @@
 python gen_properties.py --write
 ```
 
-シェーダー: `Idol.shader` / プロパティ 223 個
+シェーダー: `Idol.shader` / プロパティ 226 個
 
 ⚡ はシェーダーバリアントを生むもの（マテリアル間で値が違うとバッチが分断される）。
 
@@ -175,8 +175,11 @@ python gen_properties.py --write
 | `_FaceSDFFlipU` | Face SDF Flip U | `Float` | `0` | 焼いたときの左右の取り決めに合わせます |
 | `_FaceShadowOffset` | Face Shadow Offset | `Range(-0.5,0.5)` | `0` | 境界ぜんたいをずらします。正で顔がより回り込んでも明るいまま |
 | `_FaceFlatness` | Face Flatness | `Range(0,1)` | `1` | 0 は法線による伝達、1 は SDF だけ |
-| `_FaceSDFBlendNormalMin` | Face SDF Blend Normal Min | `Range(-1.5,1)` | `-1` | 顔の SDF の影響がゼロになるローカル Y 法線のしきい値。顎下や首など下向きの面で SDF をフェードアウトさせる |
-| `_FaceSDFBlendNormalMax` | Face SDF Blend Normal Max | `Range(-1,1.5)` | `0` | 顔の SDF の影響が 100% になるローカル Y 法線のしきい値。Min と Max の間は滑らかにフェード |
+| `_FaceSDFVertical` | Face SDF Vertical (BA) | `Range(0,1)` | `0` | B（上光）/ A（下光）に焼いた縦スイープの寄与。Baking タブの Vertical Sweep で焼く。横スイープは光の仰角を知らず、俯く・トップライト・下光で鼻下・唇・顎裏が明るいまま残る。fwd-up 面内の角度で読んで横と min で合成。0 で従来の 1ch。古いテクスチャで上げる前に Debug View の FaceSDF V で焼けているか確認 |
+| `_FaceShadowOffsetV` | Face Shadow Offset V | `Range(-0.5,0.5)` | `0` | 縦の境界をずらす。符号の向きは Face Shadow Offset と同じ |
+| `_FaceSDFAxisFade` | Face SDF Axis Fade | `Range(0.05,1)` | `0.5` | 各軸が「角度を定義できない所」の手前で手を離す幅。横の方位角は真上・真下で、縦の角度は真横の光で定まらない。面内成分の長さがこれを下回ると閾値を照射側へ寄せる。0.5 なら横は仰角 60° まで従来どおり。小さいほど既存の絵を守るが極での切り替えが速い |
+| `_FaceSDFBlendNormalMin` | Face SDF Blend Normal Min | `Range(-1.5,1)` | `-1` | 法線と頭 up 軸の内積がこの値以下で顔の SDF の影響がゼロ。顎下や首など下向きの面で SDF をフェードアウトさせる。頭ボーンに追従するので俯いても顎裏の判定がずれない |
+| `_FaceSDFBlendNormalMax` | Face SDF Blend Normal Max | `Range(-1,1.5)` | `0` | 法線と頭 up 軸の内積がこの値以上で顔の SDF の影響が 100%。Min と Max の間は滑らかにフェード |
 | `_FaceUseObjectAxis` | Face Use Object Axis | `Float` | `1` | 頭ボーンの向きを供給するものが無いときの代替 |
 
 ## ライト（Lighting）
@@ -508,4 +511,4 @@ python gen_properties.py --write
 
 ---
 
-説明のあるもの 164 / 223。**残り 59 個は tooltip が書かれていない** ── `ToonPBRShaderGUI.cs` に足すとここにも出ます。
+説明のあるもの 167 / 226。**残り 59 個は tooltip が書かれていない** ── `ToonPBRShaderGUI.cs` に足すとここにも出ます。

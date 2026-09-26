@@ -50,7 +50,7 @@ Tools > Idol > セットアップ診断
 | FabricMap | 任意 | sRGB **OFF**。R 反射率 / G Sheen / B Clearcoat / A Iridescence の倍率。白が中立（T-419） |
 | BakedMap | 任意 | sRGB **OFF**。R Cavity / G Curvature / B AO。Baking タブが自動で詰める（T-422） |
 | AnisotropyMap | 任意（Cloth） | sRGB **OFF**。RG 織りの向き / B 強さ。glTF anisotropyTexture と同じ（T-419） |
-| Face SDF | 顔を使うなら必須 | sRGB OFF・**非圧縮**。16bit 1ch（R×256+G）の一方式。Baking タブで焼く（Core の `FACE_SDF_BAKING.md` が仕様）|
+| Face SDF | 顔を使うなら必須 | sRGB OFF・**非圧縮**。16bit（R×256+G。Baking タブの Vertical Sweep ON なら BA に縦スイープも）。Baking タブで焼く（Core の `FACE_SDF_BAKING.md` が仕様）|
 | Hair Shift Noise | 任意 | 未設定時は "gray" |
 | Ramp | 任意 | `Use Ramp Map` を ON にしたときだけ |
 
